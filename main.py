@@ -1,7 +1,13 @@
+import json
+
 from poker_game import PokerGame
-from util import setup_logging
+from util import load_agent_configs, setup_logging
 
 if __name__ == "__main__":
     setup_logging()
-    game = PokerGame()
+    agent_configs = load_agent_configs()
+    game = PokerGame(agent_configs=agent_configs)
     game.play_round()
+    # Save updated agent configurations after the game
+    with open("agent_configs.json", "w") as f:
+        json.dump(agent_configs, f, indent=4)

@@ -80,6 +80,7 @@ class PokerAgent:
         name: str,
         model_type: str = "gpt",
         strategy_style: Optional[str] = None,
+        personality_traits: Optional[Dict[str, float]] = None,
         max_retries: int = 3,
         retry_delay: float = 1.0,
     ) -> None:
@@ -93,6 +94,11 @@ class PokerAgent:
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.logger = logging.getLogger(__name__)
+        self.personality_traits = personality_traits or {
+            "aggression": 0.5,
+            "bluff_frequency": 0.5,
+            "risk_tolerance": 0.5,
+        }
 
         # Validate and initialize OpenAI client
         if model_type == "gpt":
@@ -216,10 +222,13 @@ class PokerAgent:
     def get_action(
         self, game_state: Dict[str, Any], opponent_message: Optional[str] = None
     ) -> str:
-        """Get action with improved parsing and validation."""
+        """Get action with personality traits influence."""
         try:
             prompt = f"""
-            You are a {self.strategy_style} poker player in a crucial moment.
+            You are a {self.strategy_style} poker player with specific traits:
+            - Aggression: {self.personality_traits['aggression']:.1f}/1.0
+            - Bluff Frequency: {self.personality_traits['bluff_frequency']:.1f}/1.0
+            - Risk Tolerance: {self.personality_traits['risk_tolerance']:.1f}/1.0
             
             Current situation:
             Game State: {game_state}
@@ -227,7 +236,7 @@ class PokerAgent:
             Recent History: {self.perception_history[-3:] if self.perception_history else []}
             
             Consider:
-            1. Your strategy style: {self.strategy_style}
+            1. Your personality traits and strategy style
             2. The opponent's recent behavior
             3. Your position and chip stack
             4. The credibility of their message

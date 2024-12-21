@@ -1,0 +1,26 @@
+{
+    "GPT_Agent_1": {
+        "name": "GPT_Agent_1",
+        "strategy_style": "Aggressive Bluffer",
+        "model_type": "gpt",
+        "personality_traits": {
+            "aggression": 0.7999999999999999,
+            "bluff_frequency": 0.7,
+            "risk_tolerance": 0.9
+        },
+        "win_count": 1,
+        "total_games": 1
+    },
+    "GPT_Agent_2": {
+        "name": "GPT_Agent_2",
+        "strategy_style": "Aggressive Bluffer",
+        "model_type": "gpt",
+        "personality_traits": {
+            "aggression": 0.25,
+            "bluff_frequency": 0.15000000000000002,
+            "risk_tolerance": 0.35000000000000003
+        },
+        "win_count": 0,
+        "total_games": 1
+    }
+}

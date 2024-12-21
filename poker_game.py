@@ -7,7 +7,7 @@ import pydantic
 from pokerkit import Automation, NoLimitTexasHoldem
 from pydantic import BaseModel, Field
 
-from poker_agents import PokerAgent
+from poker_agents import PokerAgent, StrategyStyle
 
 logger = logging.getLogger(__name__)
 
@@ -92,31 +92,45 @@ class PokerGame:
     between two AI agents.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, agent_configs=None) -> None:
         self.logger = logging.getLogger(__name__)
         # Initialize game configuration
         self.game_config = GameConfig()
 
-        # Initialize player configurations
+        # Use provided agent configs or create default
+        self.agent_configs = agent_configs or {
+            "GPT_Agent_1": {
+                "name": "GPT_Agent_1",
+                "strategy_style": "Aggressive Bluffer",
+                "model_type": "gpt",
+            },
+            "GPT_Agent_2": {
+                "name": "GPT_Agent_2",
+                "strategy_style": "Calculated and Cautious",
+                "model_type": "gpt",
+            },
+        }
+
+        # Create player configs from agent configs
         self.player_configs = {
-            "GPT_Agent_1": PlayerConfig(
-                name="GPT_Agent_1",
-                strategy_style="Aggressive Bluffer",
-            ),
-            "GPT_Agent_2": PlayerConfig(
-                name="GPT_Agent_2",
-                strategy_style="Calculated and Cautious",
-            ),
+            name: PlayerConfig(
+                name=config["name"],
+                model_type=config.get("model_type", "gpt"),
+                strategy_style=config["strategy_style"],
+                starting_stack=config.get("starting_stack", 1000),
+            )
+            for name, config in self.agent_configs.items()
         }
 
         # Initialize enhanced agents using configurations
         self.agents = {
             name: PokerAgent(
-                name=config.name,
-                model_type=config.model_type,
-                strategy_style=config.strategy_style,
+                name=config["name"],
+                model_type=config["model_type"],
+                strategy_style=config["strategy_style"],
+                personality_traits=config.get("personality_traits", {}),
             )
-            for name, config in self.player_configs.items()
+            for name, config in self.agent_configs.items()
         }
 
         # Initialize opponent messages dictionary
@@ -381,32 +395,37 @@ class PokerGame:
                     table.collect_bets()
                     table.pull_chips()
 
-            if table.street_count == 0:  # Pre-flop
+            # Deal cards based on current street
+            if table.street_count == 0:  # Pre-flop -> Flop
                 table.burn_card("2d")
                 table.deal_board("7h8h9h")
                 self.logger.info("\n=== FLOP ===")
                 self.logger.info("Board: 7h 8h 9h")
-            elif table.street_count == 1:  # Flop
+                # Reset betting for new street
+                table.post_ante_or_blind_or_straddle()
+
+            elif table.street_count == 1:  # Flop -> Turn
                 table.burn_card("2d")
                 table.deal_board("Th")
                 self.logger.info("\n=== TURN ===")
                 self.logger.info("Board: 7h 8h 9h Th")
-            elif table.street_count == 2:  # Turn
+                # Reset betting for new street
+                table.post_ante_or_blind_or_straddle()
+
+            elif table.street_count == 2:  # Turn -> River
                 table.burn_card("2d")
                 table.deal_board("Jh")
                 self.logger.info("\n=== RIVER ===")
                 self.logger.info("Board: 7h 8h 9h Th Jh")
-
-            # Initialize next street if betting is complete
-            if not table.actor_indices:
-                table.initialize_street()
+                # Reset betting for new street
+                table.post_ante_or_blind_or_straddle()
 
         except ValueError as e:
             self.logger.error("Error advancing street: %s", str(e))
             raise GameStateError(f"Cannot advance to next street: {str(e)}") from e
 
     def _end_game(self, table: NoLimitTexasHoldem) -> None:
-        """Handle end of game logging and winner determination."""
+        """Handle end of game logging, winner determination, and strategy evolution."""
         self.logger.info("\n=== Hand Complete! ===")
         self.logger.info(
             "Final board: %s", " ".join(str(card) for card in table.board_cards)
@@ -417,18 +436,53 @@ class PokerGame:
         self.logger.info("Final pots: %s", list(table.pots))
         self.logger.info("Final stacks: %s", table.stacks)
 
-        # Use configured starting stack instead of hardcoded value
-        initial_stack = next(iter(self.player_configs.values())).starting_stack
+        # Update agent statistics and evolve strategies
+        initial_stack = self.game_config.min_bet * 10  # Default starting stack
         for player_idx, final_stack in enumerate(table.stacks):
             agent_name = list(self.agents.keys())[player_idx]
+            config = self.agent_configs[agent_name]
+
+            # Update game statistics
+            config["total_games"] = config.get("total_games", 0) + 1
+
             if final_stack > initial_stack:
+                config["win_count"] = config.get("win_count", 0) + 1
+                self._evolve_strategy(agent_name, True)
                 self.logger.info(
                     "\nWinner: %s (+%d chips)", agent_name, final_stack - initial_stack
                 )
-            elif final_stack < initial_stack:
+            else:
+                self._evolve_strategy(agent_name, False)
                 self.logger.info(
                     "\nLoser: %s (-%d chips)", agent_name, initial_stack - final_stack
                 )
+
+    def _evolve_strategy(self, agent_name: str, won: bool) -> None:
+        """Evolve agent's strategy based on game outcome."""
+        config = self.agent_configs[agent_name]
+        traits = config.get("personality_traits", {})
+
+        # Adjust traits based on performance
+        adjustment = 0.1 if won else -0.05
+
+        for trait in traits:
+            current_value = traits[trait]
+            # Apply adjustment with bounds checking
+            traits[trait] = max(0.1, min(0.9, current_value + adjustment))
+
+        # Consider strategy style changes based on win rate
+        win_rate = config.get("win_count", 0) / max(1, config.get("total_games", 1))
+
+        if win_rate < 0.3:
+            # If performing poorly, try a different strategy
+            current_style = config["strategy_style"]
+            new_style = random.choice(
+                [s.value for s in StrategyStyle if s.value != current_style]
+            )
+            config["strategy_style"] = new_style
+            self.logger.info(
+                f"{agent_name} changing strategy to {new_style} due to low win rate"
+            )
 
     def _handle_street(self, table: NoLimitTexasHoldem) -> None:
         """Handle all betting rounds for the current street."""

@@ -1,5 +1,7 @@
+import json
 import logging
 import os
+from pathlib import Path
 
 
 def setup_logging():
@@ -42,3 +44,42 @@ def setup_logging():
 
     # Log initial message to confirm setup
     root_logger.info("=== New Poker Game Session Started ===")
+
+
+def load_agent_configs(config_path="agent_configs.json"):
+    """Load agent configurations from JSON file, creating default if not exists."""
+    default_configs = {
+        "GPT_Agent_1": {
+            "name": "GPT_Agent_1",
+            "strategy_style": "Aggressive Bluffer",
+            "model_type": "gpt",
+            "personality_traits": {
+                "aggression": 0.7,
+                "bluff_frequency": 0.6,
+                "risk_tolerance": 0.8,
+            },
+            "win_count": 0,
+            "total_games": 0,
+        },
+        "GPT_Agent_2": {
+            "name": "GPT_Agent_2",
+            "strategy_style": "Calculated and Cautious",
+            "model_type": "gpt",
+            "personality_traits": {
+                "aggression": 0.3,
+                "bluff_frequency": 0.2,
+                "risk_tolerance": 0.4,
+            },
+            "win_count": 0,
+            "total_games": 0,
+        },
+    }
+
+    config_file = Path(config_path)
+    if not config_file.exists():
+        with open(config_file, "w") as f:
+            json.dump(default_configs, f, indent=4)
+        return default_configs
+
+    with open(config_file) as f:
+        return json.load(f)
