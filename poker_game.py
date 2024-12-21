@@ -1,11 +1,42 @@
 import logging
-from typing import Dict
+from typing import Dict, List, Tuple
 
 from pokerkit import Automation, NoLimitTexasHoldem
+from pydantic import BaseModel, Field
 
 from poker_agents import PokerAgent
 
 logger = logging.getLogger(__name__)
+
+
+class PlayerConfig(BaseModel):
+    """Configuration for a poker player/agent."""
+
+    name: str
+    model_type: str = Field(default="gpt")
+    strategy_style: str
+    starting_stack: int = Field(default=1000)
+
+
+class GameConfig(BaseModel):
+    """Configuration for the poker game."""
+
+    small_blind: int = Field(default=50)
+    big_blind: int = Field(default=100)
+    min_bet: int = Field(default=100)
+    ante: int = Field(default=0)
+    player_count: int = Field(default=2)
+    automations: Tuple[str, ...] = Field(
+        default=(
+            "ANTE_POSTING",
+            "BET_COLLECTION",
+            "BLIND_OR_STRADDLE_POSTING",
+            "HOLE_CARDS_SHOWING_OR_MUCKING",
+            "HAND_KILLING",
+            "CHIPS_PUSHING",
+            "CHIPS_PULLING",
+        )
+    )
 
 
 class PokerGame:
@@ -16,18 +47,29 @@ class PokerGame:
     """
 
     def __init__(self) -> None:
-        # Initialize enhanced agents
-        self.agents = {
-            "GPT_Agent_1": PokerAgent(
+        # Initialize game configuration
+        self.game_config = GameConfig()
+
+        # Initialize player configurations
+        self.player_configs = {
+            "GPT_Agent_1": PlayerConfig(
                 name="GPT_Agent_1",
-                model_type="gpt",
                 strategy_style="Aggressive Bluffer",
             ),
-            "GPT_Agent_2": PokerAgent(
+            "GPT_Agent_2": PlayerConfig(
                 name="GPT_Agent_2",
-                model_type="gpt",
                 strategy_style="Calculated and Cautious",
             ),
+        }
+
+        # Initialize enhanced agents using configurations
+        self.agents = {
+            name: PokerAgent(
+                name=config.name,
+                model_type=config.model_type,
+                strategy_style=config.strategy_style,
+            )
+            for name, config in self.player_configs.items()
         }
 
         # Initialize opponent messages dictionary
@@ -37,21 +79,20 @@ class PokerGame:
         """Play a single round of poker between the agents."""
         # Create the table with proper automations and settings
         table = NoLimitTexasHoldem.create_state(
-            automations=(
-                Automation.ANTE_POSTING,
-                Automation.BET_COLLECTION,
-                Automation.BLIND_OR_STRADDLE_POSTING,
-                Automation.HOLE_CARDS_SHOWING_OR_MUCKING,
-                Automation.HAND_KILLING,
-                Automation.CHIPS_PUSHING,
-                Automation.CHIPS_PULLING,
+            automations=tuple(
+                getattr(Automation, auto) for auto in self.game_config.automations
             ),
-            ante_trimming_status=True,  # Whether antes should be uniform
-            raw_antes=0,  # Ante amount
-            raw_blinds_or_straddles=(50, 100),  # Small blind, big blind
-            min_bet=100,  # Minimum betting amount
-            raw_starting_stacks=[1000, 1000],  # Starting chips for each player
-            player_count=2,  # Number of players
+            ante_trimming_status=True,
+            raw_antes=self.game_config.ante,
+            raw_blinds_or_straddles=(
+                self.game_config.small_blind,
+                self.game_config.big_blind,
+            ),
+            min_bet=self.game_config.min_bet,
+            raw_starting_stacks=[
+                config.starting_stack for config in self.player_configs.values()
+            ],
+            player_count=self.game_config.player_count,
         )
 
         logger.info("\n=== Starting Poker Game ===\n")
@@ -208,8 +249,8 @@ class PokerGame:
         logger.info("Final pots: %s", list(table.pots))
         logger.info("Final stacks: %s", table.stacks)
 
-        # Determine winner (based on who has more chips than initial stack)
-        initial_stack = 1000
+        # Use configured starting stack instead of hardcoded value
+        initial_stack = next(iter(self.player_configs.values())).starting_stack
         for player_idx, final_stack in enumerate(table.stacks):
             agent_name = list(self.agents.keys())[player_idx]
             if final_stack > initial_stack:
