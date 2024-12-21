@@ -1,6 +1,7 @@
 import logging
 import os
 import random
+import re
 import time
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -88,6 +89,7 @@ class PokerAgent:
         self.model_type = model_type
         self.last_message = ""
         self.perception_history: List[Dict[str, Any]] = []
+        self.conversation_history: List[Dict[str, Any]] = []
         self.strategy_style = strategy_style or random.choice(
             [s.value for s in StrategyStyle]
         )
@@ -99,6 +101,10 @@ class PokerAgent:
             "bluff_frequency": 0.5,
             "risk_tolerance": 0.5,
         }
+        self.raise_count = 0
+        self.max_raises_per_street = 2
+        self.current_street = 0
+        self.total_bet_amount = 0
 
         # Validate and initialize OpenAI client
         if model_type == "gpt":
@@ -124,16 +130,56 @@ class PokerAgent:
         Returns:
             dict: Perception data including game state, opponent message, and timestamp
         """
+        # Extract street index from operations or street object
+        current_street = game_state.get("street_index", 0)
+
+        # Reset counters if street changed
+        if current_street != self.current_street:
+            self.logger.info(
+                f"[Street Change] {self.current_street} -> {current_street}"
+            )
+            self.raise_count = 0
+            self.total_bet_amount = 0
+            self.current_street = current_street
+
+        # Get current stack and bet amounts
+        stacks = game_state.get("stacks", [])
+        bets = game_state.get("bets", [])
+
+        if stacks and bets:
+            player_index = 0 if self.name == "GPT_Agent_1" else 1
+            current_stack = stacks[player_index]
+            current_bet = bets[player_index]
+
+            # If total bet amount has increased significantly, count as a raise
+            if current_bet > self.total_bet_amount + 100:  # Minimum raise amount
+                self.raise_count += 1
+                self.logger.info(
+                    f"[Raise Count] Agent {self.name}: {self.raise_count}/{self.max_raises_per_street}"
+                )
+
+            self.total_bet_amount = current_bet
+
         perception = {
             "game_state": game_state,
             "opponent_message": opponent_message,
             "timestamp": time.time(),
         }
         self.perception_history.append(perception)
+
+        if opponent_message:
+            self.conversation_history.append(
+                {
+                    "sender": "opponent",
+                    "message": opponent_message,
+                    "timestamp": time.time(),
+                }
+            )
+
         return perception
 
     def get_message(self, game_state: Dict[str, Any]) -> str:
-        """Generate strategic communication based on game state and strategy style.
+        """Generate strategic communication with conversation context.
 
         Uses LLM to create contextually appropriate messages that align with the agent's
         strategy style and current game situation.
@@ -144,6 +190,14 @@ class PokerAgent:
         Returns:
             str: Strategic message to influence opponent
         """
+        # Format recent conversation history
+        recent_conversation = "\n".join(
+            [
+                f"{msg['sender']}: {msg['message']}"
+                for msg in self.conversation_history[-5:]  # Last 5 messages
+            ]
+        )
+
         prompt = f"""
         You are a {self.strategy_style} poker player in Texas Hold'em.
         
@@ -151,18 +205,27 @@ class PokerAgent:
         Game State: {game_state}
         Your recent observations: {self.perception_history[-3:] if len(self.perception_history) > 0 else "None"}
         
+        Recent conversation:
+        {recent_conversation if self.conversation_history else "No previous conversation"}
+        
         Generate a strategic message to influence your opponent. Your personality is {self.strategy_style}.
         
         Your message should:
         1. Match your strategy style
         2. Be under 10 words
-        3. Try to influence your opponent's next decision
-        4. Consider your previous interactions
+        3. Try to influence your opponent
+        4. Consider the conversation history and maintain consistency
         
         What message will you send?
         """
-        self.last_message = self._query_llm(prompt).strip()
-        return self.last_message
+
+        message = self._query_llm(prompt).strip()
+        # Store own message in conversation history
+        self.conversation_history.append(
+            {"sender": self.name, "message": message, "timestamp": time.time()}
+        )
+        self.last_message = message
+        return message
 
     def interpret_message(self, opponent_message: str) -> str:
         """Enhanced message interpretation with historical context.
@@ -222,8 +285,53 @@ class PokerAgent:
     def get_action(
         self, game_state: Dict[str, Any], opponent_message: Optional[str] = None
     ) -> str:
-        """Get action with personality traits influence."""
+        """Get action with strict raise limits."""
         try:
+            # Force call if raise limit exceeded
+            if self.raise_count >= self.max_raises_per_street:
+                self.logger.warning(
+                    f"[Raise Limit] Agent {self.name} hit raise limit ({self.raise_count}/{self.max_raises_per_street}), forcing call"
+                )
+                return "call"
+
+            # Parse game state if it's a string
+            if isinstance(game_state, str):
+                # Extract stack and bet information from the string representation
+                try:
+                    # Look for stack information in the string
+                    stack_match = re.search(r"stacks=\[([^\]]+)\]", game_state)
+                    bet_match = re.search(r"bets=\[([^\]]+)\]", game_state)
+
+                    if stack_match and bet_match:
+                        stacks = [int(x) for x in stack_match.group(1).split(",")]
+                        bets = [int(x) for x in bet_match.group(1).split(",")]
+                        player_index = 0 if self.name == "GPT_Agent_1" else 1
+
+                        if len(stacks) > player_index:
+                            current_stack = stacks[player_index]
+                        else:
+                            current_stack = 1000  # Default value
+                    else:
+                        current_stack = 1000  # Default value if not found
+                except Exception as e:
+                    self.logger.error(f"Error parsing game state string: {e}")
+                    current_stack = 1000  # Default value
+            else:
+                # Calculate remaining stack from dictionary
+                player_index = 0 if self.name == "GPT_Agent_1" else 1
+                current_stack = (
+                    game_state.get("stacks", [])[player_index]
+                    if game_state.get("stacks")
+                    else 1000
+                )
+
+            # Force call if stack too low
+            if current_stack < 200:  # Minimum for meaningful raise
+                self.logger.warning(
+                    f"[Stack Low] Agent {self.name} stack too low ({current_stack}), forcing call"
+                )
+                return "call"
+
             prompt = f"""
             You are a {self.strategy_style} poker player with specific traits:
             - Aggression: {self.personality_traits['aggression']:.1f}/1.0
@@ -234,12 +342,16 @@ class PokerAgent:
             Game State: {game_state}
             Opponent's Message: '{opponent_message or "nothing"}'
             Recent History: {self.perception_history[-3:] if self.perception_history else []}
+            Raises this street: {self.raise_count}/{self.max_raises_per_street}
+            Your stack: {current_stack}
             
             Consider:
             1. Your personality traits and strategy style
             2. The opponent's recent behavior
             3. Your position and chip stack
             4. The credibility of their message
+            5. You can only raise {self.max_raises_per_street - self.raise_count} more times this street
+            6. If you raise too much, you'll be forced to call
             
             Important: Respond with exactly one word, without quotes: fold, call, or raise
             """
@@ -249,16 +361,15 @@ class PokerAgent:
 
             if action is None:
                 self.logger.warning(
-                    "LLM returned invalid action '%s', falling back to 'fold'",
-                    raw_action,
+                    f"LLM returned invalid action '{raw_action}', falling back to 'call'"
                 )
-                return "fold"
+                return "call"
 
             return action
 
         except LLMError as e:
-            self.logger.error("LLM error in get_action: %s", str(e))
-            return "fold"
+            self.logger.error(f"LLM error in get_action: {str(e)}")
+            return "call"
 
     def _query_gpt(self, prompt: str) -> str:
         """Query OpenAI's GPT model with error handling."""
@@ -422,8 +533,12 @@ class PokerAgent:
         Clears perception history while maintaining strategy style and name.
         """
         self.perception_history = []
+        self.conversation_history = []
         self.last_message = ""
-        self.logger.info("[Reset] Agent %s reset for new game", self.name)
+        self.raise_count = 0
+        self.current_street = 0
+        self.total_bet_amount = 0
+        self.logger.info(f"[Reset] Agent {self.name} reset for new game")
 
     def get_stats(self) -> Dict[str, Any]:
         """Retrieve agent's performance statistics and current state.
