@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import random
@@ -371,25 +372,67 @@ class PokerAgent:
             self.logger.error(f"LLM error in get_action: {str(e)}")
             return "call"
 
-    def _query_gpt(self, prompt: str) -> str:
-        """Query OpenAI's GPT model with error handling."""
+    async def _query_gpt_async(self, prompt: str) -> str:
+        """Asynchronous query to OpenAI's GPT model with error handling and timeout."""
         try:
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": f"You are a {self.strategy_style} poker player.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                max_tokens=20,
-                temperature=0.7,
-            )
+            messages = [
+                {
+                    "role": "system",
+                    "content": f"""You are a {self.strategy_style} poker player with these traits:
+                    - Aggression: {self.personality_traits['aggression']:.1f}/1.0
+                    - Bluff_Frequency: {self.personality_traits['bluff_frequency']:.1f}/1.0
+                    - Risk_Tolerance: {self.personality_traits['risk_tolerance']:.1f}/1.0
+                    
+                    Stay in character and be consistent with these traits.""",
+                }
+            ]
+
+            if self.conversation_history:
+                for entry in self.conversation_history[-4:]:
+                    role = "assistant" if entry["sender"] == self.name else "user"
+                    messages.append({"role": role, "content": entry["message"]})
+
+            messages.append({"role": "user", "content": prompt})
+
+            async with asyncio.timeout(10):  # 10 second timeout
+                response = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: self.client.chat.completions.create(
+                        model="gpt-3.5-turbo",
+                        messages=messages,
+                        max_tokens=20,
+                        temperature=0.7,
+                    ),
+                )
+
+            if not response.choices:
+                raise OpenAIError("Empty response from GPT")
+
             return response.choices[0].message.content
 
+        except asyncio.TimeoutError:
+            self.logger.error("GPT query timed out after 10 seconds")
+            raise OpenAIError("Query timed out")
         except Exception as e:
-            raise OpenAIError(f"GPT query failed: {str(e)}") from e
+            self.logger.error(f"GPT query failed: {str(e)}")
+            raise OpenAIError(str(e))
+
+    def _query_gpt(self, prompt: str) -> str:
+        """Synchronous wrapper for async GPT query."""
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        try:
+            return loop.run_until_complete(self._query_gpt_async(prompt))
+        except Exception as e:
+            self.logger.error(f"GPT query failed: {str(e)}")
+            # Return fallback response
+            if "get_action" in prompt.lower():
+                return "call"
+            return "I need to think about my next move."
 
     def _query_local_llm(self, prompt: str) -> str:
         """Query local LLM endpoint with error handling."""
