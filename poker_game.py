@@ -373,28 +373,37 @@ class PokerGame:
         if not table.status:
             return
 
-        if table.street_count == 0:  # Pre-flop
-            table.burn_card("2d")
-            table.deal_board("7h8h9h")
-            self.logger.info("\n=== FLOP ===")
-            self.logger.info("Board: 7h 8h 9h")
-        elif table.street_count == 1:  # Flop
-            table.burn_card("2d")
-            table.deal_board("Th")
-            self.logger.info("\n=== TURN ===")
-            self.logger.info("Board: 7h 8h 9h Th")
-        elif table.street_count == 2:  # Turn
-            table.burn_card("2d")
-            table.deal_board("Jh")
-            self.logger.info("\n=== RIVER ===")
-            self.logger.info("Board: 7h 8h 9h Th Jh")
+        try:
+            # Only collect bets if there are no more actors
+            if not table.actor_indices:
+                # Verify if bet collection is allowed
+                if table.can_collect_bets():
+                    table.collect_bets()
+                    table.pull_chips()
 
-        if table.status:
-            # Clear any existing bets and prepare for next street
-            table.collect_bets()
-            table.pull_chips()
-            # Reset betting round
-            table.initialize_street()
+            if table.street_count == 0:  # Pre-flop
+                table.burn_card("2d")
+                table.deal_board("7h8h9h")
+                self.logger.info("\n=== FLOP ===")
+                self.logger.info("Board: 7h 8h 9h")
+            elif table.street_count == 1:  # Flop
+                table.burn_card("2d")
+                table.deal_board("Th")
+                self.logger.info("\n=== TURN ===")
+                self.logger.info("Board: 7h 8h 9h Th")
+            elif table.street_count == 2:  # Turn
+                table.burn_card("2d")
+                table.deal_board("Jh")
+                self.logger.info("\n=== RIVER ===")
+                self.logger.info("Board: 7h 8h 9h Th Jh")
+
+            # Initialize next street if betting is complete
+            if not table.actor_indices:
+                table.initialize_street()
+
+        except ValueError as e:
+            self.logger.error("Error advancing street: %s", str(e))
+            raise GameStateError(f"Cannot advance to next street: {str(e)}") from e
 
     def _end_game(self, table: NoLimitTexasHoldem) -> None:
         """Handle end of game logging and winner determination."""
@@ -426,10 +435,19 @@ class PokerGame:
         current_street = table.street_count
         betting_complete = False
 
-        while current_street == table.street_count and not betting_complete:
-            self._handle_betting_round(table)
-            if not table.actor_indices:
-                betting_complete = True
+        try:
+            while current_street == table.street_count and not betting_complete:
+                # Handle betting round
+                self._handle_betting_round(table)
 
-        # Move to next street if betting round is complete
-        self._advance_to_next_street(table)
+                # Check if betting is complete
+                if not table.actor_indices:
+                    betting_complete = True
+
+            # Move to next street if betting round is complete
+            if betting_complete:
+                self._advance_to_next_street(table)
+
+        except GameStateError as e:
+            self.logger.error("Error during street handling: %s", str(e))
+            raise
