@@ -3,9 +3,9 @@ import random
 import time
 
 import openai
-import pokerkit as pk
 import requests
 from dotenv import load_dotenv
+from pokerkit import Automation, NoLimitTexasHoldem
 
 # Load environment variables
 load_dotenv()
@@ -132,13 +132,23 @@ class PokerAgent:
 
 # Set up the Poker Game
 def play_poker_round():
-    # Create the table with 2 enhanced agents
-    table = pk.Table(
-        name="Test Table",
-        seats=[
-            pk.Seat(name="GPT_Agent"),
-            pk.Seat(name="LocalLLM_Agent"),
-        ],
+    # Create the table with proper automations and settings
+    table = NoLimitTexasHoldem.create_state(
+        automations=(
+            Automation.ANTE_POSTING,
+            Automation.BET_COLLECTION,
+            Automation.BLIND_OR_STRADDLE_POSTING,
+            Automation.HOLE_CARDS_SHOWING_OR_MUCKING,
+            Automation.HAND_KILLING,
+            Automation.CHIPS_PUSHING,
+            Automation.CHIPS_PULLING,
+        ),
+        ante_trimming_status=True,  # Whether antes should be uniform
+        raw_antes=0,                # Ante amount
+        raw_blinds_or_straddles=(50, 100),  # Small blind, big blind
+        min_bet=100,               # Minimum betting amount
+        raw_starting_stacks=[1000, 1000],  # Starting chips for each player
+        player_count=2             # Number of players
     )
 
     # Initialize enhanced agents
@@ -153,50 +163,102 @@ def play_poker_round():
         ),
     }
 
-    # Play a single hand
-    table.sitdown()
-    table.deal()
-    print("Starting Poker Round with Bluffing!")
+    print("\n=== Starting Poker Round with Bluffing! ===\n")
+
+    # Deal hole cards - using actual card representations
+    table.deal_hole("AhKh")  # First player gets Ace-King of hearts
+    table.deal_hole("2c3c")  # Second player gets 2-3 of clubs
+    
+    # Log initial hands
+    print("Initial hands:")
+    print(f"GPT_Agent (Player 1): AhKh")
+    print(f"LocalLLM_Agent (Player 2): 2c3c")
+    print(f"\nStarting stacks: {table.stacks}")
+    print(f"Blinds: Small Blind = 50, Big Blind = 100\n")
 
     # Iterate over betting rounds
     opponent_messages = {name: "" for name in agents.keys()}
-    while not table.finished:
-        for player in table.current_players:
-            if player.active:
-                agent = agents[player.name]
+    current_street = "preflop"
+    while not table.status:
+        if table.board_cards != []:
+            print(f"\nBoard: {' '.join(str(card) for card in table.board_cards)}")
+        
+        for player_idx, player in enumerate(range(table.num_players)):
+            if table.can_act(player):
+                agent = list(agents.values())[player_idx]
+                
+                print(f"\n--- {agent.name}'s Turn ---")
+                print(f"Current street: {current_street}")
+                print(f"Current pot: {sum(table.pots)}")
+                print(f"Required bet to call: {table.min_bet}")
+                print(f"Player stacks: {table.stacks}")
 
                 # Agent sends a message before acting
                 message = agent.get_message(str(table))
-                print(f"{player.name} says: '{message}'")
-                opponent_messages[player.name] = message
+                print(f"\n{agent.name} says: '{message}'")
+                opponent_messages[agent.name] = message
 
                 # Interpret opponent's last message
-                opponent_name = next(
-                    (p.name for p in table.current_players if p.name != player.name),
-                    None,
-                )
+                opponent_name = next(name for name in agents.keys() if name != agent.name)
                 opponent_message = opponent_messages.get(opponent_name, "")
-                interpretation = agent.interpret_message(opponent_message)
-                print(
-                    f"{player.name} interprets '{opponent_name}' as: {interpretation}"
-                )
+                if opponent_message:
+                    interpretation = agent.interpret_message(opponent_message)
+                    print(f"{agent.name} interprets {opponent_name}'s message '{opponent_message}' as: {interpretation}")
 
                 # Decide action considering the opponent's message
                 action = agent.get_action(str(table), opponent_message)
-                print(f"{player.name} chooses: {action}")
+                print(f"{agent.name} chooses: {action}")
 
+                # Convert action to pokerkit format
                 if action == "fold":
-                    table.fold(player)
+                    table.act_fold()
+                    print(f"{agent.name} folds!")
                 elif action == "call":
-                    table.call(player)
+                    table.act_call()
+                    print(f"{agent.name} calls {table.min_bet}")
                 elif action == "raise":
-                    table.raise_bet(player, amount=10)
+                    raise_amount = min(20, table.max_raise_size())
+                    table.act_raise(raise_amount)
+                    print(f"{agent.name} raises to {raise_amount}")
 
-        table.next_round()
+        if table.street_over():
+            if not table.status:
+                # Deal next street with actual cards
+                table.burn_card("2d")
+                if len(table.board_cards) == 0:
+                    current_street = "flop"
+                    table.deal_board("7h8h9h")
+                    print("\n=== FLOP ===")
+                    print("Board: 7h 8h 9h")
+                elif len(table.board_cards) == 3:
+                    current_street = "turn"
+                    table.deal_board("Th")
+                    print("\n=== TURN ===")
+                    print("Board: 7h 8h 9h Th")
+                elif len(table.board_cards) == 4:
+                    current_street = "river"
+                    table.deal_board("Jh")
+                    print("\n=== RIVER ===")
+                    print("Board: 7h 8h 9h Th Jh")
+                table.next_street()
 
     # End of hand
-    print("Poker round complete!")
-    print(table.results())
+    print("\n=== Hand Complete! ===")
+    print(f"Final board: {' '.join(str(card) for card in table.board_cards)}")
+    print("\nFinal hands:")
+    print(f"GPT_Agent (Player 1): AhKh")
+    print(f"LocalLLM_Agent (Player 2): 2c3c")
+    print(f"\nFinal pots: {table.pots}")
+    print(f"Final stacks: {table.stacks}")
+    
+    # Determine winner (based on who has more chips than initial stack)
+    initial_stack = 1000
+    for player_idx, final_stack in enumerate(table.stacks):
+        agent_name = list(agents.keys())[player_idx]
+        if final_stack > initial_stack:
+            print(f"\nWinner: {agent_name} (+{final_stack - initial_stack} chips)")
+        elif final_stack < initial_stack:
+            print(f"\nLoser: {agent_name} (-{initial_stack - final_stack} chips)")
 
 
 if __name__ == "__main__":

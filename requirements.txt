@@ -1,4 +1,4 @@
 pokerkit
 openai
-transformers
-python-dotenv 
+python-dotenv
+requests 
