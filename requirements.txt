@@ -1,0 +1,4 @@
+pokerkit
+openai
+transformers
+python-dotenv 
