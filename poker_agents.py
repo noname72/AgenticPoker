@@ -2,20 +2,63 @@ import logging
 import os
 import random
 import time
+from enum import Enum
 from typing import Any, Dict, List, Optional
 
 import requests
-from openai import OpenAI
 from dotenv import load_dotenv
+from openai import OpenAI
 
 # Load environment variables
 load_dotenv()
 
-# Initialize OpenAI API
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Get logger
-logger = logging.getLogger(__name__)
+class LLMError(Exception):
+    """Base class for LLM-related errors."""
+
+    pass
+
+
+class OpenAIError(LLMError):
+    """Errors from OpenAI API."""
+
+    pass
+
+
+class LocalLLMError(LLMError):
+    """Errors from local LLM endpoint."""
+
+    pass
+
+
+class ResponseParsingError(LLMError):
+    """Error parsing LLM response."""
+
+    pass
+
+
+class ActionType(str, Enum):
+    """Valid poker actions."""
+
+    FOLD = "fold"
+    CALL = "call"
+    RAISE = "raise"
+
+
+class MessageInterpretation(str, Enum):
+    """Valid message interpretations."""
+
+    TRUST = "trust"
+    IGNORE = "ignore"
+    COUNTER_BLUFF = "counter-bluff"
+
+
+class StrategyStyle(str, Enum):
+    """Valid strategy styles."""
+
+    AGGRESSIVE = "Aggressive Bluffer"
+    CAUTIOUS = "Calculated and Cautious"
+    CHAOTIC = "Chaotic and Unpredictable"
 
 
 class PokerAgent:
@@ -33,19 +76,35 @@ class PokerAgent:
     """
 
     def __init__(
-        self, name: str, model_type: str = "gpt", strategy_style: Optional[str] = None
+        self,
+        name: str,
+        model_type: str = "gpt",
+        strategy_style: Optional[str] = None,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
     ) -> None:
-        self.name: str = name
-        self.model_type: str = model_type
-        self.last_message: str = ""
+        self.name = name
+        self.model_type = model_type
+        self.last_message = ""
         self.perception_history: List[Dict[str, Any]] = []
-        self.strategy_style: str = strategy_style or random.choice(
-            [
-                "Aggressive Bluffer",
-                "Calculated and Cautious",
-                "Chaotic and Unpredictable",
-            ]
+        self.strategy_style = strategy_style or random.choice(
+            [s.value for s in StrategyStyle]
         )
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        self.logger = logging.getLogger(__name__)
+
+        # Validate and initialize OpenAI client
+        if model_type == "gpt":
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                raise ValueError("OPENAI_API_KEY environment variable not set")
+            self.client = OpenAI(api_key=api_key)
+        elif model_type == "local_llm":
+            endpoint = os.getenv("LOCAL_LLM_ENDPOINT")
+            if not endpoint:
+                raise ValueError("LOCAL_LLM_ENDPOINT environment variable not set")
+            self.endpoint = endpoint
 
     def perceive(
         self, game_state: Dict[str, Any], opponent_message: str
@@ -126,110 +185,148 @@ class PokerAgent:
         """
         return self._query_llm(prompt).strip().lower()
 
+    def _normalize_action(self, action: str) -> str:
+        """Normalize the LLM's action response to a valid action."""
+        # Remove any quotes and extra whitespace
+        action = action.lower().strip().strip("'\"")
+
+        # Extract just the action word if it's embedded in a sentence
+        action_words = {
+            "fold": "fold",
+            "call": "call",
+            "raise": "raise",
+            "check": "call",  # normalize check to call
+            "bet": "raise",  # normalize bet to raise
+        }
+
+        # First try exact match
+        if action in action_words:
+            return action_words[action]
+
+        # Then look for action words in the response
+        for word in action.split():
+            word = word.strip(".:,!?*()[]'\"")  # Remove punctuation and quotes
+            if word in action_words:
+                return action_words[word]
+
+        # If no valid action found, log and return None
+        self.logger.warning("Could not parse action from LLM response: '%s'", action)
+        return None
+
     def get_action(
         self, game_state: Dict[str, Any], opponent_message: Optional[str] = None
     ) -> str:
-        """Strategic action decision incorporating game history and style.
+        """Get action with improved parsing and validation."""
+        try:
+            prompt = f"""
+            You are a {self.strategy_style} poker player in a crucial moment.
+            
+            Current situation:
+            Game State: {game_state}
+            Opponent's Message: '{opponent_message or "nothing"}'
+            Recent History: {self.perception_history[-3:] if self.perception_history else []}
+            
+            Consider:
+            1. Your strategy style: {self.strategy_style}
+            2. The opponent's recent behavior
+            3. Your position and chip stack
+            4. The credibility of their message
+            
+            Important: Respond with exactly one word, without quotes: fold, call, or raise
+            """
 
-        Determines optimal poker action based on current game state, opponent behavior,
-        and agent's strategy style.
+            raw_action = self._query_llm(prompt)
+            action = self._normalize_action(raw_action)
 
-        Args:
-            game_state (dict): Current state of the poker game
-            opponent_message (str, optional): Message received from opponent. Defaults to None.
+            if action is None:
+                self.logger.warning(
+                    "LLM returned invalid action '%s', falling back to 'fold'",
+                    raw_action,
+                )
+                return "fold"
 
-        Returns:
-            str: Chosen action ('fold', 'call', or 'raise')
-        """
-        recent_history = self.perception_history[-3:] if self.perception_history else []
+            return action
 
-        prompt = f"""
-        You are a {self.strategy_style} poker player in a crucial moment.
-        
-        Current situation:
-        Game State: {game_state}
-        Opponent's Message: '{opponent_message or "nothing"}'
-        Recent History: {recent_history}
-        
-        Consider:
-        1. Your strategy style: {self.strategy_style}
-        2. The opponent's recent behavior
-        3. Your position and chip stack
-        4. The credibility of their message
-        
-        Choose your action. Respond with only: 'fold', 'call', or 'raise'
-        """
-        return self._query_llm(prompt).strip().lower()
+        except LLMError as e:
+            self.logger.error("LLM error in get_action: %s", str(e))
+            return "fold"
+
+    def _query_gpt(self, prompt: str) -> str:
+        """Query OpenAI's GPT model with error handling."""
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": f"You are a {self.strategy_style} poker player.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=20,
+                temperature=0.7,
+            )
+            return response.choices[0].message.content
+
+        except Exception as e:
+            raise OpenAIError(f"GPT query failed: {str(e)}") from e
+
+    def _query_local_llm(self, prompt: str) -> str:
+        """Query local LLM endpoint with error handling."""
+        try:
+            response = requests.post(
+                self.endpoint,
+                json={"prompt": prompt, "max_tokens": 20},
+                timeout=5,
+            )
+            response.raise_for_status()
+            result = response.json()
+
+            if "choices" not in result or not result["choices"]:
+                raise LocalLLMError("Invalid response format from local LLM")
+
+            return result["choices"][0]["text"]
+
+        except requests.RequestException as e:
+            raise LocalLLMError(f"Local LLM request failed: {str(e)}") from e
+        except (KeyError, IndexError, ValueError) as e:
+            raise LocalLLMError(f"Invalid response from local LLM: {str(e)}") from e
 
     def _query_llm(self, prompt: str) -> str:
-        """Enhanced LLM query with error handling, retries, and logging.
+        """Enhanced LLM query with retries and comprehensive error handling."""
+        last_error = None
 
-        Makes API calls to either GPT or local LLM with built-in retry mechanism
-        and comprehensive error handling.
-
-        Args:
-            prompt (str): Input prompt for the language model
-
-        Returns:
-            str: Model's response text
-
-        Raises:
-            Exception: If all retry attempts fail, returns 'fold' as fallback
-        """
-        max_retries = 3
-        for attempt in range(max_retries):
+        for attempt in range(self.max_retries):
             try:
-                logger.info("\n[LLM Query] Attempt %d for %s", attempt + 1, self.name)
-                logger.debug("[LLM Query] Prompt: %s", prompt)
+                self.logger.info(
+                    "[LLM Query] Attempt %d for %s", attempt + 1, self.name
+                )
+                self.logger.debug("[LLM Query] Prompt: %s", prompt)
 
                 if self.model_type == "gpt":
-                    logger.info("[LLM Query] Using GPT model...")
-                    response = client.chat.completions.create(
-                        model="gpt-3.5-turbo",
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": f"You are a {self.strategy_style} poker player.",
-                            },
-                            {"role": "user", "content": prompt},
-                        ],
-                        max_tokens=20,
-                        temperature=0.7,
-                    )
-                    result = response.choices[0].message.content
-                    logger.info("[LLM Query] Response: %s", result)
-                    return result
+                    result = self._query_gpt(prompt)
+                else:
+                    result = self._query_local_llm(prompt)
 
-                elif self.model_type == "local_llm":
-                    logger.info("[LLM Query] Using Local LLM...")
-                    endpoint = os.getenv("LOCAL_LLM_ENDPOINT")
-                    logger.debug("[LLM Query] Endpoint: %s", endpoint)
+                self.logger.info("[LLM Query] Response: %s", result)
+                return result
 
-                    response = requests.post(
-                        endpoint,
-                        json={"prompt": prompt, "max_tokens": 20},
-                        timeout=5,
-                    )
-                    result = response.json()["choices"][0]["text"]
-                    logger.info("[LLM Query] Response: %s", result)
-                    return result
+            except (OpenAIError, LocalLLMError) as e:
+                last_error = e
+                self.logger.error(
+                    "[LLM Query] %s error on attempt %d: %s",
+                    self.model_type,
+                    attempt + 1,
+                    str(e),
+                )
+                if attempt < self.max_retries - 1:
+                    time.sleep(self.retry_delay)
+                    continue
 
-            except Exception as e:
-                logger.error("[LLM Query] Error on attempt %d: %s", attempt + 1, str(e))
-                logger.debug("[LLM Query] Error type: %s", type(e).__name__)
-                if hasattr(e, "response"):
-                    logger.error(
-                        "[LLM Query] Response status: %d", e.response.status_code
-                    )
-                    logger.error("[LLM Query] Response body: %s", e.response.text)
-
-                if attempt == max_retries - 1:
-                    logger.warning(
-                        "[LLM Query] All attempts failed for %s. Defaulting to 'fold'",
-                        self.name,
-                    )
-                    return "fold"
-                time.sleep(1)  # Wait before retry
+        self.logger.error(
+            "[LLM Query] All %d attempts failed for %s", self.max_retries, self.name
+        )
+        raise LLMError(f"Failed after {self.max_retries} attempts") from last_error
 
     def update_strategy(self, game_outcome: Dict[str, Any]) -> None:
         """Update agent's strategy based on game outcomes and performance.
@@ -265,7 +362,7 @@ class PokerAgent:
         }
 
         if response in strategy_map:
-            logger.info(
+            self.logger.info(
                 "[Strategy Update] %s changing strategy from %s to %s",
                 self.name,
                 self.strategy_style,
@@ -304,7 +401,9 @@ class PokerAgent:
                     response
                 )  # Safe here since we control the LLM output format
         except Exception as e:
-            logger.error("[Opponent Analysis] Error parsing LLM response: %s", str(e))
+            self.logger.error(
+                "[Opponent Analysis] Error parsing LLM response: %s", str(e)
+            )
 
         return {"patterns": "unknown", "threat_level": "medium"}
 
@@ -315,7 +414,7 @@ class PokerAgent:
         """
         self.perception_history = []
         self.last_message = ""
-        logger.info("[Reset] Agent %s reset for new game", self.name)
+        self.logger.info("[Reset] Agent %s reset for new game", self.name)
 
     def get_stats(self) -> Dict[str, Any]:
         """Retrieve agent's performance statistics and current state.

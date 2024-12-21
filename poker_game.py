@@ -1,7 +1,9 @@
 import logging
-from typing import Dict, List, Tuple
-import pydantic
+import random
+from enum import Enum
+from typing import Dict, List, Optional, Tuple
 
+import pydantic
 from pokerkit import Automation, NoLimitTexasHoldem
 from pydantic import BaseModel, Field
 
@@ -49,6 +51,38 @@ class GameConfig(BaseModel):
     def to_dict(self):
         """Convert config to dict, handling Pydantic version differences."""
         return self.model_dump() if PYDANTIC_V2 else self.dict()
+
+
+class PokerAction(str, Enum):
+    """Valid poker actions."""
+
+    FOLD = "fold"
+    CALL = "call"
+    RAISE = "raise"
+
+
+class PokerError(Exception):
+    """Base class for poker game errors."""
+
+    pass
+
+
+class InvalidActionError(PokerError):
+    """Raised when an invalid action is attempted."""
+
+    pass
+
+
+class BettingError(PokerError):
+    """Raised when there's an error during betting."""
+
+    pass
+
+
+class GameStateError(PokerError):
+    """Raised when the game state is invalid."""
+
+    pass
 
 
 class PokerGame:
@@ -138,7 +172,9 @@ class PokerGame:
         self.logger.info("+-- Stacks: %s", table.stacks)
         self.logger.info("+-- Street: %s", table.street)
         if table.board_cards:
-            self.logger.info("+-- Board: %s", " ".join(str(card) for card in table.board_cards))
+            self.logger.info(
+                "+-- Board: %s", " ".join(str(card) for card in table.board_cards)
+            )
         self.logger.info("+-- Pot: %d", sum(table.pots))
 
         # Log detailed state information at debug level
@@ -156,7 +192,7 @@ class PokerGame:
         agent = list(self.agents.values())[current_player]
 
         self.logger.info("--- %s's Turn (Player %d) ---", agent.name, current_player)
-        
+
         # Log current game situation
         self.logger.debug("Current Game Situation:")
         self.logger.debug("+-- Street: %s", table.street)
@@ -170,12 +206,14 @@ class PokerGame:
             self.opponent_messages[agent.name] = message
 
             # Interpret opponent's message
-            opponent_name = next(name for name in self.agents.keys() if name != agent.name)
+            opponent_name = next(
+                name for name in self.agents.keys() if name != agent.name
+            )
             opponent_message = self.opponent_messages.get(opponent_name, "")
             if opponent_message:
                 interpretation = agent.interpret_message(opponent_message)
                 self.logger.debug(
-                    "Message Interpretation: %s → %s: '%s'",
+                    "Message Interpretation: %s to %s: '%s'",
                     opponent_name,
                     agent.name,
                     interpretation,
@@ -193,36 +231,142 @@ class PokerGame:
     def _execute_action(
         self, table: NoLimitTexasHoldem, agent: PokerAgent, opponent_message: str
     ) -> None:
-        """Execute an agent's chosen action."""
-        action = agent.get_action(str(table), opponent_message)
-        
-        if action == "fold":
-            self.logger.warning("%s decides to fold!", agent.name)
+        """Execute an agent's chosen action with improved error handling."""
+        try:
+            action = agent.get_action(str(table), opponent_message)
+            if not isinstance(action, str) or action not in {
+                a.value for a in PokerAction
+            }:
+                raise InvalidActionError(f"Invalid action returned by agent: {action}")
+
+            if action == PokerAction.FOLD:
+                self._handle_fold(table, agent)
+            elif action == PokerAction.CALL:
+                self._handle_call(table, agent)
+            elif action == PokerAction.RAISE:
+                self._handle_raise(table, agent)
+
+        except InvalidActionError as e:
+            self.logger.error("Invalid action from %s: %s", agent.name, str(e))
+            self._handle_fallback_action(table, agent, "Invalid action")
+        except BettingError as e:
+            self.logger.error("Betting error from %s: %s", agent.name, str(e))
+            self._handle_fallback_action(table, agent, "Betting error")
+        except Exception as e:
+            self.logger.error(
+                "Unexpected error during %s's action: %s",
+                agent.name,
+                str(e),
+                exc_info=True,
+            )
+            self._handle_fallback_action(table, agent, "Unexpected error")
+
+    def _handle_fold(self, table: NoLimitTexasHoldem, agent: PokerAgent) -> None:
+        """Handle fold action."""
+        self.logger.warning("%s decides to fold!", agent.name)
+        try:
             table.fold()
-        elif action == "call":
-            action_type = "checks" if table.street.min_completion_betting_or_raising_amount == 0 else "calls"
+        except Exception as e:
+            raise BettingError(f"Error while folding: {str(e)}") from e
+
+    def _handle_call(self, table: NoLimitTexasHoldem, agent: PokerAgent) -> None:
+        """Handle call/check action."""
+        try:
+            is_check = table.street.min_completion_betting_or_raising_amount == 0
+            action_type = "checks" if is_check else "calls"
             self.logger.info("%s %s", agent.name, action_type)
             table.check_or_call()
-        elif action == "raise":
+        except Exception as e:
+            raise BettingError(f"Error while calling: {str(e)}") from e
+
+    def _handle_raise(self, table: NoLimitTexasHoldem, agent: PokerAgent) -> None:
+        """Handle raise action."""
+        try:
             if not table.can_complete_bet_or_raise_to():
                 self.logger.warning(
                     "%s attempted to raise but cannot - falling back to call",
-                    agent.name
+                    agent.name,
                 )
-                table.check_or_call()
-            else:
-                min_raise = table.street.min_completion_betting_or_raising_amount
-                current_bet = max(table.bets)
-                raise_to = current_bet + min_raise
+                self._handle_call(table, agent)
+                return
 
-                self.logger.info("%s raises to %d", agent.name, raise_to)
-                self.logger.debug(
-                    "Raise details: current_bet=%d, min_raise=%d, raise_to=%d",
-                    current_bet,
-                    min_raise,
-                    raise_to
-                )
-                table.complete_bet_or_raise_to(raise_to)
+            min_raise = table.street.min_completion_betting_or_raising_amount
+            current_bet = max(table.bets)
+            raise_to = current_bet + min_raise
+
+            self.logger.info("%s raises to %d", agent.name, raise_to)
+            self.logger.debug(
+                "Raise details: current_bet=%d, min_raise=%d, raise_to=%d",
+                current_bet,
+                min_raise,
+                raise_to,
+            )
+            table.complete_bet_or_raise_to(raise_to)
+        except Exception as e:
+            raise BettingError(f"Error while raising: {str(e)}") from e
+
+    def _handle_fallback_action(
+        self, table: NoLimitTexasHoldem, agent: PokerAgent, error_type: str
+    ) -> None:
+        """Handle fallback action when primary action fails."""
+        self.logger.warning(
+            "Using fallback action for %s due to %s", agent.name, error_type
+        )
+
+        try:
+            # Get available actions
+            available_actions = []
+            if table.can_check_or_call():
+                available_actions.append(PokerAction.CALL)
+            if table.can_complete_bet_or_raise_to():
+                available_actions.append(PokerAction.RAISE)
+            available_actions.append(PokerAction.FOLD)  # Can always fold
+
+            # Choose fallback action based on situation
+            if error_type == "Betting error":
+                # On betting errors, prefer safer actions
+                fallback = PokerAction.FOLD
+            else:
+                # For other errors, make a weighted random choice
+                weights = {
+                    PokerAction.CALL: 0.7,  # Prefer calling as safest non-fold action
+                    PokerAction.RAISE: 0.2,  # Occasionally raise
+                    PokerAction.FOLD: 0.1,  # Fold as last resort
+                }
+                available_weights = [weights[action] for action in available_actions]
+                fallback = random.choices(available_actions, available_weights, k=1)[0]
+
+            self.logger.info(
+                "Fallback action for %s: %s (available actions: %s)",
+                agent.name,
+                fallback.value,
+                [a.value for a in available_actions],
+            )
+
+            if fallback == PokerAction.FOLD:
+                self._handle_fold(table, agent)
+            elif fallback == PokerAction.CALL:
+                self._handle_call(table, agent)
+            else:
+                self._handle_raise(table, agent)
+
+        except Exception as e:
+            self.logger.error(
+                "Critical error in fallback action for %s: %s",
+                agent.name,
+                str(e),
+                exc_info=True,
+            )
+            # Last resort: fold if possible, or call if we must
+            try:
+                table.fold()
+            except:
+                try:
+                    table.check_or_call()
+                except Exception as final_e:
+                    raise GameStateError(
+                        f"Cannot recover from error state: {str(final_e)}"
+                    ) from final_e
 
     def _advance_to_next_street(self, table: NoLimitTexasHoldem) -> None:
         """Advance the game to the next street."""
@@ -246,7 +390,11 @@ class PokerGame:
             self.logger.info("Board: 7h 8h 9h Th Jh")
 
         if table.status:
-            table.next_street()
+            # Clear any existing bets and prepare for next street
+            table.collect_bets()
+            table.pull_chips()
+            # Reset betting round
+            table.initialize_street()
 
     def _end_game(self, table: NoLimitTexasHoldem) -> None:
         """Handle end of game logging and winner determination."""
@@ -277,11 +425,11 @@ class PokerGame:
         """Handle all betting rounds for the current street."""
         current_street = table.street_count
         betting_complete = False
-        
+
         while current_street == table.street_count and not betting_complete:
             self._handle_betting_round(table)
             if not table.actor_indices:
                 betting_complete = True
-        
+
         # Move to next street if betting round is complete
         self._advance_to_next_street(table)
