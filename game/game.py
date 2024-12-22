@@ -1,5 +1,5 @@
 import logging
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple
 
 from .betting import betting_round
 from .deck import Deck
@@ -258,24 +258,28 @@ class PokerGame:
 
         # Handle pot distribution
         pot_share = self.pot // len(winners)  # Split pot evenly among winners
-        remainder = self.pot % len(winners)   # Handle any odd chips
+        remainder = self.pot % len(winners)  # Handle any odd chips
 
         logging.info("\nPot distribution:")
         logging.info(f"  - Pot amount: ${self.pot}")
         logging.info(f"  - Eligible players: {[p.name for p in active_players]}")
-        
+
         for winner in winners:
             # First winner gets any odd chips from the split
             chips_won = pot_share + (remainder if winner == winners[0] else 0)
             winner.chips += chips_won
             # Show if this was an all-in win
             all_in_status = " (all-in)" if winner.chips == chips_won else ""
-            logging.info(f"  - {winner.name} wins ${chips_won}{all_in_status} with {winner.hand.evaluate()}")
+            logging.info(
+                f"  - {winner.name} wins ${chips_won}{all_in_status} with {winner.hand.evaluate()}"
+            )
 
         # Verify pot was fully distributed
         total_distributed = pot_share * len(winners) + remainder
         if total_distributed != self.pot:
-            logging.error(f"Error: Pot distribution mismatch! Pot: ${self.pot}, Distributed: ${total_distributed}")
+            logging.error(
+                f"Error: Pot distribution mismatch! Pot: ${self.pot}, Distributed: ${total_distributed}"
+            )
 
         # Log chip movements
         logging.info("\nChip movement summary:")
@@ -283,7 +287,9 @@ class PokerGame:
             true_starting_stack = self.round_starting_stacks[player]
             net_change = player.chips - true_starting_stack
             logging.info(f"  {player.name}:")
-            logging.info(f"    Starting stack (pre-ante/blinds): ${true_starting_stack}")
+            logging.info(
+                f"    Starting stack (pre-ante/blinds): ${true_starting_stack}"
+            )
             logging.info(f"    Net change: ${net_change:+d}")
             logging.info(f"    Final stack: ${player.chips}")
 
@@ -501,7 +507,7 @@ class PokerGame:
         dealer = self.players[self.dealer_index].name
         sb_index = (self.dealer_index + 1) % len(self.players)
         bb_index = (self.dealer_index + 2) % len(self.players)
-        
+
         logging.info(f"\nDealer: {self.players[self.dealer_index].name}")
         logging.info(f"Small Blind: {self.players[sb_index].name}")
         logging.info(f"Big Blind: {self.players[bb_index].name}")
