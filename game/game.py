@@ -133,41 +133,36 @@ class PokerGame:
 
         Logs all chip movements and winning hands for transparency.
         """
-        # Only consider non-folded players
         active_players = [p for p in self.players if not p.folded]
 
         if len(active_players) == 1:
-            # If only one player remains, they win the whole pot
             winner = active_players[0]
-            logging.info(f"Pot size before distribution: ${self.pot}")
-            logging.info(f"{winner.name}'s chips before winning: ${winner.chips}")
             winner.chips += self.pot
-            logging.info(f"{winner.name} wins ${self.pot} chips!")
-            logging.info(f"{winner.name}'s final chips: ${winner.chips}")
-        else:
-            # Find the best hand among active players
-            best_hand = max(p.hand for p in active_players)
-            winners = [p for p in active_players if p.hand == best_hand]
+            logging.info(f"{winner.name} wins ${self.pot} with no contest!")
+            return
 
-            # Split pot evenly among winners
-            split_amount = self.pot // len(winners)
-            remainder = self.pot % len(winners)
-
-            for winner in winners:
-                logging.info(f"{winner.name}'s chips before winning: ${winner.chips}")
+        # Handle side pots first
+        side_pots = self.handle_side_pots()
+        for pot_amount, eligible_players in side_pots:
+            if not eligible_players:
+                continue
+            
+            # Find winner(s) for this pot
+            best_hand = max(p.hand for p in eligible_players)
+            pot_winners = [p for p in eligible_players if p.hand == best_hand]
+            
+            # Split the pot
+            split_amount = pot_amount // len(pot_winners)
+            remainder = pot_amount % len(pot_winners)
+            
+            for winner in pot_winners:
                 winner.chips += split_amount
-                logging.info(
-                    f"{winner.name} wins ${split_amount} chips with {winner.hand}!"
-                )
-                logging.info(f"{winner.name}'s chips after winning: ${winner.chips}")
-
-            # Give any remainder to the first winner
-            if remainder > 0:
-                winners[0].chips += remainder
-                logging.info(
-                    f"{winners[0].name} wins ${remainder} extra chips (remainder)!"
-                )
-                logging.info(f"{winners[0].name}'s final chips: ${winners[0].chips}")
+                if remainder > 0:
+                    winner.chips += 1
+                    remainder -= 1
+                
+                logging.info(f"{winner.name} wins ${split_amount} from pot of ${pot_amount}")
+                logging.info(f"Winning hand: {winner.hand.show()}")
 
         # Reset all bets and pot
         for player in self.players:

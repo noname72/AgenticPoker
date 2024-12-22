@@ -30,18 +30,30 @@ class Hand:
     def __lt__(self, other: "Hand") -> bool:
         """
         Compare if this hand ranks lower than another hand.
-
-        Note: Lower rank numbers indicate better hands in the evaluator (1 is best).
-
+        
         Args:
             other: Hand to compare against
-
+            
         Returns:
             bool: True if this hand ranks lower than the other hand
+            
+        Note: 
+            Compares primary rank first (lower is better), then tiebreakers.
+            For tiebreakers, higher values are better (opposite of primary rank).
         """
-        return (
-            self._get_rank()[0] > other._get_rank()[0]
-        )  # Reversed because 1 is best in evaluator
+        self_rank, self_tiebreakers, _ = self._get_rank()
+        other_rank, other_tiebreakers, _ = other._get_rank()
+        
+        # First compare primary ranks (lower is better)
+        if self_rank != other_rank:
+            return self_rank > other_rank
+            
+        # If ranks are equal, compare each tiebreaker (higher is better)
+        for self_value, other_value in zip(self_tiebreakers, other_tiebreakers):
+            if self_value != other_value:
+                return self_value < other_value
+                
+        return False  # Equal hands
 
     def __gt__(self, other: "Hand") -> bool:
         """Compare hands using poker rankings (lower rank numbers are better)."""

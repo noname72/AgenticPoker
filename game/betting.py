@@ -36,11 +36,12 @@ def betting_round(players: List["Player"], pot: int, start_index: int = 0) -> in
     logging.info(f"Starting betting round - Pot: ${pot}")
     logging.info(f"Active players: {[p.name for p in players if not p.folded]}")
 
-    current_bet = max(p.bet for p in players)  # Start with highest current bet
+    # Track individual contributions this round
+    round_contributions = {p: 0 for p in players}
+    current_bet = max(p.bet for p in players)
     last_raiser = None
     index = start_index
 
-    # Continue until everyone has matched the bet or folded
     while True:
         player = players[index]
 
@@ -70,25 +71,30 @@ def betting_round(players: List["Player"], pot: int, start_index: int = 0) -> in
             player.fold()
             logging.info(f"{player.name} folds (chips remaining: ${player.chips})")
         elif action == "call":
-            call_amount = current_bet - player.bet
+            call_amount = min(current_bet - player.bet, player.chips)  # Consider all-in
             if call_amount > 0:
                 actual_bet = player.place_bet(call_amount)
+                round_contributions[player] += actual_bet
                 pot += actual_bet
                 logging.info(
-                    f"{player.name} calls ${actual_bet} (chips remaining: ${player.chips})"
+                    f"{player.name} calls ${actual_bet} (total this round: ${round_contributions[player]}, "
+                    f"chips remaining: ${player.chips})"
                 )
         elif action.startswith("raise"):
             _, raise_amount = action.split()
             raise_amount = min(int(raise_amount), player.chips)
-            total_bet = current_bet - player.bet + raise_amount
+            total_bet = min(current_bet - player.bet + raise_amount, player.chips)
 
             if total_bet > 0:
                 actual_bet = player.place_bet(total_bet)
+                round_contributions[player] += actual_bet
                 pot += actual_bet
                 current_bet = player.bet
                 last_raiser = player
                 logging.info(
-                    f"{player.name} raises ${raise_amount} to ${current_bet} (chips remaining: ${player.chips})"
+                    f"{player.name} raises ${raise_amount} to ${current_bet} "
+                    f"(total this round: ${round_contributions[player]}, "
+                    f"chips remaining: ${player.chips})"
                 )
         else:  # check
             if current_bet > player.bet:
@@ -97,7 +103,12 @@ def betting_round(players: List["Player"], pot: int, start_index: int = 0) -> in
             else:
                 logging.info(f"{player.name} checks")
 
-        logging.info(f"Pot is now: ${pot}")
+        # Add detailed pot tracking after each action
+        logging.info(f"\nCurrent pot: ${pot}")
+        logging.info("Round contributions:")
+        for p, amount in round_contributions.items():
+            if amount > 0:
+                logging.info(f"  {p.name}: ${amount}")
 
         # Check if only one player remains
         active_players = [p for p in players if not p.folded]
