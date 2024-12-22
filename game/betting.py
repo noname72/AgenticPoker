@@ -6,45 +6,24 @@ from game.player import Player
 
 def betting_round(players: List["Player"], pot: int, start_index: int = 0) -> int:
     """
-    Conducts a complete betting round in a poker game.
+    Execute a betting round and return the final pot amount.
 
     Args:
-        players: List of Player objects participating in the game
-        pot: Current size of the pot in dollars
-        start_index: Index of the player who starts the betting round (default: 0)
+        players: List of players in the game
+        pot: Current pot amount
+        start_index: Starting player position (default 0)
 
     Returns:
-        int: Updated pot size after the betting round completes
-
-    Note:
-        The round continues until either:
-        - Only one player remains (others folded)
-        - All active players have matched the current bet or are all-in
+        int: Final pot amount after betting round
     """
-    logging.info(f"\n{'='*20} BETTING ROUND {'='*20}")
-    logging.info(f"Starting pot: ${pot}")
-
-    # Track contributions separately from the pot
-    round_contributions = {p: 0 for p in players}
+    betting_complete = False
+    index = start_index
     current_bet = max(p.bet for p in players)
     last_raiser = None
-    index = start_index
-    betting_complete = False
+    round_contributions = {p: 0 for p in players}  # Track this round's contributions
 
-    # Log initial state
-    logging.info("\nInitial state:")
-    for player in players:
-        if not player.folded:
-            logging.info(f"  {player.name}: ${player.chips} chips, ${player.bet} bet")
-
-    while not betting_complete:
-        active_players = [p for p in players if not p.folded]
-
-        # End conditions
-        if len(active_players) <= 1:
-            betting_complete = True
-            break
-
+    active_players = [p for p in players if not p.folded]
+    while not betting_complete and len(active_players) > 1:
         # Check if all active players have matched the current bet or are all-in
         all_matched = all(
             (p.bet == current_bet or p.chips == 0) for p in active_players
@@ -73,27 +52,32 @@ def betting_round(players: List["Player"], pot: int, start_index: int = 0) -> in
         if action == "fold":
             player.fold()
             log_action(player, "fold", current_bet=current_bet, pot=pot)
+            active_players = [p for p in players if not p.folded]
+
         elif action == "call":
             call_amount = min(current_bet - player.bet, player.chips)
             if call_amount > 0:
+                previous_bet = player.bet
                 actual_bet = player.place_bet(call_amount)
-                round_contributions[player] += actual_bet
+                round_contributions[player] = actual_bet
                 pot += actual_bet
                 log_action(
                     player, "call", amount=actual_bet, current_bet=current_bet, pot=pot
                 )
+
         elif action.startswith("raise"):
             # Force a true all-in if the declaration says "all in"
             if "all in" in action.lower():
-                total_bet = player.chips
+                raise_total = player.chips
             else:
                 _, raise_amount = action.split()
                 raise_amount = min(int(raise_amount), player.chips)
-                total_bet = min(current_bet - player.bet + raise_amount, player.chips)
+                raise_total = min(current_bet - player.bet + raise_amount, player.chips)
 
-            if total_bet > 0:
-                actual_bet = player.place_bet(total_bet)
-                round_contributions[player] += actual_bet
+            if raise_total > 0:
+                previous_bet = player.bet
+                actual_bet = player.place_bet(raise_total)
+                round_contributions[player] = actual_bet
                 pot += actual_bet
                 current_bet = player.bet
                 last_raiser = index
@@ -101,23 +85,7 @@ def betting_round(players: List["Player"], pot: int, start_index: int = 0) -> in
                     player, "raise", amount=actual_bet, current_bet=current_bet, pot=pot
                 )
 
-        # Log detailed pot update after each action
-        logging.info(f"\nPot after action: ${pot}")
-        logging.info("Round contributions so far:")
-        for p, amount in round_contributions.items():
-            if amount > 0:
-                logging.info(f"  {p.name}: ${amount}")
-
         index = (index + 1) % len(players)
-
-    # Log round summary
-    logging.info("\nBetting round complete:")
-    logging.info(f"Final pot: ${pot}")
-    logging.info("Total contributions this round:")
-    for player, amount in round_contributions.items():
-        if amount > 0:
-            logging.info(f"  {player.name}: ${amount}")
-    logging.info(f"{'='*50}\n")
 
     return pot
 

@@ -1,5 +1,5 @@
 import logging
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
 from .betting import betting_round
 from .deck import Deck
@@ -70,38 +70,44 @@ class PokerGame:
     def blinds_and_antes(self) -> None:
         """
         Collect mandatory bets (blinds and antes) at the start of each hand.
-
-        Processes in order:
-        1. Collects 1-chip ante from each player who has chips
-        2. Collects small blind from player left of dealer
-        3. Collects big blind from player two left of dealer
-
-        Note: Players cannot bet more than their remaining chips.
         """
         sb_index = (self.dealer_index + 1) % len(self.players)
         bb_index = (self.dealer_index + 2) % len(self.players)
 
-        # Collect antes first
-        logging.info("\nCollecting antes...")
-        for player in self.players:
-            if player.chips > 0:
-                ante_amount = player.place_bet(1)
-                self.pot += ante_amount
-                logging.info(f"{player.name} posts ante of ${ante_amount}")
+        # Collect antes first (if using antes)
+        ante_amount = 1  # Consider making this configurable
+        total_antes = 0
+        if ante_amount > 0:  # Only collect and log antes if they're being used
+            logging.info("\nCollecting antes ($1 from each player)...")
+            for player in self.players:
+                if player.chips > 0:
+                    actual_ante = player.place_bet(ante_amount)
+                    total_antes += actual_ante
+                    if actual_ante > 0:
+                        logging.info(f"{player.name} posts ante of ${actual_ante}")
+            if total_antes > 0:
+                self.pot += total_antes
+                logging.info(f"Total antes collected: ${total_antes}")
 
         # Collect blinds
         logging.info("\nCollecting blinds...")
+
+        # Small blind
         sb_player = self.players[sb_index]
         sb_amount = min(self.small_blind, sb_player.chips)
-        sb_player.place_bet(sb_amount)
-        self.pot += sb_amount
-        logging.info(f"{sb_player.name} posts small blind of ${sb_amount}")
+        actual_sb = sb_player.place_bet(sb_amount)
+        self.pot += actual_sb
+        logging.info(f"{sb_player.name} posts small blind of ${actual_sb}")
 
+        # Big blind
         bb_player = self.players[bb_index]
         bb_amount = min(self.big_blind, bb_player.chips)
-        bb_player.place_bet(bb_amount)
-        self.pot += bb_amount
-        logging.info(f"{bb_player.name} posts big blind of ${bb_amount}")
+        actual_bb = bb_player.place_bet(bb_amount)
+        self.pot += actual_bb
+        logging.info(f"{bb_player.name} posts big blind of ${actual_bb}")
+
+        # Log total pot after all mandatory bets
+        logging.info(f"\nStarting pot: ${self.pot} (includes ${total_antes} in antes)")
 
         # Advance dealer position
         self.dealer_index = (self.dealer_index + 1) % len(self.players)
@@ -299,15 +305,24 @@ class PokerGame:
 
             # Pre-draw betting
             logging.info("\n--- Pre-Draw Betting ---")
+            initial_chips = {p: p.chips for p in self.players}  # Track starting chips
             self.pot = betting_round(self.players, self.pot)
 
-            # Check if only one player remains
+            # Check if only one player remains after pre-draw betting
             active_players = [p for p in self.players if not p.folded]
             if len(active_players) == 1:
                 winner = active_players[0]
                 winner.chips += self.pot
+                logging.info(f"\n{winner.name} wins ${self.pot} (all others folded)")
+                # Log chip movements
+                for player in self.players:
+                    if player.chips != initial_chips[player]:
+                        logging.info(
+                            f"{player.name}: ${initial_chips[player]} → ${player.chips}"
+                        )
                 self._log_chip_summary()
                 self.round_count += 1
+                self._reset_round()  # Reset for next round
                 continue
 
             # Draw phase
@@ -324,10 +339,18 @@ class PokerGame:
             else:
                 winner = active_players[0]
                 winner.chips += self.pot
+                logging.info(f"\n{winner.name} wins ${self.pot} (all others folded)")
                 self._log_chip_summary()
 
+            # After showdown or single winner
+            for player in self.players:
+                if player.chips != initial_chips[player]:
+                    logging.info(
+                        f"{player.name}: ${initial_chips[player]} → ${player.chips}"
+                    )
+
             self.round_count += 1
-            self.pot = 0  # Reset pot for next round
+            self._reset_round()  # Reset for next round
 
         # Log final game results
         logging.info("\n=== Game Summary ===")
@@ -455,3 +478,9 @@ class PokerGame:
             else:
                 # Non-AI players keep their hand
                 logging.info("Keeping current hand")
+
+    def _reset_round(self) -> None:
+        """Reset game state for the next round."""
+        self.pot = 0
+        for player in self.players:
+            player.reset_for_new_round()

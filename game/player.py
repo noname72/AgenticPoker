@@ -44,30 +44,15 @@ class Player:
 
     def place_bet(self, amount: int) -> int:
         """
-        Place a bet for the player, handling all-in situations automatically.
-
-        If the requested bet amount exceeds the player's chips, the player goes
-        all-in with their remaining chips instead.
-
-        Args:
-            amount (int): The amount of chips to bet
-
-        Returns:
-            int: The actual amount bet (may be less than requested if player goes all-in)
-
-        Side Effects:
-            - Reduces player's chip count
-            - Increases player's current bet
-            - Logs betting actions and all-in situations
+        Place a bet, ensuring it doesn't exceed available chips.
+        Returns the actual amount bet.
         """
-        if amount > self.chips:
-            logging.info(f"{self.name} is all in with {self.chips} chips!")
-            amount = self.chips
-
-        logging.debug(f"{self.name} betting {amount} chips (had {self.chips})")
+        amount = min(amount, self.chips)  # Can't bet more than you have
         self.chips -= amount
         self.bet += amount
-        logging.debug(f"{self.name} now has {self.chips} chips and bet {self.bet}")
+        logging.debug(
+            f"{self.name} bets ${amount} (total bet: ${self.bet}, chips left: ${self.chips})"
+        )
         return amount
 
     def fold(self) -> None:
@@ -92,6 +77,12 @@ class Player:
         previous_bet = self.bet
         self.bet = 0
         logging.debug(f"{self.name}'s bet reset from {previous_bet} to 0")
+
+    def reset_for_new_round(self) -> None:
+        """Reset player state for a new round."""
+        self.bet = 0
+        self.folded = False
+        logging.debug(f"{self.name}'s state reset for new round")
 
     def __str__(self) -> str:
         """
