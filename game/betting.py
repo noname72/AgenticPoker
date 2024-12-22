@@ -33,12 +33,18 @@ def betting_round(players: List["Player"], pot: int, start_index: int = 0) -> in
             b) Gone all-in for a lesser amount
             c) Folded
     """
-    logging.info(f"Starting betting round - Pot: ${pot}")
-    logging.info(f"Active players: {[p.name for p in players if not p.folded]}")
+    logging.info(f"\n{'='*20} BETTING ROUND {'='*20}")
+    logging.info(f"Starting pot: ${pot}")
 
-    # Track individual contributions this round
     round_contributions = {p: 0 for p in players}
     current_bet = max(p.bet for p in players)
+
+    logging.info("\nInitial state:")
+    for player in players:
+        if not player.folded:
+            logging.info(f"  {player.name}: ${player.chips} chips, ${player.bet} bet")
+
+    # Track individual contributions this round
     last_raiser = None
     index = start_index
 
@@ -69,16 +75,15 @@ def betting_round(players: List["Player"], pot: int, start_index: int = 0) -> in
 
         if action == "fold":
             player.fold()
-            logging.info(f"{player.name} folds (chips remaining: ${player.chips})")
+            log_action(player, "fold", current_bet=current_bet, pot=pot)
         elif action == "call":
-            call_amount = min(current_bet - player.bet, player.chips)  # Consider all-in
+            call_amount = min(current_bet - player.bet, player.chips)
             if call_amount > 0:
                 actual_bet = player.place_bet(call_amount)
                 round_contributions[player] += actual_bet
                 pot += actual_bet
-                logging.info(
-                    f"{player.name} calls ${actual_bet} (total this round: ${round_contributions[player]}, "
-                    f"chips remaining: ${player.chips})"
+                log_action(
+                    player, "call", amount=actual_bet, current_bet=current_bet, pot=pot
                 )
         elif action.startswith("raise"):
             _, raise_amount = action.split()
@@ -91,17 +96,15 @@ def betting_round(players: List["Player"], pot: int, start_index: int = 0) -> in
                 pot += actual_bet
                 current_bet = player.bet
                 last_raiser = player
-                logging.info(
-                    f"{player.name} raises ${raise_amount} to ${current_bet} "
-                    f"(total this round: ${round_contributions[player]}, "
-                    f"chips remaining: ${player.chips})"
+                log_action(
+                    player, "raise", amount=actual_bet, current_bet=current_bet, pot=pot
                 )
         else:  # check
             if current_bet > player.bet:
                 player.fold()
-                logging.info(f"{player.name} folds (invalid check)")
+                log_action(player, "fold", current_bet=current_bet, pot=pot)
             else:
-                logging.info(f"{player.name} checks")
+                log_action(player, "check", current_bet=current_bet, pot=pot)
 
         # Add detailed pot tracking after each action
         logging.info(f"\nCurrent pot: ${pot}")
@@ -117,8 +120,13 @@ def betting_round(players: List["Player"], pot: int, start_index: int = 0) -> in
 
         index = (index + 1) % len(players)
 
-    logging.info(f"\nBetting round complete - Final pot: ${pot}")
-    logging.info(f"Remaining players: {[p.name for p in players if not p.folded]}\n")
+    logging.info("\nBetting round complete:")
+    logging.info(f"Final pot: ${pot}")
+    logging.info("Player contributions this round:")
+    for player, amount in round_contributions.items():
+        if amount > 0:
+            logging.info(f"  {player.name}: ${amount}")
+    logging.info(f"{'='*50}\n")
     return pot
 
 
@@ -167,3 +175,30 @@ def decide_action(player: "Player", current_bet: int, raised: bool) -> str:
         )
     else:
         return random.choice(["fold", "call", f"raise {random.choice([10, 20])}"])
+
+
+def log_action(
+    player: "Player", action: str, amount: int = 0, current_bet: int = 0, pot: int = 0
+) -> None:
+    """
+    Helper to log player actions consistently.
+
+    Args:
+        player: The player taking the action
+        action: The type of action ("fold", "call", "raise", or "check")
+        amount: The amount bet/called/raised (if applicable)
+        current_bet: The current bet amount to call
+        pot: The current pot size
+    """
+    action_str = {
+        "fold": "folds",
+        "call": f"calls ${amount}",
+        "raise": f"raises to ${amount}",
+        "check": "checks",
+    }[action]
+
+    logging.info(f"\n{player.name} {action_str}")
+    logging.info(f"  Chips remaining: ${player.chips}")
+    logging.info(f"  Current pot: ${pot}")
+    if current_bet > 0:
+        logging.info(f"  Current bet to call: ${current_bet}")

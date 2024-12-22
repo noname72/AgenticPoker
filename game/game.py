@@ -48,6 +48,13 @@ class PokerGame:
         self.big_blind = big_blind
         self.dealer_index = 0
         self.round_count = 0
+        self.round_number = 0
+        logging.info(f"\n{'='*50}")
+        logging.info(f"Game started with {len(player_names)} players")
+        logging.info(f"Starting chips: ${starting_chips}")
+        logging.info(f"Blinds: ${small_blind}/${big_blind}")
+        logging.info(f"Players: {', '.join(player_names)}")
+        logging.info(f"{'='*50}\n")
 
     def blinds_and_antes(self) -> None:
         """
@@ -122,52 +129,106 @@ class PokerGame:
 
     def showdown(self) -> None:
         """
-        Evaluate hands and distribute pot(s) to the winner(s).
+        Handle the showdown phase of the poker game and distribute pot(s) to winner(s).
 
-        Handles:
-        - Single winner scenarios (all others folded)
-        - Multiple active players with hand comparisons
-        - Equal splitting of pots among tied winners
-        - Distribution of remainder chips to first winner
-        - Resetting of betting state for next hand
+        This method manages the end-of-round chip distribution, including:
+        1. Single winner scenarios (when all other players folded)
+        2. Multiple winner scenarios with potential split pots
+        3. Side pot calculations for all-in situations
+        4. Detailed logging of chip movements and final positions
 
-        Logs all chip movements and winning hands for transparency.
+        The distribution process:
+        1. Identifies active (non-folded) players
+        2. Handles uncontested pots (single player remaining)
+        3. Creates and distributes side pots if necessary
+        4. Determines winner(s) based on hand rankings
+        5. Splits pots evenly among tied winners
+        6. Handles remainder chips from uneven splits
+        7. Logs detailed chip movements and final standings
+
+        Side Effects:
+            - Updates player chip counts
+            - Logs game state and chip movements
+            - Resets pot to 0 for next round
+
+        Note:
+            This method assumes that all betting rounds are complete and
+            the pot contains the correct amount of chips.
         """
-        active_players = [p for p in self.players if not p.folded]
+        logging.info(f"\n{'='*20} SHOWDOWN {'='*20}")
 
+        active_players = [p for p in self.players if not p.folded]
+        logging.info("\nActive players and their hands:")
+        for player in active_players:
+            logging.info(f"  {player.name}: {player.hand.show()}")
+
+        # Single player remaining (everyone else folded)
         if len(active_players) == 1:
             winner = active_players[0]
+            initial_chips = winner.chips  # Track chips before adding pot
             winner.chips += self.pot
-            logging.info(f"{winner.name} wins ${self.pot} with no contest!")
+
+            logging.info(f"\n{winner.name} wins ${self.pot} uncontested!")
+            logging.info(f"  Starting chips: ${initial_chips}")
+            logging.info(f"  Pot won: ${self.pot}")
+            logging.info(f"  Final chips: ${winner.chips}")
+
+            self._log_chip_summary()
             return
 
-        # Handle side pots first
+        # Multiple players - handle side pots
         side_pots = self.handle_side_pots()
+
+        # Track initial chips before distribution
+        initial_chips = {p: p.chips for p in self.players}
+
+        logging.info("\nPot distribution:")
         for pot_amount, eligible_players in side_pots:
             if not eligible_players:
                 continue
-            
+
+            logging.info(f"  Pot amount: ${pot_amount}")
+            logging.info(f"  Eligible players: {[p.name for p in eligible_players]}")
+
             # Find winner(s) for this pot
             best_hand = max(p.hand for p in eligible_players)
             pot_winners = [p for p in eligible_players if p.hand == best_hand]
-            
+
             # Split the pot
             split_amount = pot_amount // len(pot_winners)
             remainder = pot_amount % len(pot_winners)
-            
+
             for winner in pot_winners:
                 winner.chips += split_amount
                 if remainder > 0:
                     winner.chips += 1
                     remainder -= 1
-                
-                logging.info(f"{winner.name} wins ${split_amount} from pot of ${pot_amount}")
-                logging.info(f"Winning hand: {winner.hand.show()}")
 
-        # Reset all bets and pot
+                logging.info(
+                    f"  {winner.name} wins ${split_amount} with {winner.hand.evaluate()}"
+                )
+
+        # Log detailed chip movements
+        logging.info("\nChip movement summary:")
         for player in self.players:
-            player.bet = 0
-        self.pot = 0
+            net_change = player.chips - initial_chips[player]
+            logging.info(f"  {player.name}:")
+            logging.info(f"    Starting chips: ${initial_chips[player]}")
+            logging.info(
+                f"    Net change: ${net_change:+d}"
+            )  # +:d shows + for positive numbers
+            logging.info(f"    Final chips: ${player.chips}")
+
+        self._log_chip_summary()
+
+    def _log_chip_summary(self) -> None:
+        """Log a summary of all players' chip counts, sorted by amount."""
+        logging.info("\nFinal chip counts (sorted by amount):")
+        # Sort players by chip count, descending
+        sorted_players = sorted(self.players, key=lambda p: p.chips, reverse=True)
+        for player in sorted_players:
+            logging.info(f"  {player.name}: ${player.chips}")
+        logging.info(f"{'='*50}\n")
 
     def remove_bankrupt_players(self) -> bool:
         """
@@ -271,3 +332,23 @@ class PokerGame:
             logging.info("\nBankrupt Players:")
             for player in bankrupt_players:
                 logging.info(f"- {player.name}")
+
+    def start_round(self) -> None:
+        """Start a new round of poker."""
+        self.round_number += 1
+        logging.info(f"\n{'='*50}")
+        logging.info(f"Round {self.round_number}")
+        logging.info(f"{'='*50}")
+
+        # Log player states at start of round
+        logging.info("\nChip counts:")
+        for player in self.players:
+            logging.info(f"  {player.name}: ${player.chips}")
+
+        # Log dealer and blind positions
+        dealer = self.players[self.dealer_index].name
+        sb_player = self.players[(self.dealer_index + 1) % len(self.players)].name
+        bb_player = self.players[(self.dealer_index + 2) % len(self.players)].name
+        logging.info(f"\nDealer: {dealer}")
+        logging.info(f"Small Blind: {sb_player}")
+        logging.info(f"Big Blind: {bb_player}\n")
