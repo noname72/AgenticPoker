@@ -247,23 +247,43 @@ class PokerGame:
             self._log_chip_summary()
             return
 
-        # All-in showdown
-        all_in_players = [p for p in active_players if p.chips == 0]
-        if len(all_in_players) == len(active_players):
-            logging.info("\nAll players are all-in!")
+        # Multiple players - show hands and determine winner
+        logging.info("\nFinal hands:")
+        for player in active_players:
+            logging.info(f"{player.name}: {player.hand.show()}")
 
-        # Multiple players - handle side pots
-        side_pots = self.handle_side_pots()
+        # Find best hand(s)
+        best_hand = max(active_players, key=lambda p: p.hand)
+        winners = [p for p in active_players if p.hand == best_hand.hand]
 
-        # Log detailed chip movements
+        # Handle pot distribution
+        pot_share = self.pot // len(winners)  # Split pot evenly among winners
+        remainder = self.pot % len(winners)   # Handle any odd chips
+
+        logging.info("\nPot distribution:")
+        logging.info(f"  - Pot amount: ${self.pot}")
+        logging.info(f"  - Eligible players: {[p.name for p in active_players]}")
+        
+        for winner in winners:
+            # First winner gets any odd chips from the split
+            chips_won = pot_share + (remainder if winner == winners[0] else 0)
+            winner.chips += chips_won
+            # Show if this was an all-in win
+            all_in_status = " (all-in)" if winner.chips == chips_won else ""
+            logging.info(f"  - {winner.name} wins ${chips_won}{all_in_status} with {winner.hand.evaluate()}")
+
+        # Verify pot was fully distributed
+        total_distributed = pot_share * len(winners) + remainder
+        if total_distributed != self.pot:
+            logging.error(f"Error: Pot distribution mismatch! Pot: ${self.pot}, Distributed: ${total_distributed}")
+
+        # Log chip movements
         logging.info("\nChip movement summary:")
         for player in self.players:
             true_starting_stack = self.round_starting_stacks[player]
             net_change = player.chips - true_starting_stack
             logging.info(f"  {player.name}:")
-            logging.info(
-                f"    Starting stack (pre-ante/blinds): ${true_starting_stack}"
-            )
+            logging.info(f"    Starting stack (pre-ante/blinds): ${true_starting_stack}")
             logging.info(f"    Net change: ${net_change:+d}")
             logging.info(f"    Final stack: ${player.chips}")
 
@@ -454,6 +474,9 @@ class PokerGame:
         logging.info(f"Round {self.round_number}")
         logging.info(f"{'='*50}")
 
+        # Ensure dealer index is valid for current number of players
+        self.dealer_index = self.dealer_index % len(self.players)
+
         # Store true starting stacks before any deductions
         self.round_starting_stacks = {player: player.chips for player in self.players}
 
@@ -476,11 +499,12 @@ class PokerGame:
 
         # Log dealer and blind positions
         dealer = self.players[self.dealer_index].name
-        sb_player = self.players[(self.dealer_index + 1) % len(self.players)].name
-        bb_player = self.players[(self.dealer_index + 2) % len(self.players)].name
-        logging.info(f"\nDealer: {dealer}")
-        logging.info(f"Small Blind: {sb_player}")
-        logging.info(f"Big Blind: {bb_player}")
+        sb_index = (self.dealer_index + 1) % len(self.players)
+        bb_index = (self.dealer_index + 2) % len(self.players)
+        
+        logging.info(f"\nDealer: {self.players[self.dealer_index].name}")
+        logging.info(f"Small Blind: {self.players[sb_index].name}")
+        logging.info(f"Big Blind: {self.players[bb_index].name}")
 
         # Let AI players send pre-round messages
         for player in self.players:

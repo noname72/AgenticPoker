@@ -23,6 +23,19 @@ def betting_round(players: List["Player"], pot: int, start_index: int = 0) -> in
     round_contributions = {p: 0 for p in players}  # Track this round's contributions
 
     active_players = [p for p in players if not p.folded]
+    
+    # If all players are all-in, skip betting
+    if all(p.chips == 0 for p in active_players):
+        logging.info("All active players are all-in - no more betting possible")
+        return pot
+        
+    # If only one player has chips, they can still bet but others are locked
+    players_with_chips = [p for p in active_players if p.chips > 0]
+    if len(players_with_chips) == 1:
+        logging.info(f"Only {players_with_chips[0].name} has chips remaining")
+        # Allow them to bet into the pot if they want
+        # Other players are committed but can still win their share
+        
     while not betting_complete and len(active_players) > 1:
         # Check if all active players have matched the current bet or are all-in
         all_matched = all(
