@@ -36,6 +36,7 @@ class PokerGame:
         big_blind: int = 20,
         max_rounds: Optional[int] = None,
         ante: int = 0,
+        session_id: Optional[str] = None,
     ) -> None:
         """
         Initialize a new poker game.
@@ -47,11 +48,16 @@ class PokerGame:
             big_blind (int, optional): Big blind bet amount. Defaults to 20.
             max_rounds (Optional[int], optional): Maximum number of rounds to play. Defaults to None.
             ante (int, optional): Mandatory bet required from all players. Defaults to 0.
+            session_id (Optional[str], optional): Unique identifier for this game session.
+                If None, uses timestamp-based ID.
 
         Example:
             >>> game = PokerGame(['Alice', 'Bob', 'Charlie'], starting_chips=500)
             >>> game = PokerGame(player_list, small_blind=5, big_blind=10, ante=1)
         """
+        # Initialize session-specific logging
+        self.session_id = session_id
+
         self.deck = Deck()
         # Convert names to players if needed
         if players and isinstance(players[0], str):
@@ -66,13 +72,17 @@ class PokerGame:
         self.round_number = 0
         self.max_rounds = max_rounds
         self.ante = ante
+
+        # Log game configuration with clear session context
         logging.info(f"\n{'='*50}")
-        logging.info(f"Game started with {len(players)} players")
+        logging.info(f"Game Configuration")
+        logging.info(f"{'='*50}")
+        logging.info(f"Players: {', '.join([p.name for p in players])}")
         logging.info(f"Starting chips: ${starting_chips}")
         logging.info(f"Blinds: ${small_blind}/${big_blind}")
+        logging.info(f"Ante: ${ante}")
         if max_rounds:
             logging.info(f"Max rounds: {max_rounds}")
-        logging.info(f"Players: {', '.join([p.name for p in players])}")
         logging.info(f"{'='*50}\n")
 
     def blinds_and_antes(self) -> None:
@@ -267,45 +277,17 @@ class PokerGame:
         # Multiple players - handle side pots
         side_pots = self.handle_side_pots()
 
-        # Track initial chips before distribution
-        initial_chips = {p: p.chips for p in self.players}
-
-        logging.info("\nPot distribution:")
-        for pot_amount, eligible_players in side_pots:
-            if not eligible_players:
-                continue
-
-            logging.info(f"  Pot amount: ${pot_amount}")
-            logging.info(f"  Eligible players: {[p.name for p in eligible_players]}")
-
-            # Find winner(s) for this pot
-            best_hand = max(p.hand for p in eligible_players)
-            pot_winners = [p for p in eligible_players if p.hand == best_hand]
-
-            # Split the pot
-            split_amount = pot_amount // len(pot_winners)
-            remainder = pot_amount % len(pot_winners)
-
-            for winner in pot_winners:
-                winner.chips += split_amount
-                if remainder > 0:
-                    winner.chips += 1
-                    remainder -= 1
-
-                logging.info(
-                    f"  {winner.name} wins ${split_amount} with {winner.hand.evaluate()}"
-                )
-
         # Log detailed chip movements
         logging.info("\nChip movement summary:")
         for player in self.players:
-            net_change = player.chips - initial_chips[player]
+            true_starting_stack = self.round_starting_stacks[player]
+            net_change = player.chips - true_starting_stack
             logging.info(f"  {player.name}:")
-            logging.info(f"    Starting chips: ${initial_chips[player]}")
             logging.info(
-                f"    Net change: ${net_change:+d}"
-            )  # +:d shows + for positive numbers
-            logging.info(f"    Final chips: ${player.chips}")
+                f"    Starting stack (pre-ante/blinds): ${true_starting_stack}"
+            )
+            logging.info(f"    Net change: ${net_change:+d}")
+            logging.info(f"    Final stack: ${player.chips}")
 
         self._log_chip_summary()
 
@@ -558,25 +540,28 @@ class PokerGame:
             4. Display chip counts and AI messages
         """
         self.round_number += 1
-        self.pot = 0  # Reset pot at start of round
+        self.pot = 0
 
         logging.info(f"\n{'='*50}")
         logging.info(f"Round {self.round_number}")
         logging.info(f"{'='*50}")
 
+        # Store true starting stacks before any deductions
+        self.round_starting_stacks = {player: player.chips for player in self.players}
+
         # Reset deck and deal new hands
         self.deck = Deck()
         self.deck.shuffle()
         for player in self.players:
-            player.bet = 0  # Reset player bets
-            player.folded = False  # Reset folded status
-            player.hand = Hand()  # Reset hand
-            player.hand.add_cards(self.deck.deal(5))  # Deal new cards
+            player.bet = 0
+            player.folded = False
+            player.hand = Hand()
+            player.hand.add_cards(self.deck.deal(5))
 
-        # Log player states at start of round
-        logging.info("\nChip counts:")
+        # Log true starting stacks before any deductions
+        logging.info("\nStarting stacks (before antes/blinds):")
         for player in self.players:
-            logging.info(f"  {player.name}: ${player.chips}")
+            logging.info(f"  {player.name}: ${self.round_starting_stacks[player]}")
 
         # Log dealer and blind positions
         dealer = self.players[self.dealer_index].name
@@ -592,7 +577,6 @@ class PokerGame:
                 game_state = f"Round {self.round_number}, Your chips: ${player.chips}"
                 message = player.get_message(game_state)
                 if message:
-                    # Remove or replace problematic characters
                     message = message.encode("ascii", "replace").decode("ascii")
                     logging.info(f"\n{player.name} says: {message}")
 
