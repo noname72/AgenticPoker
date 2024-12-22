@@ -7,7 +7,7 @@ from datetime import datetime
 session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 # Set up logging with session ID
-setup_logging(session_id)
+setup_logging(0)
 
 # Create AI players with different strategies
 players = [
@@ -24,7 +24,7 @@ game = PokerGame(
     small_blind=50,
     big_blind=100,
     ante=10,
-    session_id=session_id
+    session_id=0
 )
 
 game.start_game()

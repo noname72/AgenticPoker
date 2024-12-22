@@ -88,23 +88,6 @@ class PokerGame:
     def blinds_and_antes(self) -> None:
         """
         Collect mandatory bets (blinds and antes) at the start of each hand.
-
-        Collects antes from all players first (if applicable), then collects small
-        and big blinds from eligible players. Handles cases where players may not
-        have enough chips for full blind amounts.
-
-        Side Effects:
-            - Updates player chip counts
-            - Updates pot size
-            - Advances dealer position
-            - Logs all bet actions and chip movements
-
-        Example:
-            If small_blind=10, big_blind=20, ante=1 with three players:
-            1. Collect $1 ante from each player ($3 total)
-            2. Collect $10 small blind from player after dealer
-            3. Collect $20 big blind from next player
-            4. Total pot starts at $33
         """
         # Calculate blind positions
         sb_index = (self.dealer_index + 1) % len(self.players)
@@ -123,7 +106,10 @@ class PokerGame:
                     if actual_ante > 0:
                         actual_ante = player.place_bet(actual_ante)
                         total_antes += actual_ante
-                        logging.info(f"{player.name} posts ante of ${actual_ante}")
+                        status = " (all in)" if player.chips == 0 else ""
+                        logging.info(
+                            f"{player.name} posts ante of ${actual_ante}{status}"
+                        )
             if total_antes > 0:
                 self.pot += total_antes
                 logging.info(f"Total antes collected: ${total_antes}")
@@ -131,23 +117,37 @@ class PokerGame:
         # Collect blinds
         logging.info("\nCollecting blinds...")
 
-        # Small blind
+        # Small blind - player can go all-in for less
         sb_player = self.players[sb_index]
         if sb_player.chips > 0:
             actual_sb = min(self.small_blind, sb_player.chips)
             actual_sb = sb_player.place_bet(actual_sb)
             self.pot += actual_sb
             status = " (all in)" if sb_player.chips == 0 else ""
-            logging.info(f"{sb_player.name} posts small blind of ${actual_sb}{status}")
+            if actual_sb < self.small_blind:
+                logging.info(
+                    f"{sb_player.name} posts partial small blind of ${actual_sb}{status}"
+                )
+            else:
+                logging.info(
+                    f"{sb_player.name} posts small blind of ${actual_sb}{status}"
+                )
 
-        # Big blind
+        # Big blind - player can go all-in for less
         bb_player = self.players[bb_index]
         if bb_player.chips > 0:
             actual_bb = min(self.big_blind, bb_player.chips)
             actual_bb = bb_player.place_bet(actual_bb)
             self.pot += actual_bb
             status = " (all in)" if bb_player.chips == 0 else ""
-            logging.info(f"{bb_player.name} posts big blind of ${actual_bb}{status}")
+            if actual_bb < self.big_blind:
+                logging.info(
+                    f"{bb_player.name} posts partial big blind of ${actual_bb}{status}"
+                )
+            else:
+                logging.info(
+                    f"{bb_player.name} posts big blind of ${actual_bb}{status}"
+                )
 
         # Log total pot after all mandatory bets
         logging.info(
@@ -290,31 +290,15 @@ class PokerGame:
     def remove_bankrupt_players(self) -> bool:
         """
         Remove players with zero chips and check if game should continue.
-
-        Removes bankrupt players from the game and determines if enough players
-        remain to continue playing. A player is considered bankrupt when they
-        have zero chips remaining.
-
-        Returns:
-            bool: True if game should continue (2+ players remain),
-                 False if game should end (0-1 players remain)
-
-        Side Effects:
-            - Modifies self.players list by removing bankrupt players
-            - Logs game over message if insufficient players remain
-
-        Example:
-            >>> game.remove_bankrupt_players()
-            True  # Game continues with remaining players
-            >>> game.remove_bankrupt_players()
-            False  # Game ends with 0-1 players remaining
+        Players are only removed when they have exactly 0 chips.
         """
+        # Only remove players with exactly 0 chips
         self.players = [player for player in self.players if player.chips > 0]
 
         # If only one player remains, declare them the winner and end the game
         if len(self.players) == 1:
             logging.info(
-                f"\nGame Over! {self.players[0].name} wins with {self.players[0].chips} chips!"
+                f"\nGame Over! {self.players[0].name} wins with ${self.players[0].chips}!"
             )
             return False
         elif len(self.players) == 0:
@@ -462,31 +446,6 @@ class PokerGame:
     def start_round(self) -> None:
         """
         Start a new round of poker.
-
-        Performs round initialization:
-        1. Increments round counter
-        2. Resets pot and deck
-        3. Deals new 5-card hands to all players
-        4. Resets player states (bets, folded status)
-        5. Logs round information (dealer, blinds, chip counts)
-
-        Side Effects:
-            - Updates round_number
-            - Resets pot to 0
-            - Creates new shuffled deck
-            - Deals cards to players
-            - Logs round start information
-
-        AI Integration:
-            AI players can implement get_message() to provide pre-round
-            table talk that will be included in the logs
-
-        Example:
-            Round initialization sequence:
-            1. Reset game state
-            2. Deal 5 cards to each player
-            3. Log dealer position and blind levels
-            4. Display chip counts and AI messages
         """
         self.round_number += 1
         self.pot = 0
@@ -510,7 +469,10 @@ class PokerGame:
         # Log true starting stacks before any deductions
         logging.info("\nStarting stacks (before antes/blinds):")
         for player in self.players:
-            logging.info(f"  {player.name}: ${self.round_starting_stacks[player]}")
+            chips_str = f"${self.round_starting_stacks[player]}"
+            if self.round_starting_stacks[player] < self.big_blind:
+                chips_str += " (short stack)"
+            logging.info(f"  {player.name}: {chips_str}")
 
         # Log dealer and blind positions
         dealer = self.players[self.dealer_index].name
@@ -534,30 +496,6 @@ class PokerGame:
     def draw_phase(self) -> None:
         """
         Handle the draw phase where players can discard and draw new cards.
-
-        For each non-folded player:
-        1. Shows current hand
-        2. For AI players: Uses decide_draw() method to choose discards
-        3. For human players: Currently keeps all cards (placeholder)
-        4. Removes discarded cards and deals replacements
-        5. Shows new hand after draw
-
-        Side Effects:
-            - Modifies player hands by removing discards
-            - Deals new cards from deck to replace discards
-            - Logs all draw actions and hand changes
-
-        AI Integration:
-            AI players must implement decide_draw() method that returns
-            a list of indices (0-4) indicating which cards to discard.
-            Return empty list to keep all cards.
-
-        Example:
-            Player action sequence:
-            1. Show current hand: "♠A ♥K ♥7 ♣7 ♦2"
-            2. AI decides to discard [4] (the ♦2)
-            3. Deal one replacement card
-            4. Show new hand: "♠A ♥K ♥7 ♣7 ♠Q"
         """
         logging.info("\n--- Draw Phase ---")
         for player in self.players:
@@ -571,17 +509,25 @@ class PokerGame:
                 # AI players decide which cards to discard
                 discards = player.decide_draw()
                 if discards:
+                    # Log the intended discards before making changes
+                    discard_indices = sorted(discards)
+                    logging.info(f"Discarding cards at positions: {discard_indices}")
+
                     # Remove discarded cards
                     player.hand.cards = [
                         card
                         for i, card in enumerate(player.hand.cards)
                         if i not in discards
                     ]
-                    # Draw new cards
-                    new_cards = self.deck.deal(len(discards))
+
+                    # Draw exactly the same number of cards as were discarded
+                    num_discards = len(discards)
+                    new_cards = self.deck.deal(num_discards)
                     player.hand.add_cards(new_cards)
-                    logging.info(f"Drew {len(discards)} new cards")
-                    logging.info(f"New hand: {player.hand.show()}")
+
+                    logging.info(
+                        f"Drew {num_discards} new card{'s' if num_discards != 1 else ''}"
+                    )
             else:
                 # Non-AI players keep their hand
                 logging.info("Keeping current hand")

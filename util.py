@@ -3,7 +3,7 @@ import sys
 from datetime import datetime
 
 
-def setup_logging(session_id=None):
+def setup_logging(session_id=0):
     """
     Configure logging with UTF-8 encoding support and session management.
 
