@@ -24,7 +24,7 @@ def setup_logging(session_id=0):
         session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # Create log filename with session ID
-    log_filename = f"poker_game_{session_id}.log"
+    log_filename = f"poker_game.log"
 
     # Configure root logger
     logging.basicConfig(
