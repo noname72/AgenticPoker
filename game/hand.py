@@ -56,14 +56,21 @@ class Hand:
         return False  # Equal hands
 
     def __gt__(self, other: "Hand") -> bool:
-        """Compare hands using poker rankings (lower rank numbers are better)."""
-        return (
-            self._get_rank()[0] < other._get_rank()[0]
-        )  # Reversed because 1 is best in evaluator
+        """Compare hands using poker rankings."""
+        self_rank, self_tiebreakers, _ = self._get_rank()
+        other_rank, other_tiebreakers, _ = other._get_rank()
+
+        if self_rank != other_rank:
+            return self_rank < other_rank  # Lower rank numbers are better
+
+        # If ranks are equal, compare tiebreakers in order
+        return self_tiebreakers > other_tiebreakers
 
     def __eq__(self, other: "Hand") -> bool:
-        """Check if hands are equal in rank."""
-        return self._get_rank()[0] == other._get_rank()[0]
+        """Check if hands are exactly equal in rank and tiebreakers."""
+        self_rank, self_tiebreakers, _ = self._get_rank()
+        other_rank, other_tiebreakers, _ = other._get_rank()
+        return self_rank == other_rank and self_tiebreakers == other_tiebreakers
 
     def _get_rank(self) -> tuple:
         """

@@ -16,13 +16,15 @@ class PokerGame:
     player eliminations.
 
     Attributes:
-        deck (Deck): The deck of cards for dealing.
-        players (List[Player]): Currently active players in the game.
+        deck (Deck): The deck of cards used for dealing.
+        players (List[Player]): List of currently active players in the game.
         pot (int): Total chips in the current pot.
         small_blind (int): Required small blind bet amount.
         big_blind (int): Required big blind bet amount.
         dealer_index (int): Position of current dealer (0-based, moves clockwise).
         round_count (int): Number of completed game rounds.
+        round_number (int): Current round number (increments at start of each round).
+        max_rounds (Optional[int]): Maximum number of rounds to play, or None for unlimited.
     """
 
     def __init__(
@@ -73,26 +75,35 @@ class PokerGame:
         1. Collects 1-chip ante from each player who has chips
         2. Collects small blind from player left of dealer
         3. Collects big blind from player two left of dealer
-        4. Advances dealer position clockwise
 
         Note: Players cannot bet more than their remaining chips.
         """
         sb_index = (self.dealer_index + 1) % len(self.players)
         bb_index = (self.dealer_index + 2) % len(self.players)
 
+        # Collect antes first
+        logging.info("\nCollecting antes...")
         for player in self.players:
             if player.chips > 0:
-                player.place_bet(1)
-                self.pot += 1
+                ante_amount = player.place_bet(1)
+                self.pot += ante_amount
+                logging.info(f"{player.name} posts ante of ${ante_amount}")
 
+        # Collect blinds
+        logging.info("\nCollecting blinds...")
         sb_player = self.players[sb_index]
-        sb_player.place_bet(min(self.small_blind, sb_player.chips))
-        self.pot += min(self.small_blind, sb_player.chips)
+        sb_amount = min(self.small_blind, sb_player.chips)
+        sb_player.place_bet(sb_amount)
+        self.pot += sb_amount
+        logging.info(f"{sb_player.name} posts small blind of ${sb_amount}")
 
         bb_player = self.players[bb_index]
-        bb_player.place_bet(min(self.big_blind, bb_player.chips))
-        self.pot += min(self.big_blind, bb_player.chips)
+        bb_amount = min(self.big_blind, bb_player.chips)
+        bb_player.place_bet(bb_amount)
+        self.pot += bb_amount
+        logging.info(f"{bb_player.name} posts big blind of ${bb_amount}")
 
+        # Advance dealer position
         self.dealer_index = (self.dealer_index + 1) % len(self.players)
 
     def handle_side_pots(self) -> List[Tuple[int, List[Player]]]:
@@ -101,11 +112,16 @@ class PokerGame:
 
         Creates separate pots based on the maximum amount each player could contribute,
         ensuring fair distribution when players have gone all-in for different amounts.
+        Side pots are created in ascending order of bet sizes.
 
         Returns:
-            List of tuples, each containing:
-            - int: The amount in this side pot
-            - List[Player]: Players eligible to win this specific pot, sorted by bet size
+            List[Tuple[int, List[Player]]]: List of tuples where each contains:
+                - int: The amount in this side pot
+                - List[Player]: Players eligible to win this specific pot, sorted by bet size
+
+        Example:
+            If players A, B, C bet 100, 200, 300 respectively:
+            [(100, [A, B, C]), (100, [B, C]), (100, [C])]
         """
         # Get only players who contributed to the pot
         active_players = [p for p in self.players if p.bet > 0]
@@ -386,6 +402,8 @@ class PokerGame:
                 game_state = f"Round {self.round_number}, Your chips: ${player.chips}"
                 message = player.get_message(game_state)
                 if message:
+                    # Remove or replace problematic characters
+                    message = message.encode("ascii", "replace").decode("ascii")
                     logging.info(f"\n{player.name} says: {message}")
 
         logging.info("\n")
@@ -395,17 +413,21 @@ class PokerGame:
         Handle the draw phase where players can discard and draw new cards.
 
         For each non-folded player:
-        - AI players: Uses decide_draw() method to choose discards
-        - Human players: Currently keeps all cards (placeholder)
+        1. Shows current hand
+        2. For AI players: Uses decide_draw() method to choose discards
+        3. For human players: Currently keeps all cards (placeholder)
+        4. Removes discarded cards and deals replacements
+        5. Shows new hand after draw
 
         Side effects:
-            - Modifies player hands
-            - Deals new cards from deck
-            - Logs all draw actions
+            - Modifies player hands by removing discards
+            - Deals new cards from deck to replace discards
+            - Logs all draw actions and hand changes
 
         Note:
             AI players must implement decide_draw() method that returns
-            a list of indices (0-4) indicating which cards to discard
+            a list of indices (0-4) indicating which cards to discard.
+            The method should return an empty list to keep all cards.
         """
         logging.info("\n--- Draw Phase ---")
         for player in self.players:
