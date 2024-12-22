@@ -1,5 +1,5 @@
 import logging
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 from .betting import betting_round
 from .deck import Deck
@@ -25,25 +25,32 @@ class PokerGame:
         round_count (int): Number of completed game rounds.
         round_number (int): Current round number (increments at start of each round).
         max_rounds (Optional[int]): Maximum number of rounds to play, or None for unlimited.
+        ante (int): Mandatory bet required from all players at start of each hand.
     """
 
     def __init__(
         self,
-        players,  # Can be list of names or list of Player objects
+        players,
         starting_chips: int = 1000,
         small_blind: int = 10,
         big_blind: int = 20,
         max_rounds: Optional[int] = None,
+        ante: int = 0,
     ) -> None:
         """
         Initialize a new poker game.
 
         Args:
-            players: List of player names or Player objects
-            starting_chips: Initial chip amount for each player
-            small_blind: Small blind bet amount
-            big_blind: Big blind bet amount
-            max_rounds: Maximum number of rounds to play (None for unlimited)
+            players (Union[List[str], List[Player]]): List of player names or Player objects.
+            starting_chips (int, optional): Initial chip amount for each player. Defaults to 1000.
+            small_blind (int, optional): Small blind bet amount. Defaults to 10.
+            big_blind (int, optional): Big blind bet amount. Defaults to 20.
+            max_rounds (Optional[int], optional): Maximum number of rounds to play. Defaults to None.
+            ante (int, optional): Mandatory bet required from all players. Defaults to 0.
+
+        Example:
+            >>> game = PokerGame(['Alice', 'Bob', 'Charlie'], starting_chips=500)
+            >>> game = PokerGame(player_list, small_blind=5, big_blind=10, ante=1)
         """
         self.deck = Deck()
         # Convert names to players if needed
@@ -58,6 +65,7 @@ class PokerGame:
         self.round_count = 0
         self.round_number = 0
         self.max_rounds = max_rounds
+        self.ante = ante
         logging.info(f"\n{'='*50}")
         logging.info(f"Game started with {len(players)} players")
         logging.info(f"Starting chips: ${starting_chips}")
@@ -70,13 +78,30 @@ class PokerGame:
     def blinds_and_antes(self) -> None:
         """
         Collect mandatory bets (blinds and antes) at the start of each hand.
+
+        Collects antes from all players first (if applicable), then collects small
+        and big blinds from eligible players. Handles cases where players may not
+        have enough chips for full blind amounts.
+
+        Side Effects:
+            - Updates player chip counts
+            - Updates pot size
+            - Advances dealer position
+            - Logs all bet actions and chip movements
+
+        Example:
+            If small_blind=10, big_blind=20, ante=1 with three players:
+            1. Collect $1 ante from each player ($3 total)
+            2. Collect $10 small blind from player after dealer
+            3. Collect $20 big blind from next player
+            4. Total pot starts at $33
         """
         # Calculate blind positions
         sb_index = (self.dealer_index + 1) % len(self.players)
         bb_index = (self.dealer_index + 2) % len(self.players)
 
         # Collect antes first (if using antes)
-        ante_amount = 1  # Consider making this configurable
+        ante_amount = self.ante  # Use configured ante instead of hardcoded value
         total_antes = 0
         if ante_amount > 0:
             logging.info("\nCollecting antes ($1 from each player)...")
@@ -157,13 +182,19 @@ class PokerGame:
         Side pots are created in ascending order of bet sizes.
 
         Returns:
-            List[Tuple[int, List[Player]]]: List of tuples where each contains:
+            List[Tuple[int, List[Player]]]: List of tuples containing:
                 - int: The amount in this side pot
-                - List[Player]: Players eligible to win this specific pot, sorted by bet size
+                - List[Player]: Players eligible to win this specific pot
 
         Example:
-            If players A, B, C bet 100, 200, 300 respectively:
-            [(100, [A, B, C]), (100, [B, C]), (100, [C])]
+            If players bet:
+                - Player A: $100 (all-in)
+                - Player B: $200 (all-in)
+                - Player C: $300
+            Returns:
+                [(100, [A, B, C]),  # Main pot: all players eligible
+                 (100, [B, C]),     # First side pot: only B and C eligible
+                 (100, [C])]        # Second side pot: only C eligible
         """
         # Get only players who contributed to the pot
         active_players = [p for p in self.players if p.bet > 0]
@@ -204,10 +235,17 @@ class PokerGame:
         3. Compares hands of remaining players to determine winner(s)
         4. Splits pots equally among tied winners
 
-        Side effects:
+        Side Effects:
             - Updates player chip counts
             - Logs detailed pot distribution and chip movements
             - Resets pot to 0 after distribution
+
+        Example:
+            With three players and a $300 pot:
+            - Player A (all-in): Pair of Kings
+            - Player B (all-in): Two Pair
+            - Player C: Fold
+            Result: Player B wins the pot, chips are transferred, and results are logged
         """
         logging.info(f"\n{'='*20} SHOWDOWN {'='*20}")
 
@@ -272,7 +310,16 @@ class PokerGame:
         self._log_chip_summary()
 
     def _log_chip_summary(self) -> None:
-        """Log a summary of all players' chip counts, sorted by amount."""
+        """
+        Log a summary of all players' chip counts, sorted by amount.
+
+        Creates a formatted log entry showing each player's current chip count,
+        sorted in descending order by amount.
+
+        Side Effects:
+            - Writes to game log with current chip counts
+            - Adds separator lines for readability
+        """
         logging.info("\nFinal chip counts (sorted by amount):")
         # Sort players by chip count, descending
         sorted_players = sorted(self.players, key=lambda p: p.chips, reverse=True)
@@ -285,11 +332,22 @@ class PokerGame:
         Remove players with zero chips and check if game should continue.
 
         Removes bankrupt players from the game and determines if enough players
-        remain to continue playing.
+        remain to continue playing. A player is considered bankrupt when they
+        have zero chips remaining.
 
         Returns:
             bool: True if game should continue (2+ players remain),
                  False if game should end (0-1 players remain)
+
+        Side Effects:
+            - Modifies self.players list by removing bankrupt players
+            - Logs game over message if insufficient players remain
+
+        Example:
+            >>> game.remove_bankrupt_players()
+            True  # Game continues with remaining players
+            >>> game.remove_bankrupt_players()
+            False  # Game ends with 0-1 players remaining
         """
         self.players = [player for player in self.players if player.chips > 0]
 
@@ -306,12 +364,60 @@ class PokerGame:
         return True
 
     def start_game(self) -> None:
-        """Execute the main game loop until a winner is determined or max rounds reached."""
+        """
+        Execute the main game loop until a winner is determined or max rounds reached.
+
+        Controls the overall flow of the poker game, including:
+        1. Tracking player eliminations and status
+        2. Managing blind levels and player participation
+        3. Running individual rounds of poker
+        4. Determining when the game should end
+
+        Side Effects:
+            - Runs complete game from start to finish
+            - Updates player chips and status
+            - Logs all game actions and results
+            - Produces final game summary
+
+        Game End Conditions:
+            - Only one player remains with chips
+            - Maximum number of rounds reached
+            - No players can afford the minimum blind
+        """
         # Track original player order and active status
         original_order = {player: i for i, player in enumerate(self.players)}
         eliminated_players = []
 
         while len(self.players) > 1:
+            # Track all players, including those sitting out
+            all_players = self.players.copy()
+
+            # Check which players can afford the big blind
+            active_players = []
+            sitting_out = []
+            for player in all_players:
+                if player.chips >= self.big_blind:
+                    active_players.append(player)
+                else:
+                    # Players who can't afford big blind but can afford ante can still play
+                    if player.chips >= self.ante:
+                        sitting_out.append(player)
+                        logging.info(
+                            f"{player.name} sitting out this round (has ${player.chips}, needs ${self.big_blind} for big blind)"
+                        )
+
+            # If no one can afford big blind but some can afford ante, reduce blinds
+            if not active_players and sitting_out:
+                logging.info("\nReducing blinds to allow play to continue...")
+                self.small_blind = max(1, self.small_blind // 2)
+                self.big_blind = max(2, self.big_blind // 2)
+                active_players = [p for p in all_players if p.chips >= self.big_blind]
+                sitting_out = [
+                    p
+                    for p in all_players
+                    if p.chips >= self.ante and p.chips < self.big_blind
+                ]
+
             # Check for eliminated players (0 chips) before starting round
             newly_eliminated = []
             for player in self.players:
@@ -328,23 +434,6 @@ class PokerGame:
             # Check if max rounds reached
             if self.max_rounds and self.round_count >= self.max_rounds:
                 logging.info(f"\nGame ended after {self.max_rounds} rounds!")
-                break
-
-            # Track players who can't afford the big blind
-            active_players = []
-            sitting_out = []
-            for player in self.players:
-                if player.chips >= self.big_blind:
-                    active_players.append(player)
-                else:
-                    sitting_out.append(player)
-                    logging.info(
-                        f"{player.name} sitting out this round (has ${player.chips}, needs ${self.big_blind} for big blind)"
-                    )
-
-            # If no one can afford big blind, game is over
-            if not active_players:
-                logging.info("\nGame Over! No players can afford the big blind!")
                 break
 
             # If only one player can afford big blind, they win
@@ -450,16 +539,23 @@ class PokerGame:
         4. Resets player states (bets, folded status)
         5. Logs round information (dealer, blinds, chip counts)
 
-        Side effects:
+        Side Effects:
             - Updates round_number
             - Resets pot to 0
             - Creates new shuffled deck
             - Deals cards to players
             - Logs round start information
 
-        Note:
+        AI Integration:
             AI players can implement get_message() to provide pre-round
             table talk that will be included in the logs
+
+        Example:
+            Round initialization sequence:
+            1. Reset game state
+            2. Deal 5 cards to each player
+            3. Log dealer position and blind levels
+            4. Display chip counts and AI messages
         """
         self.round_number += 1
         self.pot = 0  # Reset pot at start of round
@@ -513,15 +609,22 @@ class PokerGame:
         4. Removes discarded cards and deals replacements
         5. Shows new hand after draw
 
-        Side effects:
+        Side Effects:
             - Modifies player hands by removing discards
             - Deals new cards from deck to replace discards
             - Logs all draw actions and hand changes
 
-        Note:
+        AI Integration:
             AI players must implement decide_draw() method that returns
             a list of indices (0-4) indicating which cards to discard.
-            The method should return an empty list to keep all cards.
+            Return empty list to keep all cards.
+
+        Example:
+            Player action sequence:
+            1. Show current hand: "♠A ♥K ♥7 ♣7 ♦2"
+            2. AI decides to discard [4] (the ♦2)
+            3. Deal one replacement card
+            4. Show new hand: "♠A ♥K ♥7 ♣7 ♠Q"
         """
         logging.info("\n--- Draw Phase ---")
         for player in self.players:
@@ -551,7 +654,16 @@ class PokerGame:
                 logging.info("Keeping current hand")
 
     def _reset_round(self) -> None:
-        """Reset game state for the next round."""
+        """
+        Reset game state for the next round.
+
+        Resets the pot and player states between rounds to ensure
+        clean state for the next round of play.
+
+        Side Effects:
+            - Sets pot to 0
+            - Resets all player round-specific attributes (bets, folded status)
+        """
         self.pot = 0
         for player in self.players:
             player.reset_for_new_round()

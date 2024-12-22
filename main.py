@@ -12,5 +12,6 @@ players = [
     AIPlayer("Dana", chips=1000, strategy_style="Aggressive Bluffer"),
 ]
 
-game = PokerGame(players, starting_chips=1000, small_blind=50, big_blind=100)
+# Add ante to make the game more dynamic and give sitting out players a chance to recover
+game = PokerGame(players, starting_chips=1000, small_blind=50, big_blind=100, ante=10)
 game.start_game()
