@@ -1,4 +1,5 @@
 from typing import List, Tuple
+import logging
 
 from .betting import betting_round
 from .deck import Deck
@@ -72,18 +73,33 @@ class PokerGame:
         Returns:
             List of tuples containing (pot_amount, eligible_players)
         """
+        # Get only players who contributed to the pot
         active_players = [p for p in self.players if p.bet > 0]
+        if not active_players:
+            return [(self.pot, self.players)]
+        
         active_players.sort(key=lambda p: p.bet)
-
+        
         pots = []
+        remaining_pot = self.pot
+        previous_bet = 0
+        
         while active_players:
-            min_bet = active_players[0].bet
-            pot_total = 0
-            for player in active_players:
-                pot_total += min_bet
-                player.bet -= min_bet
-            pots.append((pot_total, [p for p in active_players]))
-            active_players = [p for p in active_players if p.bet > 0]
+            current_bet = active_players[0].bet
+            bet_difference = current_bet - previous_bet
+            pot_contribution = bet_difference * len(active_players)
+            
+            if pot_contribution > 0:
+                pots.append((pot_contribution, active_players[:]))
+                remaining_pot -= pot_contribution
+                
+            previous_bet = current_bet
+            active_players = active_players[1:]
+        
+        # If there's any remaining pot amount (from antes or odd chips), add it to the first pot
+        if remaining_pot > 0 and pots:
+            pots[0] = (pots[0][0] + remaining_pot, pots[0][1])
+        
         return pots
 
     def showdown(self) -> None:
@@ -91,35 +107,58 @@ class PokerGame:
         Determine the winner(s) of the hand and distribute the pot(s).
         Handles multiple winners and side pots.
         """
-        pots = self.handle_side_pots()
-        for pot, eligible_players in pots:
-            active_players = [p for p in eligible_players if not p.folded]
-
-            if not active_players:
-                continue
-
-            winner, best_hand = max(
-                ((player, player.hand) for player in active_players), key=lambda x: x[1]
-            )
-            print(f"\n{winner.name} wins {pot} chips!")
-            winner.chips += pot
+        # Only consider non-folded players
+        active_players = [p for p in self.players if not p.folded]
+        
+        if len(active_players) == 1:
+            # If only one player remains, they win the whole pot
+            winner = active_players[0]
+            logging.info(f"Pot size before distribution: ${self.pot}")
+            logging.info(f"{winner.name}'s chips before winning: ${winner.chips}")
+            winner.chips += self.pot
+            logging.info(f"{winner.name} wins ${self.pot} chips!")
+            logging.info(f"{winner.name}'s final chips: ${winner.chips}")
+        else:
+            # Find the best hand among active players
+            best_hand = max(p.hand for p in active_players)
+            winners = [p for p in active_players if p.hand == best_hand]
+            
+            # Split pot evenly among winners
+            split_amount = self.pot // len(winners)
+            remainder = self.pot % len(winners)
+            
+            for winner in winners:
+                logging.info(f"{winner.name}'s chips before winning: ${winner.chips}")
+                winner.chips += split_amount
+                logging.info(f"{winner.name} wins ${split_amount} chips with {winner.hand}!")
+                logging.info(f"{winner.name}'s chips after winning: ${winner.chips}")
+            
+            # Give any remainder to the first winner
+            if remainder > 0:
+                winners[0].chips += remainder
+                logging.info(f"{winners[0].name} wins ${remainder} extra chips (remainder)!")
+                logging.info(f"{winners[0].name}'s final chips: ${winners[0].chips}")
+        
+        # Reset all bets and pot
+        for player in self.players:
+            player.bet = 0
+        self.pot = 0
 
     def remove_bankrupt_players(self) -> bool:
         """
-        Remove players who have run out of chips.
-
-        Returns:
-            bool: True if game should continue, False if game should end
+        Remove players who have no chips left.
+        Returns True if there are still players in the game, False otherwise.
         """
-        self.players = [p for p in self.players if p.chips > 0]
+        self.players = [player for player in self.players if player.chips > 0]
+        
+        # If only one player remains, declare them the winner and end the game
         if len(self.players) == 1:
-            print(
-                f"\nGame Over! {self.players[0].name} wins with {self.players[0].chips} chips!"
-            )
+            logging.info(f"\nGame Over! {self.players[0].name} wins with {self.players[0].chips} chips!")
             return False
-        elif len(self.players) < 1:
-            print("\nGame Over! No players remaining!")
+        elif len(self.players) == 0:
+            logging.info("\nGame Over! All players are bankrupt!")
             return False
+        
         return True
 
     def start_game(self) -> None:
@@ -127,19 +166,48 @@ class PokerGame:
         Start and manage the main game loop.
         Handles dealing, betting rounds, and showdown until game completion.
         """
-        while self.remove_bankrupt_players():
+        # Initial check for minimum players
+        if len(self.players) < 2:
+            logging.info(f"\nGame Over! {self.players[0].name} wins with {self.players[0].chips} chips!")
+            return
+
+        while True:
+            # Remove bankrupt players and check remaining count
+            self.remove_bankrupt_players()
+            
+            if len(self.players) < 2:
+                logging.info(f"\nGame Over! {self.players[0].name} wins with {self.players[0].chips} chips!")
+                return
+            
+            # Reset for new round
             self.deck = Deck()
             self.deck.shuffle()
             self.blinds_and_antes()
-
+            
             for player in self.players:
+                player.folded = False
                 player.hand = Hand()
                 player.hand.add_cards(self.deck.deal(5))
 
-            print("\n--- Pre-Draw Betting ---")
+            logging.info("\n--- Pre-Draw Betting ---")
             self.pot = betting_round(self.players, self.pot)
+            
+            # Check if only one player remains after betting
+            active_players = [p for p in self.players if not p.folded]
+            if len(active_players) == 1:
+                winner = active_players[0]
+                winner.chips += self.pot  # Award pot before ending
+                logging.info(f"\nGame Over! {winner.name} wins with {winner.chips} chips!")
+                return
 
-            print("\n--- Post-Draw Betting ---")
+            logging.info("\n--- Post-Draw Betting ---")
             self.pot = betting_round(self.players, self.pot)
+            
+            active_players = [p for p in self.players if not p.folded]
+            if len(active_players) == 1:
+                winner = active_players[0]
+                winner.chips += self.pot  # Award pot before ending
+                logging.info(f"\nGame Over! {winner.name} wins with {winner.chips} chips!")
+                return
 
             self.showdown()

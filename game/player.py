@@ -1,3 +1,4 @@
+import logging
 from .hand import Hand
 
 
@@ -44,19 +45,25 @@ class Player:
             int: The actual amount bet (may be less than requested if player goes all-in)
         """
         if amount > self.chips:
-            print(f"{self.name} is all in with {self.chips} chips!")
+            logging.info(f"{self.name} is all in with {self.chips} chips!")
             amount = self.chips
+        
+        logging.debug(f"{self.name} betting {amount} chips (had {self.chips})")
         self.chips -= amount
         self.bet += amount
+        logging.debug(f"{self.name} now has {self.chips} chips and bet {self.bet}")
         return amount
 
     def fold(self) -> None:
         """Mark the player as folded for the current hand."""
+        logging.debug(f"{self.name} folded")
         self.folded = True
 
     def reset_bet(self) -> None:
         """Reset the player's current bet to zero."""
+        previous_bet = self.bet
         self.bet = 0
+        logging.debug(f"{self.name}'s bet reset from {previous_bet} to 0")
 
     def __str__(self) -> str:
         """

@@ -1,7 +1,7 @@
 # import json
 
 # from poker_game import PokerGame
-# from util import load_agent_configs, setup_logging
+from util import load_agent_configs, setup_logging
 
 # if __name__ == "__main__":
 #     setup_logging()
@@ -14,6 +14,8 @@
 
 
 from game import PokerGame
+
+setup_logging()
 
 player_names = ["Alice", "Bob", "Charlie", "Dana"]
 game = PokerGame(player_names, starting_chips=100, small_blind=5, big_blind=10)
