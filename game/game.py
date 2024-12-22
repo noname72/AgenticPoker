@@ -1,5 +1,5 @@
 import logging
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 from .betting import betting_round
 from .deck import Deck
@@ -27,33 +27,42 @@ class PokerGame:
 
     def __init__(
         self,
-        player_names: List[str],
+        players,  # Can be list of names or list of Player objects
         starting_chips: int = 1000,
         small_blind: int = 10,
         big_blind: int = 20,
+        max_rounds: Optional[int] = None,
     ) -> None:
         """
         Initialize a new poker game.
 
         Args:
-            player_names: List of player names to create players
+            players: List of player names or Player objects
             starting_chips: Initial chip amount for each player
             small_blind: Small blind bet amount
             big_blind: Big blind bet amount
+            max_rounds: Maximum number of rounds to play (None for unlimited)
         """
         self.deck = Deck()
-        self.players = [Player(name, starting_chips) for name in player_names]
+        # Convert names to players if needed
+        if players and isinstance(players[0], str):
+            self.players = [Player(name, starting_chips) for name in players]
+        else:
+            self.players = players  # Use provided Player objects
         self.pot = 0
         self.small_blind = small_blind
         self.big_blind = big_blind
         self.dealer_index = 0
         self.round_count = 0
         self.round_number = 0
+        self.max_rounds = max_rounds
         logging.info(f"\n{'='*50}")
-        logging.info(f"Game started with {len(player_names)} players")
+        logging.info(f"Game started with {len(players)} players")
         logging.info(f"Starting chips: ${starting_chips}")
         logging.info(f"Blinds: ${small_blind}/${big_blind}")
-        logging.info(f"Players: {', '.join(player_names)}")
+        if max_rounds:
+            logging.info(f"Max rounds: {max_rounds}")
+        logging.info(f"Players: {', '.join([p.name for p in players])}")
         logging.info(f"{'='*50}\n")
 
     def blinds_and_antes(self) -> None:
@@ -129,52 +138,35 @@ class PokerGame:
 
     def showdown(self) -> None:
         """
-        Handle the showdown phase of the poker game and distribute pot(s) to winner(s).
+        Handle the showdown phase of the poker game.
 
-        This method manages the end-of-round chip distribution, including:
-        1. Single winner scenarios (when all other players folded)
-        2. Multiple winner scenarios with potential split pots
-        3. Side pot calculations for all-in situations
-        4. Detailed logging of chip movements and final positions
+        Determines winner(s) and distributes pot(s) according to poker rules:
+        1. If only one active player remains, they win the entire pot
+        2. For multiple players, handles side pots for all-in situations
+        3. Compares hands of remaining players to determine winner(s)
+        4. Splits pots equally among tied winners
 
-        The distribution process:
-        1. Identifies active (non-folded) players
-        2. Handles uncontested pots (single player remaining)
-        3. Creates and distributes side pots if necessary
-        4. Determines winner(s) based on hand rankings
-        5. Splits pots evenly among tied winners
-        6. Handles remainder chips from uneven splits
-        7. Logs detailed chip movements and final standings
-
-        Side Effects:
+        Side effects:
             - Updates player chip counts
-            - Logs game state and chip movements
-            - Resets pot to 0 for next round
-
-        Note:
-            This method assumes that all betting rounds are complete and
-            the pot contains the correct amount of chips.
+            - Logs detailed pot distribution and chip movements
+            - Resets pot to 0 after distribution
         """
         logging.info(f"\n{'='*20} SHOWDOWN {'='*20}")
 
         active_players = [p for p in self.players if not p.folded]
-        logging.info("\nActive players and their hands:")
-        for player in active_players:
-            logging.info(f"  {player.name}: {player.hand.show()}")
 
         # Single player remaining (everyone else folded)
         if len(active_players) == 1:
             winner = active_players[0]
-            initial_chips = winner.chips  # Track chips before adding pot
             winner.chips += self.pot
-
             logging.info(f"\n{winner.name} wins ${self.pot} uncontested!")
-            logging.info(f"  Starting chips: ${initial_chips}")
-            logging.info(f"  Pot won: ${self.pot}")
-            logging.info(f"  Final chips: ${winner.chips}")
-
             self._log_chip_summary()
             return
+
+        # All-in showdown
+        all_in_players = [p for p in active_players if p.chips == 0]
+        if len(all_in_players) == len(active_players):
+            logging.info("\nAll players are all-in!")
 
         # Multiple players - handle side pots
         side_pots = self.handle_side_pots()
@@ -257,88 +249,123 @@ class PokerGame:
 
     def start_game(self) -> None:
         """
-        Execute the main game loop until a winner is determined.
+        Execute the main game loop until a winner is determined or max rounds reached.
 
         Game flow:
-        1. Verify minimum 2 players to start
-        2. For each round:
-           - Remove bankrupt players
-           - Deal new hands
-           - Collect blinds/antes
-           - Run pre-draw betting
-           - Run post-draw betting
-           - Handle showdown
-        3. Log final game statistics and standings
+        1. Remove players who can't afford big blind
+        2. Deal cards and collect blinds/antes
+        3. Run pre-draw betting round
+        4. Handle draw phase (discard/draw)
+        5. Run post-draw betting round
+        6. Showdown or award pot to last player
+        7. Repeat until only one player remains or max rounds reached
 
-        The game ends when only 0-1 players remain with chips.
+        Side effects:
+            - Updates player chip counts
+            - Eliminates bankrupt players
+            - Tracks and logs round count
+            - Logs final game results
         """
-        # Initial check for minimum players
-        if len(self.players) < 2:
-            logging.info(
-                f"\nGame Over! {self.players[0].name} wins with {self.players[0].chips} chips!"
-            )
-            return
+        while len(self.players) > 1:
+            # Check if max rounds reached
+            if self.max_rounds and self.round_count >= self.max_rounds:
+                logging.info(f"\nGame ended after {self.max_rounds} rounds!")
+                break
 
-        while True:
-            self.round_count += 1
-            # Remove bankrupt players and check remaining count
-            if not self.remove_bankrupt_players():
-                break  # Game is over, will log summary after loop
+            # Remove players with less than big blind
+            self.players = [p for p in self.players if p.chips >= self.big_blind]
+            if len(self.players) < 2:
+                break
 
-            # Reset for new round
-            self.deck = Deck()
-            self.deck.shuffle()
+            # Start new round
+            self.start_round()
             self.blinds_and_antes()
 
-            for player in self.players:
-                player.folded = False
-                player.hand = Hand()
-                player.hand.add_cards(self.deck.deal(5))
-
+            # Pre-draw betting
             logging.info("\n--- Pre-Draw Betting ---")
             self.pot = betting_round(self.players, self.pot)
 
-            # Check if only one player remains after betting
+            # Check if only one player remains
             active_players = [p for p in self.players if not p.folded]
             if len(active_players) == 1:
                 winner = active_players[0]
                 winner.chips += self.pot
-                break  # Game is over, will log summary after loop
+                self._log_chip_summary()
+                self.round_count += 1
+                continue
 
+            # Draw phase
+            self.draw_phase()
+
+            # Post-draw betting
             logging.info("\n--- Post-Draw Betting ---")
             self.pot = betting_round(self.players, self.pot)
 
+            # Handle showdown or single winner
             active_players = [p for p in self.players if not p.folded]
-            if len(active_players) == 1:
+            if len(active_players) > 1:
+                self.showdown()
+            else:
                 winner = active_players[0]
                 winner.chips += self.pot
-                break  # Game is over, will log summary after loop
+                self._log_chip_summary()
 
-            self.showdown()
+            self.round_count += 1
+            self.pot = 0  # Reset pot for next round
 
-        # Log game summary after any ending condition
-        # Sort all players by final chip count
-        final_standings = sorted(self.players, key=lambda p: p.chips, reverse=True)
-
+        # Log final game results
         logging.info("\n=== Game Summary ===")
         logging.info(f"Total rounds played: {self.round_count}")
+        if self.max_rounds and self.round_count >= self.max_rounds:
+            logging.info("Game ended due to maximum rounds limit")
         logging.info("\nFinal Standings:")
-        for i, player in enumerate(final_standings, 1):
+        for i, player in enumerate(
+            sorted(self.players, key=lambda p: p.chips, reverse=True), 1
+        ):
+            logging.info(f"{i}. {player.name}: ${player.chips}")
+        logging.info("\nFinal Standings:")
+        for i, player in enumerate(
+            sorted(self.players, key=lambda p: p.chips, reverse=True), 1
+        ):
             logging.info(f"{i}. {player.name}: ${player.chips}")
 
-        # Log bankrupt players if any
-        bankrupt_players = [p for p in self.players if p.chips == 0]
-        if bankrupt_players:
-            logging.info("\nBankrupt Players:")
-            for player in bankrupt_players:
-                logging.info(f"- {player.name}")
-
     def start_round(self) -> None:
-        """Start a new round of poker."""
+        """
+        Start a new round of poker.
+
+        Performs round initialization:
+        1. Increments round counter
+        2. Resets pot and deck
+        3. Deals new 5-card hands to all players
+        4. Resets player states (bets, folded status)
+        5. Logs round information (dealer, blinds, chip counts)
+
+        Side effects:
+            - Updates round_number
+            - Resets pot to 0
+            - Creates new shuffled deck
+            - Deals cards to players
+            - Logs round start information
+
+        Note:
+            AI players can implement get_message() to provide pre-round
+            table talk that will be included in the logs
+        """
         self.round_number += 1
+        self.pot = 0  # Reset pot at start of round
+
         logging.info(f"\n{'='*50}")
         logging.info(f"Round {self.round_number}")
         logging.info(f"{'='*50}")
+
+        # Reset deck and deal new hands
+        self.deck = Deck()
+        self.deck.shuffle()
+        for player in self.players:
+            player.bet = 0  # Reset player bets
+            player.folded = False  # Reset folded status
+            player.hand = Hand()  # Reset hand
+            player.hand.add_cards(self.deck.deal(5))  # Deal new cards
 
         # Log player states at start of round
         logging.info("\nChip counts:")
@@ -351,4 +378,58 @@ class PokerGame:
         bb_player = self.players[(self.dealer_index + 2) % len(self.players)].name
         logging.info(f"\nDealer: {dealer}")
         logging.info(f"Small Blind: {sb_player}")
-        logging.info(f"Big Blind: {bb_player}\n")
+        logging.info(f"Big Blind: {bb_player}")
+
+        # Let AI players send pre-round messages
+        for player in self.players:
+            if hasattr(player, "get_message"):
+                game_state = f"Round {self.round_number}, Your chips: ${player.chips}"
+                message = player.get_message(game_state)
+                if message:
+                    logging.info(f"\n{player.name} says: {message}")
+
+        logging.info("\n")
+
+    def draw_phase(self) -> None:
+        """
+        Handle the draw phase where players can discard and draw new cards.
+
+        For each non-folded player:
+        - AI players: Uses decide_draw() method to choose discards
+        - Human players: Currently keeps all cards (placeholder)
+
+        Side effects:
+            - Modifies player hands
+            - Deals new cards from deck
+            - Logs all draw actions
+
+        Note:
+            AI players must implement decide_draw() method that returns
+            a list of indices (0-4) indicating which cards to discard
+        """
+        logging.info("\n--- Draw Phase ---")
+        for player in self.players:
+            if player.folded:
+                continue
+
+            logging.info(f"\n{player.name}'s turn to draw")
+            logging.info(f"Current hand: {player.hand.show()}")
+
+            if hasattr(player, "decide_draw"):
+                # AI players decide which cards to discard
+                discards = player.decide_draw()
+                if discards:
+                    # Remove discarded cards
+                    player.hand.cards = [
+                        card
+                        for i, card in enumerate(player.hand.cards)
+                        if i not in discards
+                    ]
+                    # Draw new cards
+                    new_cards = self.deck.deal(len(discards))
+                    player.hand.add_cards(new_cards)
+                    logging.info(f"Drew {len(discards)} new cards")
+                    logging.info(f"New hand: {player.hand.show()}")
+            else:
+                # Non-AI players keep their hand
+                logging.info("Keeping current hand")

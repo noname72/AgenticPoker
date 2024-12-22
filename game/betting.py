@@ -8,60 +8,53 @@ def betting_round(players: List["Player"], pot: int, start_index: int = 0) -> in
     """
     Conducts a complete betting round in a poker game.
 
-    Manages the flow of betting for a single round (pre-flop, flop, turn, or river),
-    handling all player actions until the betting is complete or only one player remains.
-
     Args:
-        players (List[Player]): List of all players in the game
-        pot (int): Current pot amount before this betting round
-        start_index (int, optional): Index of the first player to act. Defaults to 0.
+        players: List of Player objects participating in the game
+        pot: Current size of the pot in dollars
+        start_index: Index of the player who starts the betting round (default: 0)
 
     Returns:
-        int: Final pot amount after all bets are placed
-
-    Side Effects:
-        - Updates player chip counts
-        - Updates player bet amounts
-        - May cause players to fold
-        - Logs all betting actions and pot changes
+        int: Updated pot size after the betting round completes
 
     Note:
-        The round ends when either:
+        The round continues until either:
         - Only one player remains (others folded)
-        - All active players have either:
-            a) Matched the current bet
-            b) Gone all-in for a lesser amount
-            c) Folded
+        - All active players have matched the current bet or are all-in
     """
     logging.info(f"\n{'='*20} BETTING ROUND {'='*20}")
     logging.info(f"Starting pot: ${pot}")
 
     round_contributions = {p: 0 for p in players}
     current_bet = max(p.bet for p in players)
+    last_raiser = None
+    index = start_index
+    betting_complete = False
 
     logging.info("\nInitial state:")
     for player in players:
         if not player.folded:
             logging.info(f"  {player.name}: ${player.chips} chips, ${player.bet} bet")
 
-    # Track individual contributions this round
-    last_raiser = None
-    index = start_index
+    while not betting_complete:
+        active_players = [p for p in players if not p.folded]
 
-    while True:
-        player = players[index]
-
-        # Skip folded players
-        if player.folded:
-            index = (index + 1) % len(players)
-            continue
-
-        # Stop if we've gone around the table with no new raises
-        if player == last_raiser:
+        # End conditions
+        if len(active_players) <= 1:
+            betting_complete = True
             break
 
-        # If player has matched current bet and we've gone around once, we're done
-        if player.bet == current_bet and last_raiser is not None:
+        # Check if all active players have matched the current bet or are all-in
+        all_matched = all(
+            (p.bet == current_bet or p.chips == 0) for p in active_players
+        )
+        if all_matched and (last_raiser is None or index == last_raiser):
+            betting_complete = True
+            break
+
+        player = players[index]
+
+        # Skip folded players or those who are all-in and have matched
+        if player.folded or (player.chips == 0 and player.bet >= current_bet):
             index = (index + 1) % len(players)
             continue
 
@@ -95,28 +88,16 @@ def betting_round(players: List["Player"], pot: int, start_index: int = 0) -> in
                 round_contributions[player] += actual_bet
                 pot += actual_bet
                 current_bet = player.bet
-                last_raiser = player
+                last_raiser = index
                 log_action(
                     player, "raise", amount=actual_bet, current_bet=current_bet, pot=pot
                 )
-        else:  # check
-            if current_bet > player.bet:
-                player.fold()
-                log_action(player, "fold", current_bet=current_bet, pot=pot)
-            else:
-                log_action(player, "check", current_bet=current_bet, pot=pot)
 
-        # Add detailed pot tracking after each action
         logging.info(f"\nCurrent pot: ${pot}")
         logging.info("Round contributions:")
         for p, amount in round_contributions.items():
             if amount > 0:
                 logging.info(f"  {p.name}: ${amount}")
-
-        # Check if only one player remains
-        active_players = [p for p in players if not p.folded]
-        if len(active_players) == 1:
-            break
 
         index = (index + 1) % len(players)
 
@@ -132,63 +113,82 @@ def betting_round(players: List["Player"], pot: int, start_index: int = 0) -> in
 
 def decide_action(player: "Player", current_bet: int, raised: bool) -> str:
     """
-    Determines the AI player's next action in the betting round.
-
-    Implements the decision-making logic for AI players, considering their
-    current chips, the bet they need to call, and whether there's been a raise.
+    Determines the player's next action in the betting round.
 
     Args:
-        player (Player): The player whose turn it is
-        current_bet (int): The current bet amount that needs to be matched
-        raised (bool): Whether the bet has been raised in this round
+        player: Player object whose action is being determined
+        current_bet: The current bet amount that needs to be matched
+        raised: Boolean indicating if there has been a raise in this round
 
     Returns:
-        str: Action to take, one of:
-            - "check": Stay in without betting (only valid when current_bet == player.bet)
-            - "fold": Give up the hand
-            - "call": Match the current bet
-            - "raise {amount}": Increase the bet by {amount}
-
-    Side Effects:
-        - Logs decision-making process and relevant state
+        str: Action string in one of these formats:
+            - "fold"
+            - "call"
+            - "raise {amount}"
 
     Note:
-        Currently implements a simple random strategy for demonstration purposes.
-        Future versions should implement more sophisticated betting strategies
-        based on:
-        - Hand strength
-        - Position
-        - Pot odds
-        - Player tendencies
-        - Stack sizes
+        For AI players, uses their decide_action() method with enhanced game state
+        For non-AI players, uses a random strategy as fallback
     """
-    import random
+    # If player is all-in, they can only check/call
+    if player.chips == 0:
+        return "call"
 
-    logging.debug(f"Deciding action for {player.name}:")
-    logging.debug(f"  Current bet: ${current_bet}")
-    logging.debug(f"  Already raised: {raised}")
-    logging.debug(f"  Player chips: ${player.chips}")
+    # If player has less than big blind, they should just call
+    if player.chips < current_bet * 2:
+        return "call"
 
-    if current_bet == 0:
-        return (
-            "check" if random.random() < 0.7 else f"raise {random.choice([10, 20, 30])}"
+    if hasattr(player, "decide_action"):  # Check if it's an AI player
+        # Create a richer game state description for AI
+        game_state = (
+            f"Current bet: ${current_bet}, "
+            f"Your chips: ${player.chips}, "
+            f"Your bet: ${player.bet}, "
+            f"Hand: {player.hand.show()}, "
+            f"Position: {'dealer' if raised else 'non-dealer'}, "
+            f"Pot odds: {current_bet/(current_bet + player.chips):.2f}"
         )
+        action = player.decide_action(game_state)
+
+        # Normalize AI action to match expected format
+        if action == "raise":
+            # AI players make reasonable raise amounts based on pot and stack
+            raise_amount = min(max(current_bet * 2, 20), player.chips)
+            return f"raise {raise_amount}"
+        return action
     else:
-        return random.choice(["fold", "call", f"raise {random.choice([10, 20])}"])
+        # Fallback to original random strategy for non-AI players
+        import random
+
+        if current_bet == 0:
+            return (
+                "check"
+                if random.random() < 0.7
+                else f"raise {random.choice([10, 20, 30])}"
+            )
+        else:
+            return random.choice(["fold", "call", f"raise {random.choice([10, 20])}"])
 
 
 def log_action(
     player: "Player", action: str, amount: int = 0, current_bet: int = 0, pot: int = 0
 ) -> None:
     """
-    Helper to log player actions consistently.
+    Logs player actions in a consistent format to the game log.
 
     Args:
         player: The player taking the action
-        action: The type of action ("fold", "call", "raise", or "check")
-        amount: The amount bet/called/raised (if applicable)
-        current_bet: The current bet amount to call
-        pot: The current pot size
+        action: Action type ("fold", "call", "raise", or "check")
+        amount: Amount bet/called/raised (default: 0)
+        current_bet: Current bet amount to call (default: 0)
+        pot: Current pot size (default: 0)
+
+    Note:
+        Formats and logs:
+        - The action taken
+        - Remaining chips
+        - Current pot size
+        - Current bet to call (if applicable)
     """
     action_str = {
         "fold": "folds",
@@ -202,3 +202,71 @@ def log_action(
     logging.info(f"  Current pot: ${pot}")
     if current_bet > 0:
         logging.info(f"  Current bet to call: ${current_bet}")
+
+
+def handle_betting_round(self, players, current_bet=0, min_raise=None):
+    """
+    Handles a complete round of betting among active players.
+
+    Args:
+        players: List of players in the game
+        current_bet: Starting bet amount for the round (default: 0)
+        min_raise: Minimum raise amount (default: None)
+
+    Returns:
+        int: Total amount bet during the round
+
+    Note:
+        Continues until all active players have:
+        - Acted at least once
+        - Either folded, matched the highest bet, or gone all-in
+        Tracks player actions and updates bets accordingly
+    """
+    # Initialize betting round
+    active_players = [p for p in players if not p.folded]
+    if not active_players:
+        return 0
+
+    # Track who has acted and had chance to match highest bet
+    players_acted = set()
+    highest_bet = current_bet
+
+    # Continue until all active players have acted and matched highest bet
+    while len(players_acted) < len(active_players) or any(
+        p.current_bet != highest_bet for p in active_players if not p.folded
+    ):
+
+        for player in active_players:
+            if player.folded:
+                continue
+
+            # Skip if player is all-in
+            if player.chips == 0:
+                players_acted.add(player)
+                continue
+
+            # Skip if player has acted and matched highest bet
+            if player in players_acted and player.current_bet == highest_bet:
+                continue
+
+            action = player.get_action(highest_bet)
+
+            if action.type == "fold":
+                player.folded = True
+                players_acted.add(player)
+
+            elif action.type in ("call", "check"):
+                call_amount = highest_bet - player.current_bet
+                if call_amount > 0:
+                    player.bet(call_amount)
+                players_acted.add(player)
+
+            elif action.type == "raise":
+                raise_amount = action.amount
+                player.bet(raise_amount)
+                highest_bet = player.current_bet
+                # Clear players_acted except for folders and all-ins
+                players_acted = {p for p in players_acted if p.folded or p.chips == 0}
+                players_acted.add(player)
+
+    return sum(p.current_bet for p in players)

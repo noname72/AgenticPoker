@@ -102,10 +102,6 @@ class PokerAgent:
             "bluff_frequency": 0.5,
             "risk_tolerance": 0.5,
         }
-        self.raise_count = 0
-        self.max_raises_per_street = 2
-        self.current_street = 0
-        self.total_bet_amount = 0
 
         # Validate and initialize OpenAI client
         if model_type == "gpt":
@@ -119,47 +115,19 @@ class PokerAgent:
                 raise ValueError("LOCAL_LLM_ENDPOINT environment variable not set")
             self.endpoint = endpoint
 
-    def perceive(
-        self, game_state: Dict[str, Any], opponent_message: str
-    ) -> Dict[str, Any]:
+    def perceive(self, game_state: str, opponent_message: str) -> Dict[str, Any]:
         """Process and store current game state and opponent's message.
 
         Args:
-            game_state (dict): Current state of the poker game
+            game_state (str): Current state of the poker game as a string
             opponent_message (str): Message received from the opponent
 
         Returns:
             dict: Perception data including game state, opponent message, and timestamp
         """
-        # Extract street index from operations or street object
-        current_street = game_state.get("street_index", 0)
-
-        # Reset counters if street changed
-        if current_street != self.current_street:
-            self.logger.info(
-                f"[Street Change] {self.current_street} -> {current_street}"
-            )
-            self.raise_count = 0
-            self.total_bet_amount = 0
-            self.current_street = current_street
-
-        # Get current stack and bet amounts
-        stacks = game_state.get("stacks", [])
-        bets = game_state.get("bets", [])
-
-        if stacks and bets:
-            player_index = 0 if self.name == "GPT_Agent_1" else 1
-            current_stack = stacks[player_index]
-            current_bet = bets[player_index]
-
-            # If total bet amount has increased significantly, count as a raise
-            if current_bet > self.total_bet_amount + 100:  # Minimum raise amount
-                self.raise_count += 1
-                self.logger.info(
-                    f"[Raise Count] Agent {self.name}: {self.raise_count}/{self.max_raises_per_street}"
-                )
-
-            self.total_bet_amount = current_bet
+        # Keep only last 3 perceptions to avoid memory bloat and irrelevant history
+        if len(self.perception_history) >= 3:
+            self.perception_history.pop(0)
 
         perception = {
             "game_state": game_state,
@@ -169,6 +137,9 @@ class PokerAgent:
         self.perception_history.append(perception)
 
         if opponent_message:
+            # Keep only last 3 messages
+            if len(self.conversation_history) >= 3:
+                self.conversation_history.pop(0)
             self.conversation_history.append(
                 {
                     "sender": "opponent",
@@ -284,55 +255,13 @@ class PokerAgent:
         return None
 
     def get_action(
-        self, game_state: Dict[str, Any], opponent_message: Optional[str] = None
+        self, game_state: str, opponent_message: Optional[str] = None
     ) -> str:
-        """Get action with strict raise limits."""
+        """
+        Determine the next action based on the game state and opponent's message.
+        Returns: 'fold', 'call', or 'raise'
+        """
         try:
-            # Force call if raise limit exceeded
-            if self.raise_count >= self.max_raises_per_street:
-                self.logger.warning(
-                    f"[Raise Limit] Agent {self.name} hit raise limit ({self.raise_count}/{self.max_raises_per_street}), forcing call"
-                )
-                return "call"
-
-            # Parse game state if it's a string
-            if isinstance(game_state, str):
-                # Extract stack and bet information from the string representation
-                try:
-                    # Look for stack information in the string
-                    stack_match = re.search(r"stacks=\[([^\]]+)\]", game_state)
-                    bet_match = re.search(r"bets=\[([^\]]+)\]", game_state)
-
-                    if stack_match and bet_match:
-                        stacks = [int(x) for x in stack_match.group(1).split(",")]
-                        bets = [int(x) for x in bet_match.group(1).split(",")]
-                        player_index = 0 if self.name == "GPT_Agent_1" else 1
-
-                        if len(stacks) > player_index:
-                            current_stack = stacks[player_index]
-                        else:
-                            current_stack = 1000  # Default value
-                    else:
-                        current_stack = 1000  # Default value if not found
-                except Exception as e:
-                    self.logger.error(f"Error parsing game state string: {e}")
-                    current_stack = 1000  # Default value
-            else:
-                # Calculate remaining stack from dictionary
-                player_index = 0 if self.name == "GPT_Agent_1" else 1
-                current_stack = (
-                    game_state.get("stacks", [])[player_index]
-                    if game_state.get("stacks")
-                    else 1000
-                )
-
-            # Force call if stack too low
-            if current_stack < 200:  # Minimum for meaningful raise
-                self.logger.warning(
-                    f"[Stack Low] Agent {self.name} stack too low ({current_stack}), forcing call"
-                )
-                return "call"
-
             prompt = f"""
             You are a {self.strategy_style} poker player with specific traits:
             - Aggression: {self.personality_traits['aggression']:.1f}/1.0
@@ -343,16 +272,12 @@ class PokerAgent:
             Game State: {game_state}
             Opponent's Message: '{opponent_message or "nothing"}'
             Recent History: {self.perception_history[-3:] if self.perception_history else []}
-            Raises this street: {self.raise_count}/{self.max_raises_per_street}
-            Your stack: {current_stack}
             
             Consider:
             1. Your personality traits and strategy style
             2. The opponent's recent behavior
             3. Your position and chip stack
             4. The credibility of their message
-            5. You can only raise {self.max_raises_per_street - self.raise_count} more times this street
-            6. If you raise too much, you'll be forced to call
             
             Important: Respond with exactly one word, without quotes: fold, call, or raise
             """
@@ -578,9 +503,6 @@ class PokerAgent:
         self.perception_history = []
         self.conversation_history = []
         self.last_message = ""
-        self.raise_count = 0
-        self.current_street = 0
-        self.total_bet_amount = 0
         self.logger.info(f"[Reset] Agent {self.name} reset for new game")
 
     def get_stats(self) -> Dict[str, Any]:

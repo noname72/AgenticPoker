@@ -1,22 +1,16 @@
-# import json
-
-# from poker_game import PokerGame
-from util import load_agent_configs, setup_logging
-
-# if __name__ == "__main__":
-#     setup_logging()
-#     agent_configs = load_agent_configs()
-#     game = PokerGame(agent_configs=agent_configs)
-#     game.play_round()
-#     # Save updated agent configurations after the game
-#     with open("agent_configs.json", "w") as f:
-#         json.dump(agent_configs, f, indent=4)
-
-
 from game import PokerGame
+from game.ai_player import AIPlayer
+from util import setup_logging
 
 setup_logging()
 
-player_names = ["Alice", "Bob", "Charlie", "Dana"]
-game = PokerGame(player_names, starting_chips=100, small_blind=5, big_blind=10)
+# Create AI players with different strategies
+players = [
+    AIPlayer("Alice", chips=1000, strategy_style="Aggressive Bluffer"),
+    AIPlayer("Bob", chips=1000, strategy_style="Calculated and Cautious"),
+    AIPlayer("Charlie", chips=1000, strategy_style="Chaotic and Unpredictable"),
+    AIPlayer("Dana", chips=1000, strategy_style="Aggressive Bluffer"),
+]
+
+game = PokerGame(players, starting_chips=1000, small_blind=50, big_blind=100)
 game.start_game()
