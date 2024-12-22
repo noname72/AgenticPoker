@@ -71,16 +71,17 @@ class PokerGame:
         """
         Collect mandatory bets (blinds and antes) at the start of each hand.
         """
+        # Calculate blind positions
         sb_index = (self.dealer_index + 1) % len(self.players)
         bb_index = (self.dealer_index + 2) % len(self.players)
 
         # Collect antes first (if using antes)
         ante_amount = 1  # Consider making this configurable
         total_antes = 0
-        if ante_amount > 0:  # Only collect and log antes if they're being used
+        if ante_amount > 0:
             logging.info("\nCollecting antes ($1 from each player)...")
             for player in self.players:
-                if player.chips > 0:
+                if player.chips > 0:  # Any player with chips must post ante
                     actual_ante = player.place_bet(ante_amount)
                     total_antes += actual_ante
                     if actual_ante > 0:
@@ -92,25 +93,60 @@ class PokerGame:
         # Collect blinds
         logging.info("\nCollecting blinds...")
 
-        # Small blind
-        sb_player = self.players[sb_index]
-        sb_amount = min(self.small_blind, sb_player.chips)
-        actual_sb = sb_player.place_bet(sb_amount)
-        self.pot += actual_sb
-        logging.info(f"{sb_player.name} posts small blind of ${actual_sb}")
+        # Find first player who can post small blind
+        sb_player = None
+        current_index = sb_index
+        full_rotation = 0
+        while full_rotation < len(self.players):
+            player = self.players[current_index]
+            if player.chips > 0:  # Player must post any amount they can
+                sb_player = player
+                sb_index = current_index
+                break
+            current_index = (current_index + 1) % len(self.players)
+            if current_index == sb_index:
+                full_rotation += 1
 
-        # Big blind
-        bb_player = self.players[bb_index]
-        bb_amount = min(self.big_blind, bb_player.chips)
-        actual_bb = bb_player.place_bet(bb_amount)
-        self.pot += actual_bb
-        logging.info(f"{bb_player.name} posts big blind of ${actual_bb}")
+        # Find next player who can post big blind
+        bb_player = None
+        if sb_player:
+            current_index = (sb_index + 1) % len(self.players)
+            full_rotation = 0
+            while full_rotation < len(self.players):
+                player = self.players[current_index]
+                if player.chips > 0 and player != sb_player:
+                    bb_player = player
+                    break
+                current_index = (current_index + 1) % len(self.players)
+                if current_index == (sb_index + 1) % len(self.players):
+                    full_rotation += 1
+
+        # Post small blind
+        if sb_player:
+            actual_sb = sb_player.place_bet(min(self.small_blind, sb_player.chips))
+            self.pot += actual_sb
+            logging.info(
+                f"{sb_player.name} posts small blind of ${actual_sb}"
+                + (" (all in)" if sb_player.chips == 0 else "")
+            )
+
+        # Post big blind
+        if bb_player:
+            actual_bb = bb_player.place_bet(min(self.big_blind, bb_player.chips))
+            self.pot += actual_bb
+            logging.info(
+                f"{bb_player.name} posts big blind of ${actual_bb}"
+                + (" (all in)" if bb_player.chips == 0 else "")
+            )
 
         # Log total pot after all mandatory bets
         logging.info(f"\nStarting pot: ${self.pot} (includes ${total_antes} in antes)")
 
-        # Advance dealer position
-        self.dealer_index = (self.dealer_index + 1) % len(self.players)
+        # Advance dealer position to next player with chips
+        current_index = (self.dealer_index + 1) % len(self.players)
+        while self.players[current_index].chips == 0:
+            current_index = (current_index + 1) % len(self.players)
+        self.dealer_index = current_index
 
     def handle_side_pots(self) -> List[Tuple[int, List[Player]]]:
         """
@@ -270,42 +306,62 @@ class PokerGame:
         return True
 
     def start_game(self) -> None:
-        """
-        Execute the main game loop until a winner is determined or max rounds reached.
+        """Execute the main game loop until a winner is determined or max rounds reached."""
+        # Track original player order and active status
+        original_order = {player: i for i, player in enumerate(self.players)}
+        eliminated_players = []
 
-        Game flow:
-        1. Remove players who can't afford big blind
-        2. Deal cards and collect blinds/antes
-        3. Run pre-draw betting round
-        4. Handle draw phase (discard/draw)
-        5. Run post-draw betting round
-        6. Showdown or award pot to last player
-        7. Repeat until only one player remains or max rounds reached
-
-        Side effects:
-            - Updates player chip counts
-            - Eliminates bankrupt players
-            - Tracks and logs round count
-            - Logs final game results
-        """
         while len(self.players) > 1:
+            # Check for eliminated players (0 chips) before starting round
+            newly_eliminated = []
+            for player in self.players:
+                if player.chips == 0 and player not in eliminated_players:
+                    newly_eliminated.append(player)
+                    logging.info(f"\n{player.name} is eliminated (out of chips)!")
+
+            if newly_eliminated:
+                eliminated_players.extend(newly_eliminated)
+                self.players = [p for p in self.players if p.chips > 0]
+                if len(self.players) <= 1:
+                    break
+
             # Check if max rounds reached
             if self.max_rounds and self.round_count >= self.max_rounds:
                 logging.info(f"\nGame ended after {self.max_rounds} rounds!")
                 break
 
-            # Remove players with less than big blind
-            self.players = [p for p in self.players if p.chips >= self.big_blind]
-            if len(self.players) < 2:
+            # Track players who can't afford the big blind
+            active_players = []
+            sitting_out = []
+            for player in self.players:
+                if player.chips >= self.big_blind:
+                    active_players.append(player)
+                else:
+                    sitting_out.append(player)
+                    logging.info(
+                        f"{player.name} sitting out this round (has ${player.chips}, needs ${self.big_blind} for big blind)"
+                    )
+
+            # If no one can afford big blind, game is over
+            if not active_players:
+                logging.info("\nGame Over! No players can afford the big blind!")
                 break
 
-            # Start new round
+            # If only one player can afford big blind, they win
+            if len(active_players) == 1:
+                logging.info(
+                    f"\nGame Over! Only {active_players[0].name} can afford the big blind!"
+                )
+                break
+
+            # Start new round with players who can afford the big blind
+            self.players = active_players
             self.start_round()
             self.blinds_and_antes()
 
             # Pre-draw betting
             logging.info("\n--- Pre-Draw Betting ---")
-            initial_chips = {p: p.chips for p in self.players}  # Track starting chips
+            initial_chips = {p: p.chips for p in self.players}
             self.pot = betting_round(self.players, self.pot)
 
             # Check if only one player remains after pre-draw betting
@@ -313,7 +369,9 @@ class PokerGame:
             if len(active_players) == 1:
                 winner = active_players[0]
                 winner.chips += self.pot
-                logging.info(f"\n{winner.name} wins ${self.pot} (all others folded)")
+                logging.info(
+                    f"\n{winner.name} wins ${self.pot} (all others folded pre-draw)"
+                )
                 # Log chip movements
                 for player in self.players:
                     if player.chips != initial_chips[player]:
@@ -322,27 +380,33 @@ class PokerGame:
                         )
                 self._log_chip_summary()
                 self.round_count += 1
-                self._reset_round()  # Reset for next round
+                self._reset_round()
+
+                # Add back sitting out players and continue to next round
+                self.players.extend(sitting_out)
+                self.players.sort(key=lambda p: original_order[p])
                 continue
 
-            # Draw phase
+            # Only proceed with draw and post-draw if multiple players remain
+            logging.info("\n--- Draw Phase ---")
             self.draw_phase()
 
-            # Post-draw betting
             logging.info("\n--- Post-Draw Betting ---")
             self.pot = betting_round(self.players, self.pot)
 
-            # Handle showdown or single winner
+            # Handle showdown or single winner after post-draw betting
             active_players = [p for p in self.players if not p.folded]
             if len(active_players) > 1:
                 self.showdown()
             else:
                 winner = active_players[0]
                 winner.chips += self.pot
-                logging.info(f"\n{winner.name} wins ${self.pot} (all others folded)")
+                logging.info(
+                    f"\n{winner.name} wins ${self.pot} (all others folded post-draw)"
+                )
                 self._log_chip_summary()
 
-            # After showdown or single winner
+            # Log chip movements for the round
             for player in self.players:
                 if player.chips != initial_chips[player]:
                     logging.info(
@@ -350,23 +414,30 @@ class PokerGame:
                     )
 
             self.round_count += 1
-            self._reset_round()  # Reset for next round
+            self._reset_round()
 
-        # Log final game results
+            # Add back sitting out players and continue to next round
+            self.players.extend(sitting_out)
+            self.players.sort(key=lambda p: original_order[p])
+
+        # Log final game results including eliminated players
         logging.info("\n=== Game Summary ===")
         logging.info(f"Total rounds played: {self.round_count}")
         if self.max_rounds and self.round_count >= self.max_rounds:
             logging.info("Game ended due to maximum rounds limit")
+
+        # Include all players in final standings, sorted by chips
+        all_players = sorted(
+            self.players + eliminated_players, key=lambda p: p.chips, reverse=True
+        )
         logging.info("\nFinal Standings:")
-        for i, player in enumerate(
-            sorted(self.players, key=lambda p: p.chips, reverse=True), 1
-        ):
-            logging.info(f"{i}. {player.name}: ${player.chips}")
-        logging.info("\nFinal Standings:")
-        for i, player in enumerate(
-            sorted(self.players, key=lambda p: p.chips, reverse=True), 1
-        ):
-            logging.info(f"{i}. {player.name}: ${player.chips}")
+        for i, player in enumerate(all_players, 1):
+            status = ""
+            if player in eliminated_players:
+                status = " (eliminated)"
+            elif player.chips < self.big_blind:
+                status = " (sitting out)"
+            logging.info(f"{i}. {player.name}: ${player.chips}{status}")
 
     def start_round(self) -> None:
         """
