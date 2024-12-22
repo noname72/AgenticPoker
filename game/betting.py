@@ -59,6 +59,7 @@ def betting_round(players: List["Player"], pot: int, start_index: int = 0) -> in
             continue
 
         logging.info(f"\n{player.name}'s turn:")
+        logging.info(f"  Hand: {player.hand.show()}")
         logging.info(f"  Current bet: ${current_bet}")
         logging.info(f"  Player chips: ${player.chips}")
         logging.info(f"  Player current bet: ${player.bet}")

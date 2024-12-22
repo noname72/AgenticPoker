@@ -9,19 +9,20 @@ from .player import Player
 
 class PokerGame:
     """
-    Manages a poker game with multiple players, handling betting rounds and game flow.
+    A 5-card draw poker game manager that handles multiple players and betting rounds.
 
-    This class implements a complete poker game, managing the deck, players, betting rounds,
-    and game progression. It supports multiple players, handles side pots, and manages
+    Manages the complete game flow including dealing cards, collecting blinds/antes,
+    handling betting rounds, and determining winners. Supports side pots and tracks
     player eliminations.
 
     Attributes:
-        deck (Deck): The deck of cards used in the game.
-        players (List[Player]): List of active players in the game.
-        pot (int): Current pot amount in chips.
-        small_blind (int): Small blind amount in chips.
-        big_blind (int): Big blind amount in chips.
-        dealer_index (int): Current dealer position (rotates clockwise each hand).
+        deck (Deck): The deck of cards for dealing.
+        players (List[Player]): Currently active players in the game.
+        pot (int): Total chips in the current pot.
+        small_blind (int): Required small blind bet amount.
+        big_blind (int): Required big blind bet amount.
+        dealer_index (int): Position of current dealer (0-based, moves clockwise).
+        round_count (int): Number of completed game rounds.
     """
 
     def __init__(
@@ -46,21 +47,19 @@ class PokerGame:
         self.small_blind = small_blind
         self.big_blind = big_blind
         self.dealer_index = 0
+        self.round_count = 0
 
     def blinds_and_antes(self) -> None:
         """
-        Collect blinds and antes from players at the start of each hand.
+        Collect mandatory bets (blinds and antes) at the start of each hand.
 
-        This method:
-        1. Collects a 1-chip ante from each player with chips
-        2. Collects the small blind from the player left of the dealer
-        3. Collects the big blind from the player two positions left of the dealer
-        4. Rotates the dealer position clockwise
+        Processes in order:
+        1. Collects 1-chip ante from each player who has chips
+        2. Collects small blind from player left of dealer
+        3. Collects big blind from player two left of dealer
+        4. Advances dealer position clockwise
 
-        Side Effects:
-            - Updates player chip counts
-            - Updates the pot
-            - Moves the dealer position
+        Note: Players cannot bet more than their remaining chips.
         """
         sb_index = (self.dealer_index + 1) % len(self.players)
         bb_index = (self.dealer_index + 2) % len(self.players)
@@ -82,15 +81,15 @@ class PokerGame:
 
     def handle_side_pots(self) -> List[Tuple[int, List[Player]]]:
         """
-        Calculate side pots when players are all-in with different amounts.
+        Calculate and split the pot when players are all-in with different amounts.
 
-        Creates separate pots when players are all-in for different amounts, ensuring
-        fair distribution of chips based on the amount each player contributed.
+        Creates separate pots based on the maximum amount each player could contribute,
+        ensuring fair distribution when players have gone all-in for different amounts.
 
         Returns:
-            List[Tuple[int, List[Player]]]: List of tuples where each tuple contains:
-                - int: The amount in this pot
-                - List[Player]: Players eligible to win this pot
+            List of tuples, each containing:
+            - int: The amount in this side pot
+            - List[Player]: Players eligible to win this specific pot, sorted by bet size
         """
         # Get only players who contributed to the pot
         active_players = [p for p in self.players if p.bet > 0]
@@ -123,21 +122,16 @@ class PokerGame:
 
     def showdown(self) -> None:
         """
-        Determine the winner(s) of the hand and distribute the pot(s).
+        Evaluate hands and distribute pot(s) to the winner(s).
 
-        This method:
-        1. Identifies active (non-folded) players
-        2. Handles single winner scenarios
-        3. Compares hands for multiple active players
-        4. Splits pots evenly among tied winners
-        5. Distributes any remainder chips
-        6. Resets betting state for next hand
+        Handles:
+        - Single winner scenarios (all others folded)
+        - Multiple active players with hand comparisons
+        - Equal splitting of pots among tied winners
+        - Distribution of remainder chips to first winner
+        - Resetting of betting state for next hand
 
-        Side Effects:
-            - Updates player chip counts
-            - Resets player bets to 0
-            - Resets the pot to 0
-            - Logs winning hands and chip distributions
+        Logs all chip movements and winning hands for transparency.
         """
         # Only consider non-folded players
         active_players = [p for p in self.players if not p.folded]
@@ -182,18 +176,14 @@ class PokerGame:
 
     def remove_bankrupt_players(self) -> bool:
         """
-        Remove players who have no chips left and check game ending conditions.
+        Remove players with zero chips and check if game should continue.
 
-        Removes players with zero chips and determines if the game should continue
-        based on the number of remaining players.
+        Removes bankrupt players from the game and determines if enough players
+        remain to continue playing.
 
         Returns:
-            bool: True if the game should continue, False if the game should end
-                 (0 or 1 players remaining)
-
-        Side Effects:
-            - Updates the players list
-            - Logs game ending messages if applicable
+            bool: True if game should continue (2+ players remain),
+                 False if game should end (0-1 players remain)
         """
         self.players = [player for player in self.players if player.chips > 0]
 
@@ -211,21 +201,20 @@ class PokerGame:
 
     def start_game(self) -> None:
         """
-        Start and manage the main game loop until completion.
+        Execute the main game loop until a winner is determined.
 
-        This method controls the main game flow:
-        1. Checks for minimum player count
-        2. Manages game rounds including:
-            - Removing bankrupt players
-            - Dealing cards
-            - Collecting blinds and antes
-            - Managing betting rounds
-            - Handling showdowns
-        3. Continues until a winner is determined
+        Game flow:
+        1. Verify minimum 2 players to start
+        2. For each round:
+           - Remove bankrupt players
+           - Deal new hands
+           - Collect blinds/antes
+           - Run pre-draw betting
+           - Run post-draw betting
+           - Handle showdown
+        3. Log final game statistics and standings
 
-        Side Effects:
-            - Updates all game state
-            - Logs game progress and results
+        The game ends when only 0-1 players remain with chips.
         """
         # Initial check for minimum players
         if len(self.players) < 2:
@@ -235,14 +224,10 @@ class PokerGame:
             return
 
         while True:
+            self.round_count += 1
             # Remove bankrupt players and check remaining count
-            self.remove_bankrupt_players()
-
-            if len(self.players) < 2:
-                logging.info(
-                    f"\nGame Over! {self.players[0].name} wins with {self.players[0].chips} chips!"
-                )
-                return
+            if not self.remove_bankrupt_players():
+                break  # Game is over, will log summary after loop
 
             # Reset for new round
             self.deck = Deck()
@@ -261,11 +246,8 @@ class PokerGame:
             active_players = [p for p in self.players if not p.folded]
             if len(active_players) == 1:
                 winner = active_players[0]
-                winner.chips += self.pot  # Award pot before ending
-                logging.info(
-                    f"\nGame Over! {winner.name} wins with {winner.chips} chips!"
-                )
-                return
+                winner.chips += self.pot
+                break  # Game is over, will log summary after loop
 
             logging.info("\n--- Post-Draw Betting ---")
             self.pot = betting_round(self.players, self.pot)
@@ -273,10 +255,24 @@ class PokerGame:
             active_players = [p for p in self.players if not p.folded]
             if len(active_players) == 1:
                 winner = active_players[0]
-                winner.chips += self.pot  # Award pot before ending
-                logging.info(
-                    f"\nGame Over! {winner.name} wins with {winner.chips} chips!"
-                )
-                return
+                winner.chips += self.pot
+                break  # Game is over, will log summary after loop
 
             self.showdown()
+
+        # Log game summary after any ending condition
+        # Sort all players by final chip count
+        final_standings = sorted(self.players, key=lambda p: p.chips, reverse=True)
+
+        logging.info("\n=== Game Summary ===")
+        logging.info(f"Total rounds played: {self.round_count}")
+        logging.info("\nFinal Standings:")
+        for i, player in enumerate(final_standings, 1):
+            logging.info(f"{i}. {player.name}: ${player.chips}")
+
+        # Log bankrupt players if any
+        bankrupt_players = [p for p in self.players if p.chips == 0]
+        if bankrupt_players:
+            logging.info("\nBankrupt Players:")
+            for player in bankrupt_players:
+                logging.info(f"- {player.name}")
