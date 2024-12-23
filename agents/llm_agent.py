@@ -57,9 +57,24 @@ class LLMAgent(BaseAgent):
         personality_traits: Optional[Dict[str, float]] = None,
         max_retries: int = 3,
         retry_delay: float = 1.0,
+        use_reasoning: bool = True,
+        use_reflection: bool = True,
     ) -> None:
-        """Initialize LLM-powered poker agent."""
+        """Initialize LLM-powered poker agent.
+
+        Args:
+            name: Agent's name
+            chips: Starting chip count
+            strategy_style: Initial strategy style
+            personality_traits: Dict of personality trait values
+            max_retries: Max LLM query retries
+            retry_delay: Delay between retries
+            use_reasoning: Whether to use chain-of-thought reasoning
+            use_reflection: Whether to use self-reflection mechanism
+        """
         super().__init__(name, chips)
+        self.use_reasoning = use_reasoning
+        self.use_reflection = use_reflection
 
         self.last_message = ""
         self.perception_history: List[Dict[str, Any]] = []
@@ -276,12 +291,36 @@ class LLMAgent(BaseAgent):
     def get_action(
         self, game_state: str, opponent_message: Optional[str] = None
     ) -> str:
-        """
-        Determine the next action based on the game state and opponent's message.
-        Returns: 'fold', 'call', or 'raise'
-        """
+        """Determine the next action based on the game state and opponent's message."""
         try:
-            prompt = f"""
+            if not self.use_reasoning:
+                # Use simple prompt without reasoning
+                simple_prompt = f"""
+                You are a {self.strategy_style} poker player with specific traits:
+                - Aggression: {self.personality_traits['aggression']:.1f}/1.0
+                - Bluff Frequency: {self.personality_traits['bluff_frequency']:.1f}/1.0
+                - Risk Tolerance: {self.personality_traits['risk_tolerance']:.1f}/1.0
+                
+                Current situation:
+                Game State: {game_state}
+                Opponent's Message: '{opponent_message or "nothing"}'
+                Recent History: {self.perception_history[-3:] if self.perception_history else []}
+                
+                Respond with exactly one word (fold/call/raise).
+                """
+                raw_action = self._query_llm(simple_prompt)
+                initial_action = self._normalize_action(raw_action)
+
+                if initial_action is None:
+                    self.logger.warning(
+                        f"LLM returned invalid action '{raw_action}', falling back to 'call'"
+                    )
+                    return "call"
+
+                return initial_action
+
+            # Use reasoning prompt
+            reasoning_prompt = f"""
             You are a {self.strategy_style} poker player with specific traits:
             - Aggression: {self.personality_traits['aggression']:.1f}/1.0
             - Bluff Frequency: {self.personality_traits['bluff_frequency']:.1f}/1.0
@@ -292,25 +331,66 @@ class LLMAgent(BaseAgent):
             Opponent's Message: '{opponent_message or "nothing"}'
             Recent History: {self.perception_history[-3:] if self.perception_history else []}
             
-            Consider:
-            1. Your personality traits and strategy style
-            2. The opponent's recent behavior
-            3. Your position and chip stack
-            4. The credibility of their message
+            Think through this step by step:
+            1. What does my hand evaluation tell me about my chances?
+            2. How does my strategy style influence this decision?
+            3. What have I learned from the opponent's recent behavior?
+            4. What are the pot odds and risk/reward considerations?
+            5. How does this align with my personality traits?
             
-            Important: Respond with exactly one word, without quotes: fold, call, or raise
+            Provide your reasoning, then conclude with "DECISION: <action>", 
+            where action is exactly one word (fold/call/raise).
             """
 
-            raw_action = self._query_llm(prompt)
-            action = self._normalize_action(raw_action)
+            reasoning = self._query_llm(reasoning_prompt)
 
-            if action is None:
+            # Extract the decision from the reasoning
+            decision_line = [
+                line for line in reasoning.split("\n") if "DECISION:" in line
+            ]
+            if not decision_line:
+                self.logger.warning("No clear decision found in reasoning")
+                return "call"
+
+            raw_action = decision_line[0].split("DECISION:")[1].strip()
+            initial_action = self._normalize_action(raw_action)
+
+            if initial_action is None:
                 self.logger.warning(
                     f"LLM returned invalid action '{raw_action}', falling back to 'call'"
                 )
                 return "call"
 
-            return action
+            if not self.use_reflection:
+                return initial_action
+
+            # Use reflection mechanism
+            reflection_prompt = f"""
+            You just decided to {initial_action} with this reasoning:
+            {reasoning}
+            
+            Reflect on this decision:
+            1. Is it consistent with my {self.strategy_style} style?
+            2. Does it match my personality traits?
+            3. Could this be a mistake given the current situation?
+            
+            If you find any inconsistencies, respond with "REVISE: <new_action>"
+            If the decision is sound, respond with "CONFIRM: {initial_action}"
+            """
+
+            reflection = self._query_llm(reflection_prompt).strip()
+
+            if reflection.startswith("REVISE:"):
+                revised_action = self._normalize_action(
+                    reflection.split("REVISE:")[1].strip()
+                )
+                if revised_action:
+                    self.logger.info(
+                        f"{self.name} revised action from {initial_action} to {revised_action}"
+                    )
+                    return revised_action
+
+            return initial_action
 
         except LLMError as e:
             self.logger.error(f"LLM error in get_action: {str(e)}")
@@ -319,17 +399,20 @@ class LLMAgent(BaseAgent):
     async def _query_gpt_async(self, prompt: str) -> str:
         """Asynchronous query to OpenAI's GPT model with error handling and timeout."""
         try:
-            messages = [
+            # Adjust system message based on enabled features
+            system_content = f"""You are a {self.strategy_style} poker player with these traits:
+                - Aggression: {self.personality_traits['aggression']:.1f}/1.0
+                - Bluff_Frequency: {self.personality_traits['bluff_frequency']:.1f}/1.0
+                - Risk_Tolerance: {self.personality_traits['risk_tolerance']:.1f}/1.0
+                
                 {
-                    "role": "system",
-                    "content": f"""You are a {self.strategy_style} poker player with these traits:
-                    - Aggression: {self.personality_traits['aggression']:.1f}/1.0
-                    - Bluff_Frequency: {self.personality_traits['bluff_frequency']:.1f}/1.0
-                    - Risk_Tolerance: {self.personality_traits['risk_tolerance']:.1f}/1.0
-                    
-                    Stay in character and be consistent with these traits.""",
-                }
-            ]
+                    "Think through your decisions step by step, but stay in character "
+                    "and be consistent with these traits. Your reasoning should reflect "
+                    "your personality." if self.use_reasoning else 
+                    "Stay in character and be consistent with these traits."
+                }"""
+
+            messages = [{"role": "system", "content": system_content}]
 
             if self.conversation_history:
                 for entry in self.conversation_history[-4:]:
@@ -344,7 +427,7 @@ class LLMAgent(BaseAgent):
                     lambda: self.client.chat.completions.create(
                         model="gpt-3.5-turbo",
                         messages=messages,
-                        max_tokens=20,
+                        max_tokens=150,
                         temperature=0.7,
                     ),
                 )

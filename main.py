@@ -12,10 +12,27 @@ setup_logging(0)
 
 # Create AI players with different strategies
 players = [
-    LLMAgent("Alice", chips=1000, strategy_style="Aggressive Bluffer"),
-    LLMAgent("Bob", chips=1000, strategy_style="Calculated and Cautious"),
-    LLMAgent("Charlie", chips=1000, strategy_style="Chaotic and Unpredictable"),
-    LLMAgent("Dana", chips=1000, strategy_style="Aggressive Bluffer"),
+    LLMAgent(
+        "Alice",
+        chips=1000,
+        strategy_style="Aggressive Bluffer",
+        use_reasoning=True,
+        use_reflection=True,
+    ),
+    LLMAgent(
+        "Bob",
+        chips=1000,
+        strategy_style="Calculated and Cautious",
+        use_reasoning=True,
+        use_reflection=False,
+    ),
+    LLMAgent(
+        "Charlie",
+        chips=1000,
+        strategy_style="Chaotic and Unpredictable",
+        use_reasoning=False,
+        use_reflection=False,
+    ),
 ]
 
 # Create game with session ID
