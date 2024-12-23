@@ -54,10 +54,12 @@ player = LLMAgent(
     name="Alice",
     chips=1000,
     strategy_style="Aggressive Bluffer",
-    use_reasoning=True,    # Enable detailed decision reasoning
-    use_reflection=True,   # Enable learning from past hands
-    use_planning=True,     # Enable multi-step planning
-    use_opponent_modeling=True  # Enable opponent behavior analysis
+    use_reasoning=True,     # Enable detailed decision reasoning
+    use_reflection=True,    # Enable learning from past hands
+    use_planning=True,      # Enable multi-step planning
+    use_opponent_modeling=True,  # Enable opponent behavior analysis
+    use_reward_learning=True,    # Enable reward-based learning
+    learning_rate=0.1           # Learning rate for reward updates
 )
 ```
 
@@ -67,6 +69,30 @@ player = LLMAgent(
 - "Chaotic and Unpredictable"
 - "Tight and Aggressive"
 - "Loose and Passive"
+
+### Reward Learning Configuration
+Enable reward-based learning for adaptive gameplay:
+
+```python
+# Create agent with reward learning
+learning_agent = LLMAgent(
+    "Alice",
+    chips=1000,
+    strategy_style="Aggressive Bluffer",
+    use_reward_learning=True,
+    learning_rate=0.1
+)
+
+# Update agent based on game outcomes
+learning_agent.update_from_reward(
+    reward=100,  # Positive reward for winning
+    game_state={
+        "all_in": True,
+        "bluff_successful": True,
+        "position": "dealer"
+    }
+)
+```
 
 ## Game Configuration
 
@@ -163,6 +189,16 @@ for player in game.players:
     print(f"  Final chips: ${player.chips}")
     print(f"  Hands won: {player.stats.hands_won}")
     print(f"  Largest pot: ${player.stats.largest_pot}")
+```
+
+### Analyzing Learning Progress
+```python
+# Check action values after learning
+print(f"Action Values: {player.action_values}")
+print(f"Recent Rewards: {[r for _, _, r in player.action_history[-5:]]}")
+
+# Monitor personality trait changes
+print(f"Current Traits: {player.personality_traits}")
 ```
 
 ## Next Steps

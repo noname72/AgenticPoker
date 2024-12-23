@@ -36,6 +36,8 @@ players = [
         use_reflection=True,
         use_planning=True,
         use_opponent_modeling=True,
+        use_reward_learning=True,
+        learning_rate=0.1,
         config=agent_configs.get("Alice"),
     ),
     LLMAgent(

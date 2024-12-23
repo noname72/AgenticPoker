@@ -4,7 +4,7 @@ import os
 import random
 import time
 from collections import defaultdict
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 from dotenv import load_dotenv
@@ -33,15 +33,15 @@ class BaseAgent(Player):
     def decide_action(
         self, game_state: str, opponent_message: Optional[str] = None
     ) -> str:
-        """Base method for deciding actions - should be overridden."""
-        raise NotImplementedError
+        """Base method for deciding actions."""
+        return "call"  # Default safe action instead of raising NotImplementedError
 
     def get_message(self, game_state: str) -> str:
-        """Base method for generating messages - should be overridden."""
+        """Base method for generating messages."""
         return ""
 
     def decide_draw(self) -> List[int]:
-        """Base method for deciding which cards to draw - should be overridden."""
+        """Base method for deciding which cards to draw."""
         return []
 
 
@@ -87,6 +87,8 @@ class LLMAgent(BaseAgent):
         use_reflection: bool = True,
         use_planning: bool = True,
         use_opponent_modeling: bool = False,
+        use_reward_learning: bool = False,
+        learning_rate: float = 0.1,
         config: Optional[Dict] = None,
     ) -> None:
         """Initialize LLM-powered poker agent.
@@ -102,6 +104,8 @@ class LLMAgent(BaseAgent):
             use_reflection: Whether to use self-reflection mechanism
             use_planning: Whether to use strategic planning
             use_opponent_modeling: Whether to use opponent modeling
+            use_reward_learning: Whether to use reward-based learning
+            learning_rate: Learning rate for reward-based learning
             config: Optional configuration dictionary
         """
         super().__init__(name, chips)
@@ -109,6 +113,8 @@ class LLMAgent(BaseAgent):
         self.use_reflection = use_reflection
         self.use_planning = use_planning
         self.use_opponent_modeling = use_opponent_modeling
+        self.use_reward_learning = use_reward_learning
+        self.learning_rate = learning_rate
 
         self.last_message = ""
         self.last_opponent_action = None
@@ -162,6 +168,19 @@ class LLMAgent(BaseAgent):
                 }
             )
             self.opponent_models = {}
+
+        # Initialize reward learning structures if enabled
+        if self.use_reward_learning:
+            self.action_history: List[Tuple[str, Dict[str, Any], int]] = (
+                []
+            )  # (action, state, reward)
+            self.reward_weights = {
+                "chip_gain": 1.0,
+                "win_rate": 0.8,
+                "bluff_success": 0.6,
+                "position_value": 0.4,
+            }
+            self.action_values = {"fold": 0.0, "call": 0.0, "raise": 0.0}
 
     def __del__(self):
         """Cleanup when agent is destroyed.
@@ -219,89 +238,55 @@ class LLMAgent(BaseAgent):
     def decide_action(
         self, game_state: str, opponent_message: Optional[str] = None
     ) -> str:
-        """Make a strategic decision based on current game state and available features.
+        """Enhanced decision making with reward learning."""
+        try:
+            # Get base action using the main decision logic
+            if self.use_reward_learning:
+                # Consider learned action values in decision
+                exploration_rate = 0.1  # Small chance to explore
+                if random.random() < exploration_rate:
+                    # Explore randomly
+                    action = random.choice(["fold", "call", "raise"])
+                else:
+                    # Exploit learned values with some randomness
+                    action_probs = self._get_action_probabilities()
+                    action = np.random.choice(
+                        list(action_probs.keys()), p=list(action_probs.values())
+                    )
+                self.last_action = action
+                return action
 
-        Uses planning, opponent modeling (if enabled), and historical data to make decisions.
-        Enriches game state with hand evaluation and optional opponent analysis.
+            # If reward learning is disabled, use the standard decision making process
+            # Enrich game state with hand evaluation
+            hand_eval = self.hand.evaluate() if self.hand.cards else "No cards"
+            enriched_state = f"{game_state}, Hand evaluation: {hand_eval}"
 
-        Args:
-            game_state: Current state of the game including pot, bets, etc.
-            opponent_message: Optional message from opponent to consider
+            # Add opponent analysis if enabled
+            if self.use_opponent_modeling:
+                try:
+                    opponent_name = game_state.split("vs")[1].split(",")[0].strip()
+                except:
+                    opponent_name = "Unknown_Opponent"
 
-        Returns:
-            str: Selected action ('fold', 'call', or 'raise')
-        """
-        # Enrich game state with hand evaluation
-        hand_eval = self.hand.evaluate() if self.hand.cards else "No cards"
-        enriched_state = f"{game_state}, Hand evaluation: {hand_eval}"
+                opponent_analysis = self.analyze_opponent(opponent_name, enriched_state)
+                enriched_state += f"\nOpponent Analysis: {opponent_analysis}"
 
-        # Add opponent analysis if enabled
-        opponent_analysis = None
-        if self.use_opponent_modeling:
-            try:
-                opponent_name = game_state.split("vs")[1].split(",")[0].strip()
-            except:
-                opponent_name = "Unknown_Opponent"
+            # Update perception history
+            self.perceive(enriched_state, opponent_message or "")
 
-            opponent_analysis = self.analyze_opponent(opponent_name, enriched_state)
-            enriched_state += f"\nOpponent Analysis: {opponent_analysis}"
-
-        # Update perception history
-        self.perceive(enriched_state, opponent_message or "")
-
-        if self.use_planning:
-            # Use planning-based decision making
-            plan = self.plan_strategy(enriched_state)
-
-            # Adjust plan based on opponent analysis if available
-            if self.use_opponent_modeling and opponent_analysis:
-                if opponent_analysis["threat_level"] == "high":
-                    plan["bluff_threshold"] *= 0.7
-                    plan["fold_threshold"] *= 1.2
-                elif opponent_analysis["threat_level"] == "low":
-                    plan["bluff_threshold"] *= 1.3
-                    plan["fold_threshold"] *= 0.8
-
-            action = self.execute_action(plan, enriched_state)
-
-            # Log decision with or without opponent analysis
-            if self.use_opponent_modeling and opponent_analysis:
-                self.logger.info(
-                    f"{self.name} executes {action} following {plan['approach']} strategy against {opponent_analysis['style']} opponent"
-                )
+            if self.use_planning:
+                # Use planning-based decision making
+                plan = self.plan_strategy(enriched_state)
+                action = self.execute_action(plan, enriched_state)
             else:
-                self.logger.info(
-                    f"{self.name} executes {action} following {plan['approach']} strategy"
-                )
-        else:
-            # Use direct decision making
-            action = self.get_action(enriched_state, opponent_message)
+                # Use direct decision making
+                action = self.get_action(enriched_state, opponent_message)
 
-            # Log decision with or without opponent analysis
-            if self.use_opponent_modeling and opponent_analysis:
-                self.logger.info(
-                    f"{self.name} decides to {action} against {opponent_analysis['style']} opponent"
-                )
-            else:
-                self.logger.info(f"{self.name} decides to {action}")
+            return action
 
-        # Update opponent stats if enabled
-        if self.use_opponent_modeling:
-            # Extract opponent's last action from game state if possible
-            try:
-                last_action = game_state.split("Last action:")[1].split(",")[0].strip()
-                self.last_opponent_action = last_action
-            except:
-                self.last_opponent_action = None
-
-            self.update_opponent_stats(
-                opponent_name=opponent_name,
-                action=action,
-                amount=self._extract_bet_amount(game_state),
-                position=self._extract_position(game_state),
-            )
-
-        return action
+        except Exception as e:
+            self.logger.error(f"Error in decide_action: {str(e)}")
+            return "call"  # Safe fallback
 
     def _extract_bet_amount(self, game_state: str) -> Optional[int]:
         """Extract current bet amount from game state."""
@@ -1246,3 +1231,121 @@ class LLMAgent(BaseAgent):
         except Exception as e:
             self.logger.error(f"Execution failed: {str(e)}")
             return "call"  # Safe fallback
+
+    def update_from_reward(self, reward: int, game_state: Dict[str, Any]) -> None:
+        """Update agent's strategy based on rewards received using temporal difference learning.
+
+        Implements a reward-based learning system that:
+        1. Records action-reward pairs in action history
+        2. Updates action values using TD learning
+        3. Adjusts personality traits based on outcomes
+
+        Args:
+            reward (int): Numerical reward value (positive for wins, negative for losses)
+            game_state (Dict[str, Any]): Current game state containing:
+                - all_in (bool): Whether the hand involved an all-in
+                - bluff_successful (bool): Whether a bluff attempt succeeded
+                - bluff_caught (bool): Whether a bluff was caught
+                - Other game state information
+
+        Note:
+            - Only processes updates if reward learning is enabled
+            - Uses learning rate to control adaptation speed
+            - Maintains action values for fold/call/raise
+        """
+        if not self.use_reward_learning:
+            return
+
+        # Record action and reward
+        if hasattr(self, "last_action"):
+            self.action_history.append((self.last_action, game_state, reward))
+
+        # Update action values using temporal difference learning
+        if len(self.action_history) > 1:
+            prev_action, prev_state, prev_reward = self.action_history[-2]
+            current_value = self.action_values[prev_action]
+            # TD update
+            self.action_values[prev_action] = current_value + self.learning_rate * (
+                reward + 0.9 * max(self.action_values.values()) - current_value
+            )
+
+        # Adjust personality traits based on rewards
+        if reward > 0:
+            self._adjust_traits_from_success(game_state)
+        else:
+            self._adjust_traits_from_failure(game_state)
+
+    def _adjust_traits_from_success(self, game_state: Dict[str, Any]) -> None:
+        """Incrementally adjust personality traits after successful outcomes.
+
+        Reinforces successful strategies by increasing relevant trait values:
+        - Increases risk tolerance after successful all-in plays
+        - Increases bluff frequency after successful bluffs
+
+        Args:
+            game_state (Dict[str, Any]): Game state containing:
+                - all_in (bool): Whether hand was all-in
+                - bluff_successful (bool): Whether bluff succeeded
+
+        Note:
+            - Adjustments are capped at 1.0 (maximum trait value)
+            - Uses fixed 0.05 increment for trait adjustments
+        """
+        # Small adjustments to traits that led to success
+        if "all_in" in game_state and game_state["all_in"]:
+            self.personality_traits["risk_tolerance"] = min(
+                1.0, self.personality_traits["risk_tolerance"] + 0.05
+            )
+        if "bluff_successful" in game_state and game_state["bluff_successful"]:
+            self.personality_traits["bluff_frequency"] = min(
+                1.0, self.personality_traits["bluff_frequency"] + 0.05
+            )
+
+    def _adjust_traits_from_failure(self, game_state: Dict[str, Any]) -> None:
+        """Incrementally adjust personality traits after failed outcomes.
+
+        Reduces trait values associated with failed strategies:
+        - Decreases risk tolerance after losing all-in plays
+        - Decreases bluff frequency after caught bluffs
+
+        Args:
+            game_state (Dict[str, Any]): Game state containing:
+                - all_in (bool): Whether hand was all-in
+                - bluff_caught (bool): Whether bluff was caught
+
+        Note:
+            - Adjustments are bounded at 0.0 (minimum trait value)
+            - Uses fixed 0.05 decrement for trait adjustments
+        """
+        # Small adjustments to traits that led to failure
+        if "all_in" in game_state and game_state["all_in"]:
+            self.personality_traits["risk_tolerance"] = max(
+                0.0, self.personality_traits["risk_tolerance"] - 0.05
+            )
+        if "bluff_caught" in game_state and game_state["bluff_caught"]:
+            self.personality_traits["bluff_frequency"] = max(
+                0.0, self.personality_traits["bluff_frequency"] - 0.05
+            )
+
+    def _get_action_probabilities(self) -> Dict[str, float]:
+        """Convert action values to probability distribution using softmax normalization.
+
+        Transforms raw action values into probabilities for action selection:
+        1. Applies exponential to values (with numerical stability adjustment)
+        2. Normalizes to create valid probability distribution
+
+        Returns:
+            Dict[str, float]: Mapping of actions to their probabilities:
+                - 'fold': probability of folding
+                - 'call': probability of calling
+                - 'raise': probability of raising
+
+        Note:
+            Uses numpy's exp for efficient computation and numerical stability
+        """
+        values = np.array(list(self.action_values.values()))
+        exp_values = np.exp(
+            values - np.max(values)
+        )  # Subtract max for numerical stability
+        probabilities = exp_values / np.sum(exp_values)
+        return dict(zip(self.action_values.keys(), probabilities))
