@@ -256,18 +256,26 @@ class LLMAgent(BaseAgent):
             {
                 "chips": self.chips,
                 "is_bubble": self._is_bubble_situation(game_state),
-                # Add other relevant state information
             }
         )
 
-        return f"""
+        return f"""You are a {self.strategy_style} poker player. You must respond with exactly one action.
+
 {strategy_prompt}
 
 Current situation:
 {game_state}
 
-Based on your strategy and the current situation, what action will you take?
-Respond with DECISION: <fold/call/raise> and brief reasoning
+Respond ONLY in this format:
+DECISION: <action> <brief reason>
+where <action> must be exactly one of: fold, call, raise
+
+Example responses:
+DECISION: fold weak hand against aggressive raise
+DECISION: call decent draw with good pot odds
+DECISION: raise strong hand in position
+
+What is your decision?
 """
 
     def decide_action(
@@ -319,19 +327,21 @@ Respond with DECISION: <fold/call/raise> and brief reasoning
         """Decide which cards to discard and draw new ones."""
         game_state = f"Hand: {self.hand.show()}"
 
-        prompt = f"""
-        You are a {self.strategy_style} poker player.
-        Current hand: {game_state}
-        
-        Which cards should you discard? Consider:
-        1. Pairs or potential straights/flushes
-        2. High cards worth keeping
-        3. Your strategy style
-        
-        Respond with only the indices (0-4) of cards to discard, separated by spaces.
-        Example: "0 2 4" to discard first, third, and last cards.
-        Respond with "none" to keep all cards.
-        """
+        prompt = f"""You are a {self.strategy_style} poker player.
+Current hand: {game_state}
+
+Respond ONLY with the card positions (0-4) to discard, or 'none' to keep all cards.
+Examples:
+- "0 2 4" to discard first, third, and last cards
+- "none" to keep all cards
+- "1 2" to discard second and third cards
+
+Consider:
+1. Pairs or potential straights/flushes
+2. High cards worth keeping
+3. Your {self.strategy_style} style
+
+Your response:"""
 
         response = self._query_llm(prompt).strip().lower()
         if response == "none":
@@ -410,63 +420,31 @@ Respond with DECISION: <fold/call/raise> and brief reasoning
         return perception
 
     def _get_strategic_message(self, game_state: str) -> str:
-        """Enhanced message generation with memory retrieval.
-
-        Generates strategic messages by considering game state, memory context,
-        and recent conversation history. Uses LLM to craft messages that align
-        with the agent's strategy style and personality traits.
-
-        Args:
-            game_state (str): Current state of the game including hand information
-
-        Returns:
-            str: Strategic message to influence opponent
-
-        Note:
-            - Stores generated message in both short and long-term memory
-            - Considers up to 5 recent conversation entries
-            - Limits message length to 10 words
-        """
-        # Get relevant memories
+        """Enhanced message generation with memory retrieval."""
+        # Get relevant memories and format them
         query = f"Strategy: {self.strategy_style}, Game State: {game_state}"
         relevant_memories = self.memory_store.get_relevant_memories(query)
-
-        # Format memories for prompt
         memory_context = "\n".join(
             [f"Memory {i+1}: {mem['text']}" for i, mem in enumerate(relevant_memories)]
         )
-
-        # Format recent conversation
         recent_conversation = "\n".join(
-            [
-                f"{msg['sender']}: {msg['message']}"
-                for msg in self.conversation_history[-5:]
-            ]
+            [f"{msg['sender']}: {msg['message']}" for msg in self.conversation_history[-5:]]
         )
 
-        prompt = f"""
-        You are a {self.strategy_style} poker player in Texas Hold'em.
-        
-        Current situation:
-        Game State: {game_state}
-        Your recent observations: {self.perception_history[-3:] if self.perception_history else "None"}
-        
-        Relevant memories:
-        {memory_context}
-        
-        Recent conversation:
-        {recent_conversation if self.conversation_history else "No previous conversation"}
-        
-        Generate a strategic message to influence your opponent. Your personality is {self.strategy_style}.
-        
-        Your message should:
-        1. Match your strategy style
-        2. Be under 10 words
-        3. Try to influence your opponent
-        4. Consider the conversation history and maintain consistency
-        
-        What message will you send?
-        """
+        prompt = f"""You are a {self.strategy_style} poker player.
+Your response must be a single short message (max 10 words) that fits your style.
+
+Game State: {game_state}
+Recent Observations: {self.perception_history[-3:] if self.perception_history else "None"}
+Relevant Memories: {memory_context}
+Recent Chat: {recent_conversation}
+
+Example responses:
+- "I always bet big with strong hands!"
+- "Playing it safe until I see weakness."
+- "You can't read my unpredictable style!"
+
+Your table talk message:"""
 
         message = self._query_llm(prompt).strip()
 
