@@ -1,10 +1,14 @@
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional
 
 from agents.llm_agent import LLMAgent
 from game import PokerGame
-from util import clear_results_directory, setup_logging, load_agent_configs, save_agent_configs, ensure_directory_structure
+from util import (
+    clear_results_directory,
+    ensure_directory_structure,
+    load_agent_configs,
+    setup_logging,
+)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -63,7 +67,7 @@ game = PokerGame(
     small_blind=50,
     big_blind=100,
     ante=10,
-    session_id=session_id
+    session_id=session_id,
 )
 
 
