@@ -167,29 +167,55 @@ class ChromaMemoryStore(MemoryStore):
     def clear(self) -> None:
         """Clear all memories from the collection."""
         try:
-            self.collection.delete()
-            self._initialize_client()
-            self.id_counter = 0
+            if hasattr(self, "collection") and self.collection:
+                try:
+                    # Get all document IDs first
+                    results = self.collection.get()
+                    if results and results["ids"]:
+                        # Delete all documents by ID
+                        self.collection.delete(ids=results["ids"])
+                    self.id_counter = 0
+                except Exception as e:
+                    if "no such table" not in str(e):  # Ignore if table already gone
+                        logger.error(f"Failed to clear memories: {str(e)}")
         except Exception as e:
             logger.error(f"Failed to clear memories: {str(e)}")
 
     def close(self) -> None:
-        """Close the Chroma client connection."""
+        """Close the Chroma client connection and cleanup resources."""
         try:
             if hasattr(self, "collection") and self.collection:
                 try:
-                    self.client.delete_collection(self.collection.name)
-                except:
-                    pass
-                self.collection = None
+                    # Get and delete all documents first
+                    results = self.collection.get()
+                    if results and results["ids"]:
+                        self.collection.delete(ids=results["ids"])
+
+                    # Then delete the collection itself
+                    collection_name = self.collection.name
+                    try:
+                        self.client.delete_collection(collection_name)
+                    except Exception as e:
+                        if "no such table" not in str(e):  # Ignore if already deleted
+                            logger.warning(f"Error deleting collection: {str(e)}")
+                except Exception as e:
+                    if "no such table" not in str(e):  # Ignore if table already gone
+                        logger.warning(f"Error cleaning up collection: {str(e)}")
+                finally:
+                    self.collection = None
 
             if hasattr(self, "client") and self.client:
                 try:
                     self.client.reset()
-                except:
-                    pass
-                self.client = None
+                except Exception as e:
+                    if "Python is likely shutting down" not in str(
+                        e
+                    ) and "no such table" not in str(e):
+                        logger.warning(f"Error resetting client: {str(e)}")
+                finally:
+                    self.client = None
 
             logger.info("Closed ChromaDB connection")
         except Exception as e:
-            logger.error(f"Error closing ChromaDB connection: {str(e)}")
+            if "no such table" not in str(e):  # Only log non-table errors
+                logger.error(f"Error closing ChromaDB connection: {str(e)}")

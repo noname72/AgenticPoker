@@ -70,100 +70,54 @@ def clear_results_directory() -> None:
     Clear the results directory containing ChromaDB data.
 
     Performs a thorough cleanup of the ChromaDB directory by:
-    1. Attempting to properly reset ChromaDB collections
-    2. Closing any open file handles
-    3. Removing the directory and its contents
-    4. Creating a fresh empty directory
-
-    Returns:
-        None
-
-    Raises:
-        No exceptions are raised, but warnings are logged for:
-        - Failed ChromaDB reset attempts
-        - Unable to remove directory or files
-        - Failed file handle closures
-
-    Side Effects:
-        - Deletes all ChromaDB collections
-        - Removes and recreates the 'results/chroma_db' directory
-        - Logs various status messages and warnings
+    1. Deleting any existing ChromaDB collections
+    2. Closing the client connection
+    3. Creating a fresh directory if needed
     """
     results_dir = os.path.join(os.getcwd(), "results")
     chroma_dir = os.path.join(results_dir, "chroma_db")
 
     try:
-        # First check if directory exists
-        if not os.path.exists(chroma_dir):
-            os.makedirs(chroma_dir, exist_ok=True)
-            logger.info("Created fresh ChromaDB directory")
-            return
-
-        # Try to reset ChromaDB using its own methods
+        # First try to reset ChromaDB using its own methods
         try:
             import chromadb
             from chromadb.config import Settings
 
-            client = chromadb.PersistentClient(
-                path=chroma_dir,
-                settings=Settings(
-                    allow_reset=True, anonymized_telemetry=False, is_persistent=True
-                ),
-            )
+            if os.path.exists(chroma_dir):
+                client = chromadb.PersistentClient(
+                    path=chroma_dir,
+                    settings=Settings(
+                        allow_reset=True, anonymized_telemetry=False, is_persistent=True
+                    ),
+                )
 
-            # Get all collection names and delete them
-            collections = client.list_collections()
-            for collection in collections:
-                client.delete_collection(collection.name)
-                logger.info(f"Deleted collection: {collection.name}")
+                # Get all collection names and delete them
+                collections = client.list_collections()
+                for collection in collections:
+                    client.delete_collection(collection.name)
+                    logger.info(f"Deleted collection: {collection.name}")
 
-            # Reset and close the client properly
-            client.reset()
-            del client
+                # Reset and close the client properly
+                client.reset()
+                del client
 
-            logger.info("Reset ChromaDB successfully")
+                logger.info("Reset ChromaDB successfully")
+
+                # Wait briefly for resources to be released
+                time.sleep(0.5)
 
         except Exception as e:
             logger.warning(f"Failed to reset ChromaDB cleanly: {str(e)}")
 
-        # Wait for resources to be released
-        time.sleep(1.0)
-
-        # Try to remove the directory if it exists
+        # Remove old directory if it exists
         if os.path.exists(chroma_dir):
             try:
-                import psutil
-
-                proc = psutil.Process()
-                for handler in proc.open_files():
-                    if chroma_dir in handler.path:
-                        logger.warning(f"Closing file handle: {handler.path}")
-                        try:
-                            os.close(handler.fd)
-                        except:
-                            pass
-
                 shutil.rmtree(chroma_dir)
-                logger.info("Removed ChromaDB directory")
+                logger.info("Removed old ChromaDB directory")
             except Exception as e:
-                logger.warning(f"Could not remove ChromaDB directory: {str(e)}")
-                # If we can't remove it, try to clean its contents
-                try:
-                    for item in os.listdir(chroma_dir):
-                        item_path = os.path.join(chroma_dir, item)
-                        try:
-                            if os.path.isfile(item_path):
-                                os.unlink(item_path)
-                            elif os.path.isdir(item_path):
-                                shutil.rmtree(item_path)
-                        except Exception as e:
-                            logger.warning(f"Could not remove {item_path}: {str(e)}")
-                except Exception as e:
-                    logger.warning(
-                        f"Could not clean ChromaDB directory contents: {str(e)}"
-                    )
+                logger.warning(f"Could not remove old ChromaDB directory: {str(e)}")
 
-        # Recreate empty directory
+        # Create fresh directory
         os.makedirs(chroma_dir, exist_ok=True)
         logger.info("Created fresh ChromaDB directory")
 

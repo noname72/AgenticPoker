@@ -164,9 +164,57 @@ class LLMAgent(BaseAgent):
             self.opponent_models = {}
 
     def __del__(self):
-        """Cleanup when agent is destroyed."""
-        if hasattr(self, "memory_store"):
-            self.memory_store.close()
+        """Cleanup when agent is destroyed.
+
+        Ensures proper cleanup of resources by:
+        1. Clearing all in-memory data
+        2. Closing and deleting memory store
+        3. Cleaning up OpenAI client
+        """
+        try:
+            # First clear all in-memory data
+            if hasattr(self, "perception_history"):
+                self.perception_history.clear()
+                del self.perception_history
+
+            if hasattr(self, "conversation_history"):
+                self.conversation_history.clear()
+                del self.conversation_history
+
+            if hasattr(self, "current_plan"):
+                self.current_plan = None
+                del self.current_plan
+
+            if hasattr(self, "opponent_stats"):
+                self.opponent_stats.clear()
+                del self.opponent_stats
+
+            if hasattr(self, "opponent_models"):
+                self.opponent_models.clear()
+                del self.opponent_models
+
+            # Then clean up memory store - do this before client cleanup
+            if hasattr(self, "memory_store"):
+                try:
+                    self.memory_store.clear()
+                    self.memory_store.close()
+                except Exception as e:
+                    if "Python is likely shutting down" not in str(e):
+                        logging.warning(f"Error cleaning up memory store: {str(e)}")
+                finally:
+                    del self.memory_store
+
+            # Finally clean up OpenAI client
+            if hasattr(self, "client"):
+                try:
+                    del self.client
+                except Exception as e:
+                    if "Python is likely shutting down" not in str(e):
+                        logging.warning(f"Error cleaning up OpenAI client: {str(e)}")
+
+        except Exception as e:
+            if "Python is likely shutting down" not in str(e):
+                logging.warning(f"Error during LLMAgent cleanup: {str(e)}")
 
     def decide_action(
         self, game_state: str, opponent_message: Optional[str] = None
