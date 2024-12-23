@@ -18,6 +18,7 @@ players = [
         strategy_style="Aggressive Bluffer",
         use_reasoning=True,
         use_reflection=True,
+        use_planning=True,
     ),
     LLMAgent(
         "Bob",
@@ -25,6 +26,7 @@ players = [
         strategy_style="Calculated and Cautious",
         use_reasoning=True,
         use_reflection=False,
+        use_planning=False,
     ),
     LLMAgent(
         "Charlie",
@@ -32,6 +34,7 @@ players = [
         strategy_style="Chaotic and Unpredictable",
         use_reasoning=False,
         use_reflection=False,
+        use_planning=False,
     ),
 ]
 

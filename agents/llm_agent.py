@@ -59,6 +59,7 @@ class LLMAgent(BaseAgent):
         retry_delay: float = 1.0,
         use_reasoning: bool = True,
         use_reflection: bool = True,
+        use_planning: bool = True,
     ) -> None:
         """Initialize LLM-powered poker agent.
 
@@ -71,10 +72,12 @@ class LLMAgent(BaseAgent):
             retry_delay: Delay between retries
             use_reasoning: Whether to use chain-of-thought reasoning
             use_reflection: Whether to use self-reflection mechanism
+            use_planning: Whether to use strategic planning
         """
         super().__init__(name, chips)
         self.use_reasoning = use_reasoning
         self.use_reflection = use_reflection
+        self.use_planning = use_planning
 
         self.last_message = ""
         self.perception_history: List[Dict[str, Any]] = []
@@ -96,20 +99,35 @@ class LLMAgent(BaseAgent):
             raise ValueError("OPENAI_API_KEY environment variable not set")
         self.client = OpenAI(api_key=api_key)
 
+        # Add plan tracking (only if planning is enabled)
+        if self.use_planning:
+            self.current_plan: Optional[Dict[str, Any]] = None
+            self.plan_expiry: float = 0
+            self.plan_duration: float = 30.0  # Plan lasts for 30 seconds by default
+
     def decide_action(
         self, game_state: str, opponent_message: Optional[str] = None
     ) -> str:
-        """Get the agent's decision for the current game state."""
-        # Enrich game state with hand evaluation
+        """Enhanced decision making using planning and execution phases."""
+        # Enrich game state
         hand_eval = self.hand.evaluate() if self.hand.cards else "No cards"
         enriched_state = f"{game_state}, Hand evaluation: {hand_eval}"
 
-        # Update agent's perception of game state
+        # Update perception
         self.perceive(enriched_state, opponent_message or "")
 
-        # Get action from LLM
-        action = self.get_action(enriched_state, opponent_message)
-        self.logger.info(f"{self.name} decides to {action}")
+        if self.use_planning:
+            # Use planning-based decision making
+            plan = self.plan_strategy(enriched_state)
+            action = self.execute_action(plan, enriched_state)
+            self.logger.info(
+                f"{self.name} executes {action} following {plan['approach']} strategy"
+            )
+        else:
+            # Use direct decision making
+            action = self.get_action(enriched_state, opponent_message)
+            self.logger.info(f"{self.name} decides to {action}")
+
         return action
 
     def get_message(self, game_state: str) -> str:
@@ -579,6 +597,9 @@ class LLMAgent(BaseAgent):
         self.perception_history = []
         self.conversation_history = []
         self.last_message = ""
+        if self.use_planning:
+            self.current_plan = None
+            self.plan_expiry = 0
         self.logger.info(f"[Reset] Agent {self.name} reset for new game")
 
     def get_stats(self) -> Dict[str, Any]:
@@ -588,10 +609,140 @@ class LLMAgent(BaseAgent):
             dict: Statistics including strategy style, perception history length,
                   and other relevant metrics
         """
-        return {
+        stats = {
             "name": self.name,
             "strategy_style": self.strategy_style,
             "perception_history_length": len(self.perception_history),
             "model_type": self.model_type,
             "last_message": self.last_message,
+            "features": {
+                "planning": self.use_planning,
+                "reasoning": self.use_reasoning,
+                "reflection": self.use_reflection,
+            },
         }
+        if self.use_planning and self.current_plan:
+            stats["current_plan"] = {
+                "approach": self.current_plan["approach"],
+                "expires_in": max(0, self.plan_expiry - time.time()),
+            }
+        return stats
+
+    def plan_strategy(self, game_state: str) -> Dict[str, Any]:
+        """Generate high-level strategic plan based on game state and agent traits."""
+        # Check if we have a valid current plan
+        current_time = time.time()
+        if (
+            self.current_plan
+            and current_time < self.plan_expiry
+            and not self._should_replan(game_state)
+        ):
+            return self.current_plan
+
+        # Create planning prompt with escaped curly braces for the JSON template
+        planning_prompt = f"""
+        You are a {self.strategy_style} poker player with these traits:
+        - Aggression: {self.personality_traits['aggression']:.1f}/1.0
+        - Bluff Frequency: {self.personality_traits['bluff_frequency']:.1f}/1.0
+        - Risk Tolerance: {self.personality_traits['risk_tolerance']:.1f}/1.0
+
+        Current situation:
+        {game_state}
+        Recent history: {self.perception_history[-3:] if self.perception_history else "None"}
+        
+        Develop a short-term strategic plan. Consider:
+        1. Your chip stack and position
+        2. Recent opponent behavior
+        3. Your personality traits
+        4. Risk/reward balance
+        
+        Respond in this JSON format:
+        {{
+            "approach": "<aggressive/defensive/deceptive/balanced>",
+            "reasoning": "<brief explanation>",
+            "bet_sizing": "<small/medium/large>",
+            "bluff_threshold": <0.0-1.0>,
+            "fold_threshold": <0.0-1.0>
+        }}
+        """
+
+        try:
+            response = self._query_llm(planning_prompt)
+            plan = eval(response.strip())  # Safe since we control LLM output format
+
+            # Update plan tracking
+            self.current_plan = plan
+            self.plan_expiry = current_time + self.plan_duration
+
+            self.logger.info(
+                f"[Planning] {self.name} adopted {plan['approach']} approach: {plan['reasoning']}"
+            )
+            return plan
+
+        except Exception as e:
+            self.logger.error(f"Planning failed: {str(e)}")
+            # Fallback plan
+            return {
+                "approach": "balanced",
+                "reasoning": "Error in planning, falling back to balanced approach",
+                "bet_sizing": "medium",
+                "bluff_threshold": 0.5,
+                "fold_threshold": 0.3,
+            }
+
+    def _should_replan(self, game_state: str) -> bool:
+        """Determine if current plan should be abandoned for a new one."""
+        if not self.current_plan:
+            return True
+
+        # Extract key metrics from game state
+        try:
+            current_bet = int(game_state.split("Current bet: $")[1].split(",")[0])
+            chips = int(game_state.split("Your chips: $")[1].split(",")[0])
+
+            # Replan if significant changes occurred
+            significant_bet = current_bet > chips * 0.3
+            low_stack = chips < 300  # Arbitrary threshold
+
+            return significant_bet or low_stack
+
+        except:
+            return False
+
+    def execute_action(self, plan: Dict[str, Any], game_state: str) -> str:
+        """Execute specific action based on current plan and game state.
+
+        Args:
+            plan: Current strategic plan
+            game_state: Current game state
+
+        Returns:
+            str: Concrete action (fold/call/raise)
+        """
+        execution_prompt = f"""
+        You are a {self.strategy_style} poker player following this plan:
+        Approach: {plan['approach']}
+        Reasoning: {plan['reasoning']}
+        
+        Current situation:
+        {game_state}
+        
+        Given your {plan['approach']} approach:
+        1. Evaluate if the situation matches your plan
+        2. Consider pot odds and immediate action costs
+        3. Factor in your bluff_threshold ({plan['bluff_threshold']}) and fold_threshold ({plan['fold_threshold']})
+        
+        Respond with EXECUTE: <fold/call/raise> and brief reasoning
+        """
+
+        try:
+            response = self._query_llm(execution_prompt)
+            if "EXECUTE:" not in response:
+                raise ValueError("No EXECUTE directive found")
+
+            action = response.split("EXECUTE:")[1].strip().split()[0]
+            return self._normalize_action(action)
+
+        except Exception as e:
+            self.logger.error(f"Execution failed: {str(e)}")
+            return "call"  # Safe fallback
