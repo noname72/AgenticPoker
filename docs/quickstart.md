@@ -24,7 +24,7 @@ echo "OPENAI_API_KEY=your_key_here" > .env
 The quickest way to start a game is using the default configuration:
 
 ```python
-from game import PokerGame
+from game import AgenticPoker
 from agents.llm_agent import LLMAgent
 
 # Create AI players with different strategies
@@ -35,7 +35,7 @@ players = [
 ]
 
 # Initialize and start the game
-game = PokerGame(
+game = AgenticPoker(
     players,
     starting_chips=1000,
     small_blind=10,
@@ -72,7 +72,7 @@ player = LLMAgent(
 
 ### Basic Settings
 ```python
-game = PokerGame(
+game = AgenticPoker(
     players,
     starting_chips=1000,  # Starting chips for each player
     small_blind=10,       # Small blind amount

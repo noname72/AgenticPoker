@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 
 from agents.llm_agent import LLMAgent
-from game import PokerGame
+from game import AgenticPoker
 from util import (
     clear_results_directory,
     ensure_directory_structure,
@@ -61,7 +61,7 @@ players = [
 ]
 
 # Create game with session ID
-game = PokerGame(
+game = AgenticPoker(
     players,
     starting_chips=1000,
     small_blind=50,

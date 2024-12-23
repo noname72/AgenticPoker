@@ -5,7 +5,7 @@ The Game module is the core controller for the poker game, managing game flow, r
 
 ## Classes
 
-### PokerGame
+### AgenticPoker
 Main game controller class that manages the poker game flow.
 
 #### Attributes:
@@ -37,7 +37,7 @@ Manages the showdown phase and determines winners.
 
 #### Example:
 ```python
-game = PokerGame(players, starting_chips=1000, small_blind=10, big_blind=20)
+game = AgenticPoker(players, starting_chips=1000, small_blind=10, big_blind=20)
 game.start_game()
 ```
 

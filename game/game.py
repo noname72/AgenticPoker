@@ -7,7 +7,7 @@ from .hand import Hand
 from .player import Player
 
 
-class PokerGame:
+class AgenticPoker:
     """
     A 5-card draw poker game manager that handles multiple players and betting rounds.
 
