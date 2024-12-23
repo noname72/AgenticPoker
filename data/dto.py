@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -232,6 +232,28 @@ class PlayerStatsResponse(BaseModel):
     player: PlayerDTO
     stats: PlayerStatsDTO
     recent_games: List[GameDTO] = Field(default_factory=list)
+
+    class Config:
+        from_attributes = True
+
+
+class MemoryDTO(BaseModel):
+    """Data Transfer Object for agent memories."""
+
+    text: str
+    metadata: Dict[str, Any]
+    timestamp: datetime = Field(default_factory=datetime.now)
+
+    class Config:
+        from_attributes = True
+
+
+class MemoryQueryDTO(BaseModel):
+    """Data Transfer Object for memory queries."""
+
+    query: str
+    k: int = Field(default=3, description="Number of memories to retrieve")
+    filters: Optional[Dict[str, Any]] = None
 
     class Config:
         from_attributes = True

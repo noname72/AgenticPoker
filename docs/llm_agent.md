@@ -1,7 +1,7 @@
 # LLM Poker Agent Documentation
 
 ## Overview
-The LLM (Language Learning Model) Agent is an AI poker player that uses natural language processing to make strategic decisions, interpret opponent behavior, and communicate during gameplay. It combines poker domain knowledge with configurable personality traits and cognitive mechanisms.
+The LLM (Language Learning Model) Agent is an AI poker player that uses natural language processing to make strategic decisions, interpret opponent behavior, and communicate during gameplay. It combines poker domain knowledge with configurable personality traits, cognitive mechanisms, and a persistent memory system.
 
 ## Features
 
@@ -12,6 +12,34 @@ The LLM (Language Learning Model) Agent is an AI poker player that uses natural 
 - Adaptive strategy updates
 - Hand evaluation and drawing decisions
 - Historical perception tracking
+- Persistent memory with vector storage
+
+### Memory System
+The agent uses a vector-based memory store to:
+- Maintain long-term memory across games
+- Store and retrieve relevant experiences
+- Track conversation history
+- Analyze opponent patterns
+- Support strategic decision-making
+
+Memory types include:
+1. **Perception Memory**
+   - Game states
+   - Opponent actions
+   - Hand histories
+   - Timestamps and metadata
+
+2. **Conversation Memory**
+   - Table talk
+   - Opponent messages
+   - Own responses
+   - Communication patterns
+
+3. **Strategic Memory**
+   - Past decisions
+   - Outcome analysis
+   - Pattern recognition
+   - Strategy adaptations
 
 ### Cognitive Mechanisms
 The agent has three optional cognitive mechanisms that can be enabled/disabled:
@@ -19,17 +47,20 @@ The agent has three optional cognitive mechanisms that can be enabled/disabled:
 1. **Chain-of-Thought Reasoning** (`use_reasoning`)
    - Systematic step-by-step analysis of the situation
    - Considers hand strength, strategy, opponent behavior, pot odds, and personality alignment
+   - Incorporates relevant historical memories
    - More thorough but computationally intensive
 
 2. **Self-Reflection** (`use_reflection`)
    - Reviews initial decisions for consistency
    - Can revise actions that don't align with strategy/personality
+   - Uses memory to validate decisions against past experiences
    - Adds an extra layer of strategic coherence
 
 3. **Strategic Planning** (`use_planning`)
    - Develops high-level strategic plans for gameplay
    - Plans persist for configurable duration (default 30s)
    - Considers chip stack, position, and opponent patterns
+   - Uses memory to inform planning decisions
    - Separates strategic planning from tactical execution
 
 ## Configuration
@@ -71,12 +102,32 @@ When planning is enabled:
 
 ## Usage Examples
 
-### Basic Agent Creation
+### Basic Agent Creation with Memory
 ```python
 agent = LLMAgent(
     "Alice",
     chips=1000,
     strategy_style="Aggressive Bluffer"
+)
+# Memory is automatically initialized and persisted
+```
+
+### Accessing Agent Memory
+```python
+# Get relevant memories for current situation
+memories = agent.memory_store.get_relevant_memories(
+    query="opponent bluffing patterns",
+    k=3
+)
+
+# Add a new observation to memory
+agent.memory_store.add_memory(
+    text="Opponent shows aggressive betting on weak hands",
+    metadata={
+        "type": "observation",
+        "timestamp": time.time(),
+        "strategy_style": agent.strategy_style
+    }
 )
 ```
 
@@ -147,6 +198,17 @@ simple_agent = LLMAgent(
 - `execute_action(plan: Dict[str, Any], game_state: str) -> str`
   - Executes tactical decisions based on current plan
 
+### Memory Management
+- `perceive(game_state: str, opponent_message: str) -> Dict[str, Any]`
+  - Processes and stores new game state information
+  - Updates both short-term and long-term memory
+  - Returns the processed perception data
+
+- `_get_strategic_message(game_state: str) -> str`
+  - Generates messages using memory context
+  - Considers conversation history
+  - Retrieves relevant past interactions
+
 ## Performance Considerations
 
 ### Computational Impact
@@ -166,6 +228,12 @@ simple_agent = LLMAgent(
 - With reasoning: ~2-3 seconds
 - With reflection: ~3-4 seconds
 - With planning: ~3-5 seconds
+
+### Memory Impact
+- Disk Usage: ~100MB per 1000 memories
+- Retrieval Time: ~50ms per query
+- Storage Time: ~30ms per memory
+- Vector Embedding: ~100ms per text
 
 ## Best Practices
 
@@ -189,6 +257,12 @@ simple_agent = LLMAgent(
    - Consider disabling in time-critical situations
    - Use with reasoning for best results
 
+5. **Memory Management**
+   - Regular memory clearing between games
+   - Specific queries for better retrieval
+   - Balanced memory retention
+   - Consistent metadata structure
+
 ## Limitations
 
 1. **Response Time**
@@ -206,6 +280,12 @@ simple_agent = LLMAgent(
    - Personality drift over long sessions
    - Requires monitoring and adjustment
 
+4. **Memory Constraints**
+   - Storage space requirements
+   - Retrieval latency
+   - Embedding quality impact
+   - Context window limits
+
 ## Future Improvements
 
 1. **Planned Features**
@@ -222,3 +302,16 @@ simple_agent = LLMAgent(
    - Tournament support
    - Performance analytics
    - Strategy training
+
+4. **Memory Enhancements**
+   - Memory summarization
+   - Automatic pruning
+   - Importance weighting
+   - Cross-game learning
+   - Enhanced metadata filtering
+
+5. **Storage Optimizations**
+   - Compressed embeddings
+   - Tiered storage
+   - Batch operations
+   - Memory indexing

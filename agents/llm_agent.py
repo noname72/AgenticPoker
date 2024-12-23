@@ -5,11 +5,11 @@ import random
 import time
 from typing import Any, Dict, List, Optional
 
-import requests
 from dotenv import load_dotenv
 from openai import OpenAI
 
 from data.enums import StrategyStyle
+from data.memory import ChromaMemoryStore
 from exceptions import LLMError, OpenAIError
 from game.player import Player
 
@@ -46,7 +46,31 @@ class BaseAgent(Player):
 class LLMAgent(BaseAgent):
     """Advanced poker agent with LLM-powered decision making capabilities.
 
-    Combines the functionality of the original PokerAgent and AIPlayer classes.
+    An intelligent poker agent that uses Large Language Models (LLM) to make strategic decisions,
+    generate messages, and adapt its gameplay based on the current situation. Features include
+    planning, reasoning, reflection, and both short-term and long-term memory.
+
+    Features:
+        - Strategic planning with adaptive replanning
+        - Chain-of-thought reasoning for decisions
+        - Self-reflection on actions
+        - Short-term memory for recent events
+        - Long-term memory using ChromaDB
+        - Personality traits and strategy styles
+        - Message generation and interpretation
+        - Error handling and retry mechanisms
+
+    Attributes:
+        name (str): Agent's identifier
+        chips (int): Current chip count
+        strategy_style (str): Current strategic approach
+        personality_traits (dict): Numerical traits affecting decisions
+        use_reasoning (bool): Enable chain-of-thought reasoning
+        use_reflection (bool): Enable action reflection
+        use_planning (bool): Enable strategic planning
+        memory_store (ChromaMemoryStore): Long-term memory storage
+        perception_history (list): Recent game events
+        conversation_history (list): Recent messages
     """
 
     def __init__(
@@ -105,10 +129,39 @@ class LLMAgent(BaseAgent):
             self.plan_expiry: float = 0
             self.plan_duration: float = 30.0  # Plan lasts for 30 seconds by default
 
+        # Initialize memory store with sanitized name for collection
+        collection_name = f"agent_{name.lower().replace(' ', '_')}_memory"
+        self.memory_store = ChromaMemoryStore(collection_name)
+
+        # Keep short-term memory in lists for immediate context
+        self.short_term_limit = 3
+        self.perception_history: List[Dict[str, Any]] = []
+        self.conversation_history: List[Dict[str, Any]] = []
+
+    def __del__(self):
+        """Cleanup when agent is destroyed."""
+        if hasattr(self, "memory_store"):
+            self.memory_store.close()
+
     def decide_action(
         self, game_state: str, opponent_message: Optional[str] = None
     ) -> str:
-        """Enhanced decision making using planning and execution phases."""
+        """Make a strategic decision based on current game state and opponent's message.
+
+        Uses either planning-based or direct decision making depending on configuration.
+        Enriches game state with hand evaluation and updates perception history.
+
+        Args:
+            game_state: Current state of the game including pot, bets, etc.
+            opponent_message: Optional message from opponent to consider
+
+        Returns:
+            str: Selected action ('fold', 'call', or 'raise')
+
+        Note:
+            When planning is enabled, follows a strategic plan with periodic replanning.
+            Otherwise uses direct LLM querying for decisions.
+        """
         # Enrich game state
         hand_eval = self.hand.evaluate() if self.hand.cards else "No cards"
         enriched_state = f"{game_state}, Hand evaluation: {hand_eval}"
@@ -168,29 +221,47 @@ class LLMAgent(BaseAgent):
             return [i for i, rank in enumerate(ranks) if ranks.count(rank) == 1]
 
     def perceive(self, game_state: str, opponent_message: str) -> Dict[str, Any]:
-        """Process and store current game state and opponent's message.
+        """Process and store new game information in memory systems.
+
+        Updates both short-term memory (recent events) and long-term memory (ChromaDB)
+        with new game states and messages for future reference.
 
         Args:
-            game_state (str): Current state of the poker game as a string
-            opponent_message (str): Message received from the opponent
+            game_state: Current state of the game
+            opponent_message: Message from opponent
 
         Returns:
-            dict: Perception data including game state, opponent message, and timestamp
-        """
-        # Keep only last 3 perceptions to avoid memory bloat and irrelevant history
-        if len(self.perception_history) >= 3:
-            self.perception_history.pop(0)
+            dict: Perception entry containing game state, message, and timestamp
 
+        Note:
+            Maintains limited-size short-term memory and unlimited long-term memory.
+        """
+        # Create perception entry
         perception = {
             "game_state": game_state,
             "opponent_message": opponent_message,
             "timestamp": time.time(),
         }
+
+        # Store in short-term memory
+        if len(self.perception_history) >= self.short_term_limit:
+            self.perception_history.pop(0)
         self.perception_history.append(perception)
 
+        # Store in long-term memory
+        memory_text = f"Game State: {game_state}\nOpponent Message: {opponent_message}"
+        self.memory_store.add_memory(
+            text=memory_text,
+            metadata={
+                "type": "perception",
+                "timestamp": time.time(),
+                "strategy_style": self.strategy_style,
+            },
+        )
+
+        # Handle conversation history
         if opponent_message:
-            # Keep only last 3 messages
-            if len(self.conversation_history) >= 3:
+            if len(self.conversation_history) >= self.short_term_limit:
                 self.conversation_history.pop(0)
             self.conversation_history.append(
                 {
@@ -200,25 +271,51 @@ class LLMAgent(BaseAgent):
                 }
             )
 
+            # Store conversation in long-term memory
+            self.memory_store.add_memory(
+                text=opponent_message,
+                metadata={
+                    "type": "conversation",
+                    "sender": "opponent",
+                    "timestamp": time.time(),
+                    "strategy_style": self.strategy_style,
+                },
+            )
+
         return perception
 
     def _get_strategic_message(self, game_state: str) -> str:
-        """Generate strategic communication with conversation context.
+        """Enhanced message generation with memory retrieval.
 
-        Uses LLM to create contextually appropriate messages that align with the agent's
-        strategy style and current game situation.
+        Generates strategic messages by considering game state, memory context,
+        and recent conversation history. Uses LLM to craft messages that align
+        with the agent's strategy style and personality traits.
 
         Args:
-            game_state (str): Current state of the poker game
+            game_state (str): Current state of the game including hand information
 
         Returns:
             str: Strategic message to influence opponent
+
+        Note:
+            - Stores generated message in both short and long-term memory
+            - Considers up to 5 recent conversation entries
+            - Limits message length to 10 words
         """
-        # Format recent conversation history
+        # Get relevant memories
+        query = f"Strategy: {self.strategy_style}, Game State: {game_state}"
+        relevant_memories = self.memory_store.get_relevant_memories(query)
+
+        # Format memories for prompt
+        memory_context = "\n".join(
+            [f"Memory {i+1}: {mem['text']}" for i, mem in enumerate(relevant_memories)]
+        )
+
+        # Format recent conversation
         recent_conversation = "\n".join(
             [
                 f"{msg['sender']}: {msg['message']}"
-                for msg in self.conversation_history[-5:]  # Last 5 messages
+                for msg in self.conversation_history[-5:]
             ]
         )
 
@@ -227,7 +324,10 @@ class LLMAgent(BaseAgent):
         
         Current situation:
         Game State: {game_state}
-        Your recent observations: {self.perception_history[-3:] if len(self.perception_history) > 0 else "None"}
+        Your recent observations: {self.perception_history[-3:] if self.perception_history else "None"}
+        
+        Relevant memories:
+        {memory_context}
         
         Recent conversation:
         {recent_conversation if self.conversation_history else "No previous conversation"}
@@ -244,23 +344,41 @@ class LLMAgent(BaseAgent):
         """
 
         message = self._query_llm(prompt).strip()
-        # Store own message in conversation history
+
+        # Store own message in memory
         self.conversation_history.append(
             {"sender": self.name, "message": message, "timestamp": time.time()}
         )
+        self.memory_store.add_memory(
+            text=message,
+            metadata={
+                "type": "conversation",
+                "sender": self.name,
+                "timestamp": time.time(),
+                "strategy_style": self.strategy_style,
+            },
+        )
+
         self.last_message = message
         return message
 
     def interpret_message(self, opponent_message: str) -> str:
-        """Enhanced message interpretation with historical context.
+        """Analyze and interpret opponent's message using historical context.
 
-        Analyzes opponent messages considering recent game history and agent's strategy style.
+        Evaluates opponent messages by considering recent game history, conversation patterns,
+        and the agent's strategic style to determine appropriate response strategy.
 
         Args:
             opponent_message (str): Message received from the opponent
 
         Returns:
-            str: Interpretation result ('trust', 'ignore', or 'counter-bluff')
+            str: Interpretation result, one of:
+                - 'trust': Message appears genuine
+                - 'ignore': Message is irrelevant or misleading
+                - 'counter-bluff': Message indicates opponent bluffing
+
+        Note:
+            Uses LLM to analyze message sentiment and intent based on game context.
         """
         recent_history = self.perception_history[-3:] if self.perception_history else []
 
@@ -279,7 +397,24 @@ class LLMAgent(BaseAgent):
         return self._query_llm(prompt).strip().lower()
 
     def _normalize_action(self, action: str) -> str:
-        """Normalize the LLM's action response to a valid action."""
+        """Normalize the LLM's action response to a valid action.
+
+        Processes and standardizes action strings from LLM responses into
+        valid poker actions. Handles variations and embedded actions in sentences.
+
+        Args:
+            action (str): Raw action string from LLM
+
+        Returns:
+            str: Normalized action ('fold', 'call', or 'raise')
+            None: If action cannot be normalized
+
+        Note:
+            - Normalizes 'check' to 'call'
+            - Normalizes 'bet' to 'raise'
+            - Handles actions embedded in sentences
+            - Strips punctuation and quotes
+        """
         # Remove any quotes and extra whitespace
         action = action.lower().strip().strip("'\"")
 
@@ -309,7 +444,23 @@ class LLMAgent(BaseAgent):
     def get_action(
         self, game_state: str, opponent_message: Optional[str] = None
     ) -> str:
-        """Determine the next action based on the game state and opponent's message."""
+        """Determine the next action based on the game state and opponent's message.
+
+        Uses either simple or reasoning-based decision making based on configuration.
+        Can include self-reflection mechanism to validate decisions.
+
+        Args:
+            game_state (str): Current state of the game
+            opponent_message (Optional[str]): Message from opponent, if any
+
+        Returns:
+            str: Selected action ('fold', 'call', or 'raise')
+
+        Note:
+            - Falls back to 'call' if decision making fails
+            - Uses personality traits to influence decisions
+            - Implements optional reasoning and reflection steps
+        """
         try:
             if not self.use_reasoning:
                 # Use simple prompt without reasoning
@@ -480,7 +631,23 @@ class LLMAgent(BaseAgent):
             return "I need to think about my next move."
 
     def _query_llm(self, prompt: str) -> str:
-        """Enhanced LLM query with retries and comprehensive error handling."""
+        """Query LLM with retry mechanism and error handling.
+
+        Makes repeated attempts to get a response from the language model,
+        implementing exponential backoff and comprehensive error handling.
+
+        Args:
+            prompt (str): The prompt to send to the language model
+
+        Returns:
+            str: Response from the language model
+
+        Raises:
+            LLMError: If all retry attempts fail or other unrecoverable error occurs
+
+        Note:
+            Uses self.max_retries and self.retry_delay for retry configuration.
+        """
         last_error = None
 
         for attempt in range(self.max_retries):
@@ -514,10 +681,15 @@ class LLMAgent(BaseAgent):
         """Update agent's strategy based on game outcomes and performance.
 
         Analyzes game results to potentially adjust strategy style and decision-making
-        patterns for future games.
+        patterns for future games. Uses LLM to evaluate strategy effectiveness.
 
         Args:
             game_outcome (dict): Results and statistics from the completed game
+
+        Note:
+            - Can switch between predefined strategy styles
+            - Considers recent history in decision
+            - Logs strategy changes for monitoring
         """
         prompt = f"""
         You are a poker player analyzing your performance.
@@ -553,13 +725,19 @@ class LLMAgent(BaseAgent):
             self.strategy_style = strategy_map[response]
 
     def analyze_opponent(self) -> Dict[str, Any]:
-        """Analyze opponent's behavior patterns and tendencies.
+        """Analyze opponent's behavioral patterns and playing style.
 
-        Reviews perception history to identify patterns in opponent's actions,
-        messages, and betting behavior.
+        Reviews historical interactions and game states to identify patterns
+        in opponent's betting, bluffing, and messaging behavior.
 
         Returns:
-            dict: Analysis results including behavior patterns and threat assessment
+            dict: Analysis results containing:
+                - patterns (str): Identified behavior pattern
+                - threat_level (str): Assessed threat level (low/medium/high)
+
+        Note:
+            Returns default values if insufficient history available.
+            Uses perception_history for pattern analysis.
         """
         if not self.perception_history:
             return {"patterns": "insufficient data", "threat_level": "unknown"}
@@ -592,22 +770,46 @@ class LLMAgent(BaseAgent):
     def reset_state(self) -> None:
         """Reset agent's state for a new game.
 
-        Clears perception history while maintaining strategy style and name.
+        Clears all temporary state including:
+            - Perception history
+            - Conversation history
+            - Current plan
+            - Memory store
+            - Last message
+
+        Note:
+            Reinitializes memory store with clean collection.
+            Logs reset operation for debugging.
         """
+        if hasattr(self, "memory_store"):
+            self.memory_store.close()
         self.perception_history = []
         self.conversation_history = []
         self.last_message = ""
         if self.use_planning:
             self.current_plan = None
             self.plan_expiry = 0
+
+        # Reinitialize memory store
+        collection_name = f"agent_{self.name.lower().replace(' ', '_')}_memory"
+        self.memory_store = ChromaMemoryStore(collection_name)
         self.logger.info(f"[Reset] Agent {self.name} reset for new game")
 
     def get_stats(self) -> Dict[str, Any]:
-        """Retrieve agent's performance statistics and current state.
+        """Retrieve current agent statistics and state information.
+
+        Collects various metrics and state information about the agent's
+        current configuration and performance.
 
         Returns:
-            dict: Statistics including strategy style, perception history length,
-                  and other relevant metrics
+            dict: Statistics including:
+                - name: Agent identifier
+                - strategy_style: Current strategy approach
+                - perception_history_length: Number of stored perceptions
+                - model_type: Type of LLM being used
+                - last_message: Most recent message sent
+                - features: Dict of enabled/disabled features
+                - current_plan: Active strategy plan (if planning enabled)
         """
         stats = {
             "name": self.name,
@@ -629,7 +831,26 @@ class LLMAgent(BaseAgent):
         return stats
 
     def plan_strategy(self, game_state: str) -> Dict[str, Any]:
-        """Generate high-level strategic plan based on game state and agent traits."""
+        """Generate or update the agent's strategic plan.
+
+        Creates a short-term strategic plan considering the agent's traits, current
+        game state, and recent history. Plans include approach, bet sizing, and
+        thresholds for actions.
+
+        Args:
+            game_state: Current state of the game
+
+        Returns:
+            dict: Strategic plan containing:
+                - approach: Overall strategy (aggressive/defensive/deceptive/balanced)
+                - reasoning: Explanation of the chosen approach
+                - bet_sizing: Preferred bet size (small/medium/large)
+                - bluff_threshold: Probability threshold for bluffing
+                - fold_threshold: Probability threshold for folding
+
+        Note:
+            Plans expire after a set duration or when significant game changes occur.
+        """
         # Check if we have a valid current plan
         current_time = time.time()
         if (
@@ -691,7 +912,23 @@ class LLMAgent(BaseAgent):
             }
 
     def _should_replan(self, game_state: str) -> bool:
-        """Determine if current plan should be abandoned for a new one."""
+        """Determine if current plan should be abandoned for a new one.
+
+        Evaluates game state changes to decide if current strategic plan
+        remains valid or needs updating.
+
+        Args:
+            game_state (str): Current state of the game
+
+        Returns:
+            bool: True if replanning needed, False otherwise
+
+        Note:
+            Triggers replanning on:
+            - Significant bet sizes (>30% of chips)
+            - Low chip stack (<300)
+            - Missing current plan
+        """
         if not self.current_plan:
             return True
 
@@ -712,12 +949,20 @@ class LLMAgent(BaseAgent):
     def execute_action(self, plan: Dict[str, Any], game_state: str) -> str:
         """Execute specific action based on current plan and game state.
 
+        Translates strategic plan into concrete poker action considering
+        current situation and plan parameters.
+
         Args:
-            plan: Current strategic plan
-            game_state: Current game state
+            plan (dict): Current strategic plan
+            game_state (str): Current game state
 
         Returns:
-            str: Concrete action (fold/call/raise)
+            str: Concrete action ('fold', 'call', or 'raise')
+
+        Note:
+            - Falls back to 'call' if execution fails
+            - Considers bluff and fold thresholds from plan
+            - Evaluates pot odds and immediate costs
         """
         execution_prompt = f"""
         You are a {self.strategy_style} poker player following this plan:
