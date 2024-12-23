@@ -1,21 +1,28 @@
 import logging
 from datetime import datetime
+from typing import Dict, List, Optional
 
 from agents.llm_agent import LLMAgent
 from game import PokerGame
-from util import clear_results_directory, setup_logging
+from util import clear_results_directory, setup_logging, load_agent_configs, save_agent_configs, ensure_directory_structure
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Ensure required directories exist
+ensure_directory_structure()
+
 # Generate unique session ID
 session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 # Set up logging with session ID
-setup_logging(0)
+setup_logging(session_id)
 
-# Create AI players with different strategies
+# Load existing agent configurations or create new ones
+agent_configs = load_agent_configs()
+
+# Create AI players with different strategies and features
 players = [
     LLMAgent(
         "Alice",
@@ -24,6 +31,8 @@ players = [
         use_reasoning=True,
         use_reflection=True,
         use_planning=True,
+        use_opponent_modeling=True,
+        config=agent_configs.get("Alice"),
     ),
     LLMAgent(
         "Bob",
@@ -32,6 +41,8 @@ players = [
         use_reasoning=True,
         use_reflection=False,
         use_planning=False,
+        use_opponent_modeling=True,
+        config=agent_configs.get("Bob"),
     ),
     LLMAgent(
         "Charlie",
@@ -40,12 +51,19 @@ players = [
         use_reasoning=False,
         use_reflection=False,
         use_planning=False,
+        use_opponent_modeling=False,
+        config=agent_configs.get("Charlie"),
     ),
 ]
 
 # Create game with session ID
 game = PokerGame(
-    players, starting_chips=1000, small_blind=50, big_blind=100, ante=10, session_id=0
+    players,
+    starting_chips=1000,
+    small_blind=50,
+    big_blind=100,
+    ante=10,
+    session_id=session_id
 )
 
 

@@ -1,9 +1,12 @@
+import json
 import logging
 import os
 import shutil
 import sys
-from datetime import datetime
 import time
+from datetime import datetime
+from pathlib import Path
+from typing import Dict
 
 logger = logging.getLogger(__name__)
 
@@ -166,3 +169,44 @@ def clear_results_directory() -> None:
 
     except Exception as e:
         logger.error(f"Failed to clear results directory: {str(e)}")
+
+
+def load_agent_configs() -> Dict:
+    """Load agent configurations from JSON file.
+
+    Returns:
+        Dict containing agent configurations or empty dict if file doesn't exist
+    """
+    config_path = Path("configs/agent_configs.json")
+    if not config_path.exists():
+        return {}
+
+    try:
+        with open(config_path, "r") as f:
+            return json.load(f)
+    except Exception as e:
+        logging.error(f"Error loading agent configs: {str(e)}")
+        return {}
+
+
+def save_agent_configs(configs: Dict) -> None:
+    """Save agent configurations to JSON file.
+
+    Args:
+        configs: Dictionary of agent configurations to save
+    """
+    config_path = Path("configs/agent_configs.json")
+    config_path.parent.mkdir(exist_ok=True)
+
+    try:
+        with open(config_path, "w") as f:
+            json.dump(configs, f, indent=4)
+    except Exception as e:
+        logging.error(f"Error saving agent configs: {str(e)}")
+
+
+def ensure_directory_structure() -> None:
+    """Ensure all required directories exist."""
+    directories = ["logs", "results", "configs", "data"]
+    for dir_name in directories:
+        Path(dir_name).mkdir(exist_ok=True)

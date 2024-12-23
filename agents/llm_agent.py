@@ -3,8 +3,10 @@ import logging
 import os
 import random
 import time
+from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
+import numpy as np
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -84,6 +86,8 @@ class LLMAgent(BaseAgent):
         use_reasoning: bool = True,
         use_reflection: bool = True,
         use_planning: bool = True,
+        use_opponent_modeling: bool = False,
+        config: Optional[Dict] = None,
     ) -> None:
         """Initialize LLM-powered poker agent.
 
@@ -97,13 +101,17 @@ class LLMAgent(BaseAgent):
             use_reasoning: Whether to use chain-of-thought reasoning
             use_reflection: Whether to use self-reflection mechanism
             use_planning: Whether to use strategic planning
+            use_opponent_modeling: Whether to use opponent modeling
+            config: Optional configuration dictionary
         """
         super().__init__(name, chips)
         self.use_reasoning = use_reasoning
         self.use_reflection = use_reflection
         self.use_planning = use_planning
+        self.use_opponent_modeling = use_opponent_modeling
 
         self.last_message = ""
+        self.last_opponent_action = None
         self.perception_history: List[Dict[str, Any]] = []
         self.conversation_history: List[Dict[str, Any]] = []
         self.strategy_style = strategy_style or random.choice(
@@ -138,6 +146,23 @@ class LLMAgent(BaseAgent):
         self.perception_history: List[Dict[str, Any]] = []
         self.conversation_history: List[Dict[str, Any]] = []
 
+        # Initialize opponent modeling structures only if enabled
+        if self.use_opponent_modeling:
+            self.opponent_stats = defaultdict(
+                lambda: {
+                    "actions": defaultdict(int),
+                    "bet_sizes": [],
+                    "showdown_hands": [],
+                    "bluff_attempts": 0,
+                    "bluff_successes": 0,
+                    "fold_to_raise_count": 0,
+                    "raise_faced_count": 0,
+                    "last_five_actions": [],
+                    "position_stats": defaultdict(lambda: defaultdict(int)),
+                }
+            )
+            self.opponent_models = {}
+
     def __del__(self):
         """Cleanup when agent is destroyed."""
         if hasattr(self, "memory_store"):
@@ -146,10 +171,10 @@ class LLMAgent(BaseAgent):
     def decide_action(
         self, game_state: str, opponent_message: Optional[str] = None
     ) -> str:
-        """Make a strategic decision based on current game state and opponent's message.
+        """Make a strategic decision based on current game state and available features.
 
-        Uses either planning-based or direct decision making depending on configuration.
-        Enriches game state with hand evaluation and updates perception history.
+        Uses planning, opponent modeling (if enabled), and historical data to make decisions.
+        Enriches game state with hand evaluation and optional opponent analysis.
 
         Args:
             game_state: Current state of the game including pot, bets, etc.
@@ -157,31 +182,98 @@ class LLMAgent(BaseAgent):
 
         Returns:
             str: Selected action ('fold', 'call', or 'raise')
-
-        Note:
-            When planning is enabled, follows a strategic plan with periodic replanning.
-            Otherwise uses direct LLM querying for decisions.
         """
-        # Enrich game state
+        # Enrich game state with hand evaluation
         hand_eval = self.hand.evaluate() if self.hand.cards else "No cards"
         enriched_state = f"{game_state}, Hand evaluation: {hand_eval}"
 
-        # Update perception
+        # Add opponent analysis if enabled
+        opponent_analysis = None
+        if self.use_opponent_modeling:
+            try:
+                opponent_name = game_state.split("vs")[1].split(",")[0].strip()
+            except:
+                opponent_name = "Unknown_Opponent"
+
+            opponent_analysis = self.analyze_opponent(opponent_name, enriched_state)
+            enriched_state += f"\nOpponent Analysis: {opponent_analysis}"
+
+        # Update perception history
         self.perceive(enriched_state, opponent_message or "")
 
         if self.use_planning:
             # Use planning-based decision making
             plan = self.plan_strategy(enriched_state)
+
+            # Adjust plan based on opponent analysis if available
+            if self.use_opponent_modeling and opponent_analysis:
+                if opponent_analysis["threat_level"] == "high":
+                    plan["bluff_threshold"] *= 0.7
+                    plan["fold_threshold"] *= 1.2
+                elif opponent_analysis["threat_level"] == "low":
+                    plan["bluff_threshold"] *= 1.3
+                    plan["fold_threshold"] *= 0.8
+
             action = self.execute_action(plan, enriched_state)
-            self.logger.info(
-                f"{self.name} executes {action} following {plan['approach']} strategy"
-            )
+
+            # Log decision with or without opponent analysis
+            if self.use_opponent_modeling and opponent_analysis:
+                self.logger.info(
+                    f"{self.name} executes {action} following {plan['approach']} strategy against {opponent_analysis['style']} opponent"
+                )
+            else:
+                self.logger.info(
+                    f"{self.name} executes {action} following {plan['approach']} strategy"
+                )
         else:
             # Use direct decision making
             action = self.get_action(enriched_state, opponent_message)
-            self.logger.info(f"{self.name} decides to {action}")
+
+            # Log decision with or without opponent analysis
+            if self.use_opponent_modeling and opponent_analysis:
+                self.logger.info(
+                    f"{self.name} decides to {action} against {opponent_analysis['style']} opponent"
+                )
+            else:
+                self.logger.info(f"{self.name} decides to {action}")
+
+        # Update opponent stats if enabled
+        if self.use_opponent_modeling:
+            # Extract opponent's last action from game state if possible
+            try:
+                last_action = game_state.split("Last action:")[1].split(",")[0].strip()
+                self.last_opponent_action = last_action
+            except:
+                self.last_opponent_action = None
+
+            self.update_opponent_stats(
+                opponent_name=opponent_name,
+                action=action,
+                amount=self._extract_bet_amount(game_state),
+                position=self._extract_position(game_state),
+            )
 
         return action
+
+    def _extract_bet_amount(self, game_state: str) -> Optional[int]:
+        """Extract current bet amount from game state."""
+        try:
+            return int(game_state.split("Current bet: $")[1].split(",")[0])
+        except:
+            return None
+
+    def _extract_position(self, game_state: str) -> Optional[str]:
+        """Extract player position from game state."""
+        try:
+            if "dealer" in game_state.lower():
+                return "dealer"
+            elif "small blind" in game_state.lower():
+                return "small_blind"
+            elif "big blind" in game_state.lower():
+                return "big_blind"
+            return None
+        except:
+            return None
 
     def get_message(self, game_state: str) -> str:
         """Get a strategic message from the agent."""
@@ -724,48 +816,163 @@ class LLMAgent(BaseAgent):
             )
             self.strategy_style = strategy_map[response]
 
-    def analyze_opponent(self) -> Dict[str, Any]:
-        """Analyze opponent's behavioral patterns and playing style.
+    def analyze_opponent(self, opponent_name: str, game_state: str) -> Dict[str, Any]:
+        """Enhanced opponent analysis using historical data and LLM interpretation.
 
-        Reviews historical interactions and game states to identify patterns
-        in opponent's betting, bluffing, and messaging behavior.
-
-        Returns:
-            dict: Analysis results containing:
-                - patterns (str): Identified behavior pattern
-                - threat_level (str): Assessed threat level (low/medium/high)
-
-        Note:
-            Returns default values if insufficient history available.
-            Uses perception_history for pattern analysis.
+        Analyzes opponent patterns considering:
+        - Action frequencies
+        - Betting patterns
+        - Position-based tendencies
+        - Bluffing frequency
+        - Response to aggression
         """
-        if not self.perception_history:
-            return {"patterns": "insufficient data", "threat_level": "unknown"}
+        # Default analysis structure
+        default_analysis = {
+            "patterns": "unknown",
+            "threat_level": "medium",
+            "style": "unknown",
+            "weaknesses": [],
+            "strengths": [],
+            "recommended_adjustments": [],
+        }
+
+        # Return default if opponent modeling is disabled
+        if not self.use_opponent_modeling:
+            return default_analysis
+
+        stats = self.opponent_stats[opponent_name]
+
+        # Return default if insufficient data
+        total_actions = sum(stats["actions"].values())
+        if total_actions == 0:
+            default_analysis.update(
+                {
+                    "patterns": "insufficient data",
+                    "style": "unknown",
+                    "threat_level": "unknown",
+                }
+            )
+            return default_analysis
+
+        # Calculate key metrics
+        aggression_frequency = (
+            (stats["actions"]["raise"] / total_actions) if total_actions > 0 else 0
+        )
+        fold_to_raise_ratio = (
+            (stats["fold_to_raise_count"] / stats["raise_faced_count"])
+            if stats["raise_faced_count"] > 0
+            else 0
+        )
+        bluff_success_rate = (
+            (stats["bluff_successes"] / stats["bluff_attempts"])
+            if stats["bluff_attempts"] > 0
+            else 0
+        )
+
+        # Prepare statistical summary for LLM
+        stats_summary = f"""
+        Opponent Analysis for {opponent_name}:
+        - Action Distribution: {dict(stats['actions'])}
+        - Average Bet Size: ${np.mean(stats['bet_sizes']) if stats['bet_sizes'] else 0:.2f}
+        - Fold to Raise: {fold_to_raise_ratio:.2%}
+        - Bluff Success Rate: {bluff_success_rate:.2%}
+        - Recent Actions: {stats['last_five_actions'][-5:]}
+        - Position Tendencies: {dict(stats['position_stats'])}
+        """
 
         prompt = f"""
-        Analyze this opponent's behavior patterns:
-        Recent history: {self.perception_history[-5:]}
+        Analyze this poker opponent's playing style and patterns:
         
-        Provide a concise analysis in this exact JSON format:
+        {stats_summary}
+        Current Game State: {game_state}
+        
+        Provide a detailed analysis in this exact JSON format:
         {{
-            "patterns": "<one word>",
-            "threat_level": "<low/medium/high>"
+            "patterns": "<primary pattern>",
+            "threat_level": "<low/medium/high>",
+            "style": "<tight-aggressive/loose-passive/unknown>",
+            "weaknesses": ["<exploitable pattern>"],
+            "strengths": ["<strong pattern>"],
+            "recommended_adjustments": ["<strategic adjustment>"]
         }}
+        
+        Base the analysis on:
+        1. Position-based tendencies
+        2. Betting patterns and sizes
+        3. Response to aggression
+        4. Bluffing frequency and success
+        5. Recent behavior changes
+        
+        Always include all fields, use "unknown" for uncertain values.
         """
 
         try:
-            response = self._query_llm(prompt).strip()
-            # Basic validation that it's in the expected format
-            if '"patterns"' in response and '"threat_level"' in response:
-                return eval(
-                    response
-                )  # Safe here since we control the LLM output format
-        except Exception as e:
-            self.logger.error(
-                "[Opponent Analysis] Error parsing LLM response: %s", str(e)
-            )
+            response = self._query_llm(prompt)
+            analysis = eval(response.strip())  # Safe since we control LLM output format
 
-        return {"patterns": "unknown", "threat_level": "medium"}
+            # Ensure all required keys are present
+            for key in default_analysis:
+                if key not in analysis:
+                    analysis[key] = default_analysis[key]
+
+            # Cache analysis for future reference
+            self.opponent_models[opponent_name] = {
+                "last_analysis": analysis,
+                "timestamp": time.time(),
+                "confidence": min(
+                    total_actions / 20, 1.0
+                ),  # Confidence based on sample size
+            }
+
+            return analysis
+
+        except Exception as e:
+            self.logger.error(f"Error in opponent analysis: {str(e)}")
+            return default_analysis
+
+    def update_opponent_stats(
+        self,
+        opponent_name: str,
+        action: str,
+        amount: Optional[int] = None,
+        position: Optional[str] = None,
+        hand_shown: Optional[str] = None,
+        was_bluff: Optional[bool] = None,
+    ) -> None:
+        """Update opponent statistics with new action data."""
+        stats = self.opponent_stats[opponent_name]
+
+        # Update action counts
+        stats["actions"][action] += 1
+
+        # Track betting amounts
+        if amount is not None and action in ["raise", "call"]:
+            stats["bet_sizes"].append(amount)
+
+        # Update position-based stats
+        if position:
+            stats["position_stats"][position][action] += 1
+
+        # Track recent actions
+        stats["last_five_actions"].append((action, amount))
+        if len(stats["last_five_actions"]) > 5:
+            stats["last_five_actions"].pop(0)
+
+        # Update bluff tracking
+        if was_bluff is not None:
+            stats["bluff_attempts"] += 1
+            if was_bluff:
+                stats["bluff_successes"] += 1
+
+        # Update fold to raise stats
+        if action == "fold" and getattr(self, "last_opponent_action", None) == "raise":
+            stats["fold_to_raise_count"] += 1
+        if action == "raise":
+            stats["raise_faced_count"] += 1
+
+        # Store shown hands
+        if hand_shown:
+            stats["showdown_hands"].append(hand_shown)
 
     def reset_state(self) -> None:
         """Reset agent's state for a new game.

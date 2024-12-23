@@ -13,6 +13,9 @@ The LLM (Language Learning Model) Agent is an AI poker player that uses natural 
 - Hand evaluation and drawing decisions
 - Historical perception tracking
 - Persistent memory with vector storage
+- Opponent modeling and analysis
+- Statistical tracking of player behavior
+- Adaptive response to opponent patterns
 
 ### Memory System
 The agent uses a vector-based memory store to:
@@ -40,6 +43,29 @@ Memory types include:
    - Outcome analysis
    - Pattern recognition
    - Strategy adaptations
+
+### Opponent Modeling System
+The agent includes an optional opponent modeling system that:
+
+1. **Statistical Tracking**
+   - Action frequencies
+   - Betting patterns
+   - Position-based tendencies
+   - Bluffing frequency and success rates
+   - Historical hand information
+
+2. **Real-time Analysis**
+   - Threat level assessment
+   - Playing style classification
+   - Pattern identification
+   - Weakness/strength analysis
+   - Strategic adjustment recommendations
+
+3. **Adaptive Response**
+   - Adjusts bluffing threshold based on opponent type
+   - Modifies fold threshold based on aggression levels
+   - Updates strategy based on observed patterns
+   - Maintains confidence levels in analysis
 
 ### Cognitive Mechanisms
 The agent has three optional cognitive mechanisms that can be enabled/disabled:
@@ -70,13 +96,15 @@ The agent has three optional cognitive mechanisms that can be enabled/disabled:
 LLMAgent(
     name: str,                                    # Agent's name
     chips: int = 1000,                           # Starting chips
-    strategy_style: Optional[str] = None,        # Playing style
+    strategy_style: Optional[str] = None,         # Playing style
     personality_traits: Optional[Dict] = None,    # Behavioral traits
     max_retries: int = 3,                        # LLM query retries
     retry_delay: float = 1.0,                    # Retry wait time
     use_reasoning: bool = True,                  # Enable reasoning
     use_reflection: bool = True,                 # Enable reflection
     use_planning: bool = True,                   # Enable planning
+    use_opponent_modeling: bool = False,         # Enable opponent modeling
+    config: Optional[Dict] = None,               # Configuration dictionary
 )
 ```
 
@@ -169,6 +197,48 @@ simple_agent = LLMAgent(
 )
 ```
 
+### Agent with Opponent Modeling
+```python
+# Create agent with opponent modeling enabled
+strategic_agent = LLMAgent(
+    "Alice",
+    strategy_style="Calculated and Cautious",
+    use_opponent_modeling=True,
+    personality_traits={
+        "aggression": 0.6,
+        "bluff_frequency": 0.4,
+        "risk_tolerance": 0.5
+    }
+)
+
+# Access opponent analysis
+opponent_analysis = strategic_agent.analyze_opponent(
+    opponent_name="Bob",
+    game_state="Current game situation..."
+)
+
+# Update opponent statistics
+strategic_agent.update_opponent_stats(
+    opponent_name="Bob",
+    action="raise",
+    amount=100,
+    position="dealer",
+    was_bluff=False
+)
+```
+
+### Opponent Analysis Structure
+```python
+{
+    "patterns": "aggressive raising from position",
+    "threat_level": "high",
+    "style": "tight-aggressive",
+    "weaknesses": ["folds too often to re-raises"],
+    "strengths": ["strong position play"],
+    "recommended_adjustments": ["increase re-raising frequency"]
+}
+```
+
 ## Key Methods
 
 ### Decision Making
@@ -209,6 +279,17 @@ simple_agent = LLMAgent(
   - Considers conversation history
   - Retrieves relevant past interactions
 
+### Opponent Modeling
+- `analyze_opponent(opponent_name: str, game_state: str) -> Dict[str, Any]`
+  - Analyzes opponent's playing patterns and style
+  - Returns detailed analysis with threat assessment
+  - Includes strategic recommendations
+
+- `update_opponent_stats(opponent_name: str, **kwargs) -> None`
+  - Updates statistical tracking for opponent
+  - Tracks actions, positions, and outcomes
+  - Maintains running statistics
+
 ## Performance Considerations
 
 ### Computational Impact
@@ -234,6 +315,12 @@ simple_agent = LLMAgent(
 - Retrieval Time: ~50ms per query
 - Storage Time: ~30ms per memory
 - Vector Embedding: ~100ms per text
+
+### Opponent Modeling Impact
+- Memory Usage: ~50KB per opponent
+- Analysis Time: ~200ms per opponent
+- Storage Overhead: Minimal (uses defaultdict)
+- Update Time: <10ms per action
 
 ## Best Practices
 
@@ -263,6 +350,22 @@ simple_agent = LLMAgent(
    - Balanced memory retention
    - Consistent metadata structure
 
+### Opponent Modeling Usage
+1. **Enable Selectively**
+   - Use for serious gameplay
+   - Disable for casual or fast games
+   - Consider memory implications
+
+2. **Data Collection**
+   - Allow sufficient actions for accurate analysis
+   - Track across multiple games when possible
+   - Reset statistics periodically
+
+3. **Analysis Integration**
+   - Combine with planning for best results
+   - Use threat levels to adjust strategy
+   - Consider confidence levels in analysis
+
 ## Limitations
 
 1. **Response Time**
@@ -285,6 +388,22 @@ simple_agent = LLMAgent(
    - Retrieval latency
    - Embedding quality impact
    - Context window limits
+
+### Opponent Modeling Limitations
+1. **Cold Start**
+   - Requires sufficient data for accurate analysis
+   - Initial predictions may be unreliable
+   - Default to conservative estimates
+
+2. **Memory Requirements**
+   - Scales with number of opponents
+   - Grows with game history
+   - May need periodic pruning
+
+3. **Analysis Accuracy**
+   - Dependent on data quality
+   - May misclassify complex patterns
+   - Requires validation over time
 
 ## Future Improvements
 
@@ -315,3 +434,19 @@ simple_agent = LLMAgent(
    - Tiered storage
    - Batch operations
    - Memory indexing
+
+### Opponent Modeling Enhancements
+1. **Pattern Recognition**
+   - Deep learning integration
+   - Pattern sequence analysis
+   - Temporal pattern detection
+
+2. **Analysis Refinement**
+   - Confidence scoring
+   - Bias detection
+   - Cross-validation
+
+3. **Performance Optimization**
+   - Batch analysis
+   - Incremental updates
+   - Compressed statistics

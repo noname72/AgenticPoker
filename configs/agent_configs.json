@@ -1,0 +1,29 @@
+{
+    "Alice": {
+        "personality_traits": {
+            "aggression": 0.8,
+            "bluff_frequency": 0.7,
+            "risk_tolerance": 0.6
+        },
+        "win_rate": 0.0,
+        "total_games": 0
+    },
+    "Bob": {
+        "personality_traits": {
+            "aggression": 0.4,
+            "bluff_frequency": 0.3,
+            "risk_tolerance": 0.5
+        },
+        "win_rate": 0.0,
+        "total_games": 0
+    },
+    "Charlie": {
+        "personality_traits": {
+            "aggression": 0.6,
+            "bluff_frequency": 0.8,
+            "risk_tolerance": 0.7
+        },
+        "win_rate": 0.0,
+        "total_games": 0
+    }
+} 
