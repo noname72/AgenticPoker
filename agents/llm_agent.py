@@ -10,6 +10,7 @@ import numpy as np
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from agents.strategy_cards import StrategyManager
 from data.enums import StrategyStyle
 from data.memory import ChromaMemoryStore
 from exceptions import LLMError, OpenAIError
@@ -182,6 +183,20 @@ class LLMAgent(BaseAgent):
             }
             self.action_values = {"fold": 0.0, "call": 0.0, "raise": 0.0}
 
+        # Initialize strategy manager
+        self.strategy_manager = StrategyManager(
+            strategy_style or "Calculated and Cautious"
+        )
+
+        # Set active cognitive modules
+        self.strategy_manager.active_modules.update(
+            {
+                "reasoning": use_reasoning,
+                "reflection": use_reflection,
+                "planning": use_planning,
+            }
+        )
+
     def __del__(self):
         """Cleanup when agent is destroyed.
 
@@ -235,57 +250,42 @@ class LLMAgent(BaseAgent):
             if "Python is likely shutting down" not in str(e):
                 logging.warning(f"Error during LLMAgent cleanup: {str(e)}")
 
+    def _get_decision_prompt(self, game_state: str) -> str:
+        """Creates a decision prompt combining strategy and game state."""
+        strategy_prompt = self.strategy_manager.get_complete_prompt(
+            {
+                "chips": self.chips,
+                "is_bubble": self._is_bubble_situation(game_state),
+                # Add other relevant state information
+            }
+        )
+
+        return f"""
+{strategy_prompt}
+
+Current situation:
+{game_state}
+
+Based on your strategy and the current situation, what action will you take?
+Respond with DECISION: <fold/call/raise> and brief reasoning
+"""
+
     def decide_action(
         self, game_state: str, opponent_message: Optional[str] = None
     ) -> str:
-        """Enhanced decision making with reward learning."""
+        """Uses strategy-aware prompting to make decisions."""
         try:
-            # Get base action using the main decision logic
-            if self.use_reward_learning:
-                # Consider learned action values in decision
-                exploration_rate = 0.1  # Small chance to explore
-                if random.random() < exploration_rate:
-                    # Explore randomly
-                    action = random.choice(["fold", "call", "raise"])
-                else:
-                    # Exploit learned values with some randomness
-                    action_probs = self._get_action_probabilities()
-                    action = np.random.choice(
-                        list(action_probs.keys()), p=list(action_probs.values())
-                    )
-                self.last_action = action
-                return action
+            prompt = self._get_decision_prompt(game_state)
+            response = self._query_llm(prompt)
 
-            # If reward learning is disabled, use the standard decision making process
-            # Enrich game state with hand evaluation
-            hand_eval = self.hand.evaluate() if self.hand.cards else "No cards"
-            enriched_state = f"{game_state}, Hand evaluation: {hand_eval}"
+            if "DECISION:" not in response:
+                raise ValueError("No decision found in response")
 
-            # Add opponent analysis if enabled
-            if self.use_opponent_modeling:
-                try:
-                    opponent_name = game_state.split("vs")[1].split(",")[0].strip()
-                except:
-                    opponent_name = "Unknown_Opponent"
-
-                opponent_analysis = self.analyze_opponent(opponent_name, enriched_state)
-                enriched_state += f"\nOpponent Analysis: {opponent_analysis}"
-
-            # Update perception history
-            self.perceive(enriched_state, opponent_message or "")
-
-            if self.use_planning:
-                # Use planning-based decision making
-                plan = self.plan_strategy(enriched_state)
-                action = self.execute_action(plan, enriched_state)
-            else:
-                # Use direct decision making
-                action = self.get_action(enriched_state, opponent_message)
-
-            return action
+            action = response.split("DECISION:")[1].strip().split()[0]
+            return self._normalize_action(action)
 
         except Exception as e:
-            self.logger.error(f"Error in decide_action: {str(e)}")
+            self.logger.error(f"Decision error: {str(e)}")
             return "call"  # Safe fallback
 
     def _extract_bet_amount(self, game_state: str) -> Optional[int]:
@@ -1349,3 +1349,44 @@ class LLMAgent(BaseAgent):
         )  # Subtract max for numerical stability
         probabilities = exp_values / np.sum(exp_values)
         return dict(zip(self.action_values.keys(), probabilities))
+
+    def _is_bubble_situation(self, game_state: str) -> bool:
+        """Determine if the current game state represents a tournament bubble situation.
+
+        A bubble situation typically occurs when:
+        1. We're in a tournament (vs cash game)
+        2. Players are close to making the money
+        3. Stack sizes become critical for survival
+
+        Args:
+            game_state (str): Current game state description
+
+        Returns:
+            bool: True if we're in a bubble situation, False otherwise
+        """
+        try:
+            # Look for bubble indicators in game state
+            is_bubble = "tournament" in game_state.lower() and (
+                "bubble" in game_state.lower()
+                or "near money" in game_state.lower()
+                or "money bubble" in game_state.lower()
+            )
+
+            # Also check for critical stack size situations
+            if not is_bubble:
+                try:
+                    # Extract number of players if available
+                    players_left = int(
+                        game_state.split("players remaining:")[1].split()[0]
+                    )
+                    # Typical bubble situations are near prize positions
+                    if players_left <= 10:  # Arbitrary threshold
+                        return True
+                except:
+                    pass
+
+            return is_bubble
+
+        except Exception as e:
+            self.logger.warning(f"Error checking bubble situation: {str(e)}")
+            return False

@@ -178,6 +178,93 @@ The agent maintains:
 }
 ```
 
+## Strategy Management
+
+### Strategy Cards System
+The agent uses a flexible strategy cards system that combines:
+
+1. **Core Strategy Personalities**
+   ```python
+   CORE_STRATEGIES = {
+       "Aggressive Bluffer": """You are an aggressive poker player who:
+       - Raises frequently to put pressure on opponents
+       - Uses position and timing for maximum effect
+       - Bluffs often but with strategic timing
+       - Seeks to dominate the table psychologically
+       - Takes calculated risks to build big pots
+       - Watches for signs of weakness to exploit""",
+       
+       "Calculated and Cautious": """You are a mathematical poker player who:
+       - Makes decisions based primarily on pot odds and equity
+       - Plays a tight-aggressive style
+       - Bluffs rarely and only with strong drawing hands
+       - Takes detailed notes on opponent patterns
+       - Preserves chips for optimal spots
+       - Focuses on long-term expected value""",
+       
+       "Chaotic and Unpredictable": """You are an unpredictable player who:
+       - Varies play style dramatically hand to hand
+       - Makes unconventional plays to confuse opponents
+       - Talks frequently to create table atmosphere
+       - Takes unusual lines with marginal hands
+       - Switches between passive and aggressive
+       - Uses psychology over pure math"""
+   }
+   ```
+
+2. **Situational Modifiers**
+   ```python
+   SITUATION_MODIFIERS = {
+       "short_stack": "Adjusts for < 300 chips",
+       "big_stack": "Adjusts for > 2000 chips",
+       "bubble": "Adjusts for tournament bubble"
+   }
+   ```
+
+3. **Cognitive Modules**
+   ```python
+   COGNITIVE_MODULES = {
+       "reasoning": "Step-by-step decision analysis",
+       "reflection": "Review and validate decisions",
+       "planning": "Multi-step strategic planning"
+   }
+   ```
+
+### Strategy Manager
+The agent uses a StrategyManager class to:
+- Combine different strategy components
+- Generate complete prompts
+- Handle strategy updates
+- Manage cognitive modules
+
+```python
+strategy_manager = StrategyManager(
+    base_strategy="Aggressive Bluffer",
+)
+
+# Enable cognitive modules
+strategy_manager.active_modules.update({
+    "reasoning": True,
+    "reflection": True,
+    "planning": True
+})
+```
+
+### Dynamic Strategy Adaptation
+The strategy manager:
+1. Automatically detects game situations
+2. Applies relevant modifiers
+3. Activates appropriate cognitive modules
+4. Generates comprehensive strategy prompts
+
+Example prompt generation:
+```python
+prompt = strategy_manager.get_complete_prompt({
+    "chips": 250,  # Triggers short stack modifier
+    "is_bubble": True  # Triggers bubble play modifier
+})
+```
+
 ## Usage Examples
 
 ### Basic Agent Creation with Memory
@@ -562,3 +649,54 @@ learning_agent.update_from_reward(
    - Adaptive exploration rates
    - Context-aware rewards
    - Meta-learning capabilities
+
+## Decision Making Process
+
+The agent's decision-making process now incorporates the strategy cards system:
+
+1. **Strategy Compilation**
+   - Combines core strategy with situational modifiers
+   - Activates relevant cognitive modules
+   - Generates comprehensive strategy prompt
+
+2. **Decision Generation**
+   ```python
+   def _get_decision_prompt(self, game_state: str) -> str:
+       """Creates a decision prompt combining strategy and game state."""
+       strategy_prompt = self.strategy_manager.get_complete_prompt({
+           "chips": self.chips,
+           "is_bubble": self._is_bubble_situation(game_state),
+       })
+       
+       return f"""
+       {strategy_prompt}
+       
+       Current situation:
+       {game_state}
+       
+       Based on your strategy and the current situation, what action will you take?
+       Respond with DECISION: <fold/call/raise> and brief reasoning
+       """
+   ```
+
+3. **Action Execution**
+   - Parses LLM response for DECISION directive
+   - Normalizes action to valid poker move
+   - Provides fallback to 'call' if needed
+
+When creating an agent, you can now specify which cognitive modules to enable:
+
+```python
+agent = LLMAgent(
+    "Alice",
+    strategy_style="Aggressive Bluffer",
+    use_reasoning=True,    # Enables reasoning module
+    use_reflection=True,   # Enables reflection module
+    use_planning=True,     # Enables planning module
+)
+```
+
+The strategy manager will automatically:
+- Load the appropriate core strategy
+- Enable specified cognitive modules
+- Handle situational adaptations
