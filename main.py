@@ -1,7 +1,7 @@
 from datetime import datetime
 
+from agents.llm_agent import LLMAgent
 from game import PokerGame
-from game.ai_player import AIPlayer
 from util import setup_logging
 
 # Generate unique session ID
@@ -12,10 +12,10 @@ setup_logging(0)
 
 # Create AI players with different strategies
 players = [
-    AIPlayer("Alice", chips=1000, strategy_style="Aggressive Bluffer"),
-    AIPlayer("Bob", chips=1000, strategy_style="Calculated and Cautious"),
-    AIPlayer("Charlie", chips=1000, strategy_style="Chaotic and Unpredictable"),
-    AIPlayer("Dana", chips=1000, strategy_style="Aggressive Bluffer"),
+    LLMAgent("Alice", chips=1000, strategy_style="Aggressive Bluffer"),
+    LLMAgent("Bob", chips=1000, strategy_style="Calculated and Cautious"),
+    LLMAgent("Charlie", chips=1000, strategy_style="Chaotic and Unpredictable"),
+    LLMAgent("Dana", chips=1000, strategy_style="Aggressive Bluffer"),
 ]
 
 # Create game with session ID

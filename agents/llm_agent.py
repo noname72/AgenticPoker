@@ -2,92 +2,65 @@ import asyncio
 import logging
 import os
 import random
-import re
 import time
-from enum import Enum
 from typing import Any, Dict, List, Optional
 
 import requests
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from data.enums import StrategyStyle
+from exceptions import LLMError, OpenAIError
+from game.player import Player
+
 # Load environment variables
 load_dotenv()
 
 
-class LLMError(Exception):
-    """Base class for LLM-related errors."""
+class BaseAgent(Player):
+    """Base class for all poker agents, providing core player functionality."""
 
-    pass
+    def __init__(
+        self,
+        name: str,
+        chips: int = 1000,
+    ) -> None:
+        super().__init__(name, chips)
+        self.logger = logging.getLogger(__name__)
 
+    def decide_action(
+        self, game_state: str, opponent_message: Optional[str] = None
+    ) -> str:
+        """Base method for deciding actions - should be overridden."""
+        raise NotImplementedError
 
-class OpenAIError(LLMError):
-    """Errors from OpenAI API."""
+    def get_message(self, game_state: str) -> str:
+        """Base method for generating messages - should be overridden."""
+        return ""
 
-    pass
-
-
-class LocalLLMError(LLMError):
-    """Errors from local LLM endpoint."""
-
-    pass
-
-
-class ResponseParsingError(LLMError):
-    """Error parsing LLM response."""
-
-    pass
-
-
-class ActionType(str, Enum):
-    """Valid poker actions."""
-
-    FOLD = "fold"
-    CALL = "call"
-    RAISE = "raise"
+    def decide_draw(self) -> List[int]:
+        """Base method for deciding which cards to draw - should be overridden."""
+        return []
 
 
-class MessageInterpretation(str, Enum):
-    """Valid message interpretations."""
+class LLMAgent(BaseAgent):
+    """Advanced poker agent with LLM-powered decision making capabilities.
 
-    TRUST = "trust"
-    IGNORE = "ignore"
-    COUNTER_BLUFF = "counter-bluff"
-
-
-class StrategyStyle(str, Enum):
-    """Valid strategy styles."""
-
-    AGGRESSIVE = "Aggressive Bluffer"
-    CAUTIOUS = "Calculated and Cautious"
-    CHAOTIC = "Chaotic and Unpredictable"
-
-
-class PokerAgent:
-    """Advanced poker agent with perception, reasoning, communication, and action capabilities.
-
-    A sophisticated AI poker player that combines game state perception, strategic communication,
-    and decision-making abilities to play Texas Hold'em poker.
-
-    Attributes:
-        name (str): Unique identifier for the agent
-        model_type (str): Type of language model to use ('gpt' or 'local_llm')
-        last_message (str): Most recent message sent by the agent
-        perception_history (list): Historical record of game states and opponent actions
-        strategy_style (str): Agent's playing style (e.g., 'Aggressive Bluffer', 'Calculated and Cautious')
+    Combines the functionality of the original PokerAgent and AIPlayer classes.
     """
 
     def __init__(
         self,
         name: str,
-        model_type: str = "gpt",
+        chips: int = 1000,
         strategy_style: Optional[str] = None,
         personality_traits: Optional[Dict[str, float]] = None,
         max_retries: int = 3,
         retry_delay: float = 1.0,
     ) -> None:
-        self.name = name
-        self.model_type = model_type
+        """Initialize LLM-powered poker agent."""
+        super().__init__(name, chips)
+
         self.last_message = ""
         self.perception_history: List[Dict[str, Any]] = []
         self.conversation_history: List[Dict[str, Any]] = []
@@ -96,24 +69,70 @@ class PokerAgent:
         )
         self.max_retries = max_retries
         self.retry_delay = retry_delay
-        self.logger = logging.getLogger(__name__)
         self.personality_traits = personality_traits or {
             "aggression": 0.5,
             "bluff_frequency": 0.5,
             "risk_tolerance": 0.5,
         }
 
-        # Validate and initialize OpenAI client
-        if model_type == "gpt":
-            api_key = os.getenv("OPENAI_API_KEY")
-            if not api_key:
-                raise ValueError("OPENAI_API_KEY environment variable not set")
-            self.client = OpenAI(api_key=api_key)
-        elif model_type == "local_llm":
-            endpoint = os.getenv("LOCAL_LLM_ENDPOINT")
-            if not endpoint:
-                raise ValueError("LOCAL_LLM_ENDPOINT environment variable not set")
-            self.endpoint = endpoint
+        # Initialize OpenAI client
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable not set")
+        self.client = OpenAI(api_key=api_key)
+
+    def decide_action(
+        self, game_state: str, opponent_message: Optional[str] = None
+    ) -> str:
+        """Get the agent's decision for the current game state."""
+        # Enrich game state with hand evaluation
+        hand_eval = self.hand.evaluate() if self.hand.cards else "No cards"
+        enriched_state = f"{game_state}, Hand evaluation: {hand_eval}"
+
+        # Update agent's perception of game state
+        self.perceive(enriched_state, opponent_message or "")
+
+        # Get action from LLM
+        action = self.get_action(enriched_state, opponent_message)
+        self.logger.info(f"{self.name} decides to {action}")
+        return action
+
+    def get_message(self, game_state: str) -> str:
+        """Get a strategic message from the agent."""
+        # Enrich game state with hand information if available
+        if self.hand.cards:
+            game_state = f"{game_state}, Hand: {self.hand.show()}"
+        return self._get_strategic_message(game_state)
+
+    def decide_draw(self) -> List[int]:
+        """Decide which cards to discard and draw new ones."""
+        game_state = f"Hand: {self.hand.show()}"
+
+        prompt = f"""
+        You are a {self.strategy_style} poker player.
+        Current hand: {game_state}
+        
+        Which cards should you discard? Consider:
+        1. Pairs or potential straights/flushes
+        2. High cards worth keeping
+        3. Your strategy style
+        
+        Respond with only the indices (0-4) of cards to discard, separated by spaces.
+        Example: "0 2 4" to discard first, third, and last cards.
+        Respond with "none" to keep all cards.
+        """
+
+        response = self._query_llm(prompt).strip().lower()
+        if response == "none":
+            return []
+
+        try:
+            indices = [int(i) for i in response.split()]
+            return [i for i in indices if 0 <= i <= 4]
+        except:
+            # If parsing fails, make a simple decision based on pairs
+            ranks = [card.rank for card in self.hand.cards]
+            return [i for i, rank in enumerate(ranks) if ranks.count(rank) == 1]
 
     def perceive(self, game_state: str, opponent_message: str) -> Dict[str, Any]:
         """Process and store current game state and opponent's message.
@@ -150,14 +169,14 @@ class PokerAgent:
 
         return perception
 
-    def get_message(self, game_state: Dict[str, Any]) -> str:
+    def _get_strategic_message(self, game_state: str) -> str:
         """Generate strategic communication with conversation context.
 
         Uses LLM to create contextually appropriate messages that align with the agent's
         strategy style and current game situation.
 
         Args:
-            game_state (dict): Current state of the poker game
+            game_state (str): Current state of the poker game
 
         Returns:
             str: Strategic message to influence opponent
@@ -359,27 +378,6 @@ class PokerAgent:
                 return "call"
             return "I need to think about my next move."
 
-    def _query_local_llm(self, prompt: str) -> str:
-        """Query local LLM endpoint with error handling."""
-        try:
-            response = requests.post(
-                self.endpoint,
-                json={"prompt": prompt, "max_tokens": 20},
-                timeout=5,
-            )
-            response.raise_for_status()
-            result = response.json()
-
-            if "choices" not in result or not result["choices"]:
-                raise LocalLLMError("Invalid response format from local LLM")
-
-            return result["choices"][0]["text"]
-
-        except requests.RequestException as e:
-            raise LocalLLMError(f"Local LLM request failed: {str(e)}") from e
-        except (KeyError, IndexError, ValueError) as e:
-            raise LocalLLMError(f"Invalid response from local LLM: {str(e)}") from e
-
     def _query_llm(self, prompt: str) -> str:
         """Enhanced LLM query with retries and comprehensive error handling."""
         last_error = None
@@ -391,19 +389,14 @@ class PokerAgent:
                 )
                 self.logger.debug("[LLM Query] Prompt: %s", prompt)
 
-                if self.model_type == "gpt":
-                    result = self._query_gpt(prompt)
-                else:
-                    result = self._query_local_llm(prompt)
-
+                result = self._query_gpt(prompt)
                 self.logger.info("[LLM Query] Response: %s", result)
                 return result
 
-            except (OpenAIError, LocalLLMError) as e:
+            except OpenAIError as e:
                 last_error = e
                 self.logger.error(
-                    "[LLM Query] %s error on attempt %d: %s",
-                    self.model_type,
+                    "[LLM Query] OpenAI error on attempt %d: %s",
                     attempt + 1,
                     str(e),
                 )

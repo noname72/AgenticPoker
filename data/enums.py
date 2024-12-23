@@ -37,3 +37,19 @@ class BettingRound(str, Enum):
     FLOP = "flop"
     TURN = "turn"
     RIVER = "river"
+
+
+class MessageInterpretation(str, Enum):
+    """Valid message interpretations."""
+
+    TRUST = "trust"
+    IGNORE = "ignore"
+    COUNTER_BLUFF = "counter-bluff"
+
+
+class StrategyStyle(str, Enum):
+    """Valid strategy styles."""
+
+    AGGRESSIVE = "Aggressive Bluffer"
+    CAUTIOUS = "Calculated and Cautious"
+    CHAOTIC = "Chaotic and Unpredictable"
