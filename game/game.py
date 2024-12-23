@@ -55,6 +55,15 @@ class AgenticPoker:
             >>> game = PokerGame(['Alice', 'Bob', 'Charlie'], starting_chips=500)
             >>> game = PokerGame(player_list, small_blind=5, big_blind=10, ante=1)
         """
+        if not players:
+            raise ValueError("Must provide at least 2 players")
+        if starting_chips <= 0:
+            raise ValueError("Starting chips must be positive")
+        if small_blind <= 0 or big_blind <= 0:
+            raise ValueError("Blinds must be positive")
+        if ante < 0:
+            raise ValueError("Ante cannot be negative")
+
         # Initialize session-specific logging
         self.session_id = session_id
 
