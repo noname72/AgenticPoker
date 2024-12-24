@@ -26,6 +26,7 @@ class AgenticPoker:
         round_number (int): Current round number (increments at start of each round).
         max_rounds (Optional[int]): Maximum number of rounds to play, or None for unlimited.
         ante (int): Mandatory bet required from all players at start of each hand.
+        session_id (Optional[str]): Unique identifier for this game session.
     """
 
     def __init__(
@@ -43,17 +44,21 @@ class AgenticPoker:
 
         Args:
             players (Union[List[str], List[Player]]): List of player names or Player objects.
-            starting_chips (int, optional): Initial chip amount for each player. Defaults to 1000.
-            small_blind (int, optional): Small blind bet amount. Defaults to 10.
-            big_blind (int, optional): Big blind bet amount. Defaults to 20.
-            max_rounds (Optional[int], optional): Maximum number of rounds to play. Defaults to None.
-            ante (int, optional): Mandatory bet required from all players. Defaults to 0.
-            session_id (Optional[str], optional): Unique identifier for this game session.
-                If None, uses timestamp-based ID.
+            starting_chips (int): Initial chip amount for each player. Defaults to 1000.
+            small_blind (int): Small blind bet amount. Defaults to 10.
+            big_blind (int): Big blind bet amount. Defaults to 20.
+            max_rounds (Optional[int]): Maximum number of rounds to play. Defaults to None.
+            ante (int): Mandatory bet required from all players. Defaults to 0.
+            session_id (Optional[str]): Unique identifier for this game session.
+                Defaults to None.
+
+        Raises:
+            ValueError: If players list is empty, starting chips <= 0, blinds <= 0,
+                      or ante < 0.
 
         Example:
-            >>> game = PokerGame(['Alice', 'Bob', 'Charlie'], starting_chips=500)
-            >>> game = PokerGame(player_list, small_blind=5, big_blind=10, ante=1)
+            >>> game = AgenticPoker(['Alice', 'Bob', 'Charlie'], starting_chips=500)
+            >>> game = AgenticPoker(player_list, small_blind=5, big_blind=10, ante=1)
         """
         if not players:
             raise ValueError("Must provide at least 2 players")
@@ -256,52 +261,40 @@ class AgenticPoker:
             self._log_chip_summary()
             return
 
-        # Multiple players - show hands and determine winner
-        logging.info("\nFinal hands:")
-        for player in active_players:
-            logging.info(f"{player.name}: {player.hand.show()}")
+        # Collect and split the pot into main pot + any side pots.
+        side_pots = self.handle_side_pots()
+        logging.info(f"\nDetected {len(side_pots)} pot(s) due to all-in players.")
+        # Once we've split into side pots, we reset self.pot to 0 and distribute each pot individually.
+        self.pot = 0
 
-        # Find best hand(s)
-        best_hand = max(active_players, key=lambda p: p.hand)
-        winners = [p for p in active_players if p.hand == best_hand.hand]
+        for pot_index, (pot_amount, eligible_players) in enumerate(side_pots, start=1):
+            if not eligible_players:
+                continue  # No one is eligible, skip
 
-        # Handle pot distribution
-        pot_share = self.pot // len(winners)  # Split pot evenly among winners
-        remainder = self.pot % len(winners)  # Handle any odd chips
-
-        logging.info("\nPot distribution:")
-        logging.info(f"  - Pot amount: ${self.pot}")
-        logging.info(f"  - Eligible players: {[p.name for p in active_players]}")
-
-        for winner in winners:
-            # First winner gets any odd chips from the split
-            chips_won = pot_share + (remainder if winner == winners[0] else 0)
-            winner.chips += chips_won
-            # Show if this was an all-in win
-            all_in_status = " (all-in)" if winner.chips == chips_won else ""
+            # Log which players can win this pot
             logging.info(
-                f"  - {winner.name} wins ${chips_won}{all_in_status} with {winner.hand.evaluate()}"
+                f"\nSide Pot #{pot_index}: ${pot_amount} among {[p.name for p in eligible_players]}"
             )
 
-        # Verify pot was fully distributed
-        total_distributed = pot_share * len(winners) + remainder
-        if total_distributed != self.pot:
-            logging.error(
-                f"Error: Pot distribution mismatch! Pot: ${self.pot}, Distributed: ${total_distributed}"
-            )
+            # For each side pot, find best hand among eligible players
+            best_hand_value = max(eligible_players, key=lambda p: p.hand).hand
+            winners = [p for p in eligible_players if p.hand == best_hand_value]
 
-        # Log chip movements
-        logging.info("\nChip movement summary:")
-        for player in self.players:
-            true_starting_stack = self.round_starting_stacks[player]
-            net_change = player.chips - true_starting_stack
-            logging.info(f"  {player.name}:")
-            logging.info(
-                f"    Starting stack (pre-ante/blinds): ${true_starting_stack}"
-            )
-            logging.info(f"    Net change: ${net_change:+d}")
-            logging.info(f"    Final stack: ${player.chips}")
+            # Distribute pot to winner(s)
+            pot_share = pot_amount // len(winners)
+            remainder = pot_amount % len(winners)
+            logging.info(f"  Distributing ${pot_amount} to {len(winners)} winner(s).")
 
+            for i, winner in enumerate(winners):
+                share = pot_share + (
+                    remainder if i == 0 else 0
+                )  # First winner gets leftover chip(s)
+                winner.chips += share
+                logging.info(
+                    f"  {winner.name} wins ${share} with {winner.hand.evaluate()}"
+                )
+
+        # Log final chip movement summary
         self._log_chip_summary()
 
     def _log_chip_summary(self) -> None:
@@ -325,7 +318,16 @@ class AgenticPoker:
     def remove_bankrupt_players(self) -> bool:
         """
         Remove players with zero chips and check if game should continue.
+
         Players are only removed when they have exactly 0 chips.
+
+        Returns:
+            bool: True if game should continue, False if game should end
+                 (only one or zero players remain).
+
+        Side Effects:
+            - Updates self.players list
+            - Logs game over messages if appropriate
         """
         # Only remove players with exactly 0 chips
         self.players = [player for player in self.players if player.chips > 0]
@@ -481,6 +483,19 @@ class AgenticPoker:
     def start_round(self) -> None:
         """
         Start a new round of poker.
+
+        Initializes the round by:
+        - Incrementing round number
+        - Resetting pot
+        - Shuffling deck
+        - Dealing cards
+        - Setting dealer and blind positions
+        - Logging round information
+
+        Side Effects:
+            - Updates game state for new round
+            - Deals cards to players
+            - Logs round information and player messages
         """
         self.round_number += 1
         self.pot = 0

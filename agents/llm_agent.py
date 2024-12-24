@@ -2,7 +2,6 @@ import asyncio
 import logging
 import os
 import random
-import re
 import time
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple
@@ -19,6 +18,8 @@ from game.player import Player
 
 # Load environment variables
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 class BaseAgent(Player):
@@ -319,79 +320,112 @@ What is your decision?
 
     def get_message(self, game_state: str) -> str:
         """Get a strategic message from the agent."""
-        # Enrich game state with hand information if available
-        if self.hand.cards:
-            game_state = f"{game_state}, Hand: {self.hand.show()}"
-        return self._get_strategic_message(game_state)
+        prompt = f"""
+        You are a {self.strategy_style} poker player.
+        
+        Current situation:
+        {game_state}
+        
+        CRITICAL RULES:
+        1. Start with exactly "MESSAGE: "
+        2. Maximum 5 words after "MESSAGE: "
+        3. No punctuation except periods
+        4. No pronouns (I, you, we, etc)
+        
+        Valid examples:
+        MESSAGE: All in with strong hand
+        MESSAGE: Playing tight this round
+        MESSAGE: Time to bluff big
+        
+        Invalid examples:
+        MESSAGE: I'm going to bluff big time now!  (too long, has pronouns)
+        MESSAGE: Let's see who's brave enough  (has pronouns)
+        MESSAGE: Time to show my dominance at the table  (too long)
+        
+        Respond with exactly one message following these rules.
+        """
+
+        try:
+            response = self._query_llm(prompt).strip()
+
+            # Extract and validate message
+            if "MESSAGE:" in response:
+                message = response.split("MESSAGE:")[1].strip()
+                # Validate length
+                words = message.split()
+                if len(words) > 5:
+                    message = " ".join(words[:5])
+                # Remove punctuation except periods
+                message = "".join(
+                    c for c in message if c.isalnum() or c.isspace() or c == "."
+                )
+                self.last_message = message
+                return message
+
+            self.logger.warning(f"Invalid message format: {response}")
+            return "Thinking about next move"
+
+        except Exception as e:
+            self.logger.error(f"Error generating message: {e}")
+            return "Thinking about next move"
 
     def decide_draw(self) -> List[int]:
         """Decide which cards to discard and draw new ones."""
         game_state = f"Hand: {self.hand.show()}"
 
-        prompt = f"""You are a {self.strategy_style} poker player.
-Current hand: {game_state}
+        prompt = f"""
+        You are a {self.strategy_style} poker player deciding which cards to discard.
+        
+        Current situation:
+        {game_state}
+        
+        CRITICAL: You must format your response EXACTLY like this example:
+        ANALYSIS:
+        Current hand is two pair, Kings and Queens
+        Drawing could improve to full house
+        
+        DISCARD: [0,1]
+        
+        REASONING:
+        Keeping both pairs, discarding first two cards
+        
+        IMPORTANT RULES:
+        - Use ONLY card positions (0-4 from left to right)
+        - Do NOT use card ranks or values
+        - Maximum 3 cards can be discarded
+        - Format must be exactly [x,y] or [x] or none
+        
+        Example hand: "8♣ A♥ A♣ 9♣ 7♣"
+        Position numbers:  0  1  2  3  4
+        """
 
-Respond ONLY with the card positions (0-4) to discard, or 'none' to keep all cards.
-Examples:
-- "0 2 4" to discard first, third, and last cards
-- "none" to keep all cards
-- "1 2" to discard second and third cards
+        response = self._query_llm(prompt).strip()
 
-Consider:
-1. Pairs or potential straights/flushes
-2. High cards worth keeping
-3. Your {self.strategy_style} style
+        try:
+            # Parse with strict format checking
+            discard_positions = self._parse_discard(response)
 
-Your response must be ONLY numbers separated by spaces, or 'none'. No other text."""
+            # Validate number of discards
+            if len(discard_positions) > 3:
+                self.logger.warning(
+                    f"{self.name} tried to discard {len(discard_positions)} cards. Limiting to 3."
+                )
+                discard_positions = discard_positions[:3]
 
-        response = self._query_llm(prompt).strip().lower()
+            # Validate each position
+            valid_positions = []
+            for pos in discard_positions:
+                if not isinstance(pos, int) or pos < 0 or pos > 4:
+                    self.logger.warning(f"Invalid discard position {pos}")
+                    continue
+                valid_positions.append(pos)
 
-        # If the agent wants to keep all cards
-        if "none" in response or "keep" in response:
-            return []
+            self.logger.info(f"{self.name} discarding positions: {valid_positions}")
+            return valid_positions
 
-        # First try to find numbers in various formats
-        # This handles: "0,1,2", "0 1 2", "0, 1, 2", "discard 0 1 2", etc.
-        positions = re.findall(r"\b[0-4]\b", response)
-
-        if positions:
-            # Convert matches to integers and validate
-            indices = [int(pos) for pos in positions]
-            valid_indices = [i for i in indices if 0 <= i < 5]
-
-            # Ensure no duplicates and proper ordering
-            valid_indices = sorted(list(set(valid_indices)))
-
-            # Log the decision process
-            self.logger.info(f"{self.name} discarding positions: {valid_indices}")
-            return valid_indices
-
-        # If no valid positions found, analyze hand for pairs
-        self.logger.warning(
-            f"{self.name} no valid discard positions found in response: '{response}'"
-        )
-        self.logger.info(f"{self.name} falling back to pairs analysis")
-
-        # Enhanced fallback strategy
-        ranks = [card.rank for card in self.hand.cards]
-        values = {"A": 14, "K": 13, "Q": 12, "J": 11}
-
-        # Convert ranks to numeric values for comparison
-        numeric_ranks = [values.get(str(r), int(str(r))) for r in ranks]
-
-        # Keep pairs and high cards (K or better)
-        keep_positions = [
-            i
-            for i, r in enumerate(numeric_ranks)
-            if ranks.count(ranks[i]) > 1 or r >= 13
-        ]
-
-        discard_positions = [i for i in range(5) if i not in keep_positions]
-        self.logger.info(
-            f"{self.name} fallback strategy discarding: {discard_positions}"
-        )
-
-        return discard_positions
+        except Exception as e:
+            self.logger.error(f"Error in decide_draw: {str(e)}")
+            return []  # Safe fallback - keep all cards
 
     def perceive(self, game_state: str, opponent_message: str) -> Dict[str, Any]:
         """Process and store new game information in memory systems.
@@ -588,126 +622,50 @@ Your table talk message:"""
     def get_action(
         self, game_state: str, opponent_message: Optional[str] = None
     ) -> str:
-        """Determine the next action based on the game state and opponent's message.
-
-        Uses either simple or reasoning-based decision making based on configuration.
-        Can include self-reflection mechanism to validate decisions.
-
-        Args:
-            game_state (str): Current state of the game
-            opponent_message (Optional[str]): Message from opponent, if any
-
-        Returns:
-            str: Selected action ('fold', 'call', or 'raise')
-
-        Note:
-            - Falls back to 'call' if decision making fails
-            - Uses personality traits to influence decisions
-            - Implements optional reasoning and reflection steps
-        """
+        """Determine the next action based on the game state and opponent's message."""
         try:
-            if not self.use_reasoning:
-                # Use simple prompt without reasoning
-                simple_prompt = f"""
-                You are a {self.strategy_style} poker player with specific traits:
-                - Aggression: {self.personality_traits['aggression']:.1f}/1.0
-                - Bluff Frequency: {self.personality_traits['bluff_frequency']:.1f}/1.0
-                - Risk Tolerance: {self.personality_traits['risk_tolerance']:.1f}/1.0
-                
-                Current situation:
-                Game State: {game_state}
-                Opponent's Message: '{opponent_message or "nothing"}'
-                Recent History: {self.perception_history[-3:] if self.perception_history else []}
-                
-                Respond with exactly one word (fold/call/raise).
-                """
-                raw_action = self._query_llm(simple_prompt)
-                initial_action = self._normalize_action(raw_action)
-
-                if initial_action is None:
-                    self.logger.warning(
-                        f"LLM returned invalid action '{raw_action}', falling back to 'call'"
-                    )
-                    return "call"
-
-                return initial_action
-
-            # Use reasoning prompt
-            reasoning_prompt = f"""
-            You are a {self.strategy_style} poker player with specific traits:
-            - Aggression: {self.personality_traits['aggression']:.1f}/1.0
-            - Bluff Frequency: {self.personality_traits['bluff_frequency']:.1f}/1.0
-            - Risk Tolerance: {self.personality_traits['risk_tolerance']:.1f}/1.0
+            prompt = f"""
+            You are a {self.strategy_style} poker player.
             
             Current situation:
-            Game State: {game_state}
-            Opponent's Message: '{opponent_message or "nothing"}'
-            Recent History: {self.perception_history[-3:] if self.perception_history else []}
+            {game_state}
+            Opponent message: {opponent_message or 'None'}
             
-            Think through this step by step:
-            1. What does my hand evaluation tell me about my chances?
-            2. How does my strategy style influence this decision?
-            3. What have I learned from the opponent's recent behavior?
-            4. What are the pot odds and risk/reward considerations?
-            5. How does this align with my personality traits?
+            CRITICAL RULES:
+            1. Start with "ANALYSIS:" followed by 1-3 short lines
+            2. Then exactly "DECISION: <action>" where action is fold/call/raise
+            3. No additional text or explanations
+            4. No bet amounts or other details
             
-            Provide your reasoning, then conclude with "DECISION: <action>", 
-            where action is exactly one word (fold/call/raise).
+            Valid example:
+            ANALYSIS:
+            Strong hand in position
+            Good pot odds
+            
+            DECISION: raise
+            
+            Invalid examples:
+            DECISION: raise to 300  (no amounts allowed)
+            DECISION: raise because I have a strong hand  (no explanations)
+            DECISION: check  (not a valid action)
             """
 
-            reasoning = self._query_llm(reasoning_prompt)
+            response = self._query_llm(prompt)
 
-            # Extract the decision from the reasoning
-            decision_line = [
-                line for line in reasoning.split("\n") if "DECISION:" in line
-            ]
-            if not decision_line:
-                self.logger.warning("No clear decision found in reasoning")
+            # Parse with strict format checking
+            action = self._parse_decision(response)
+
+            # Validate action
+            if action not in ["fold", "call", "raise"]:
+                self.logger.warning(f"Invalid action {action}, defaulting to call")
                 return "call"
 
-            raw_action = decision_line[0].split("DECISION:")[1].strip()
-            initial_action = self._normalize_action(raw_action)
+            self.logger.info(f"{self.name} decided to {action}")
+            return action
 
-            if initial_action is None:
-                self.logger.warning(
-                    f"LLM returned invalid action '{raw_action}', falling back to 'call'"
-                )
-                return "call"
-
-            if not self.use_reflection:
-                return initial_action
-
-            # Use reflection mechanism
-            reflection_prompt = f"""
-            You just decided to {initial_action} with this reasoning:
-            {reasoning}
-            
-            Reflect on this decision:
-            1. Is it consistent with my {self.strategy_style} style?
-            2. Does it match my personality traits?
-            3. Could this be a mistake given the current situation?
-            
-            If you find any inconsistencies, respond with "REVISE: <new_action>"
-            If the decision is sound, respond with "CONFIRM: {initial_action}"
-            """
-
-            reflection = self._query_llm(reflection_prompt).strip()
-
-            if reflection.startswith("REVISE:"):
-                revised_action = self._normalize_action(
-                    reflection.split("REVISE:")[1].strip()
-                )
-                if revised_action:
-                    self.logger.info(
-                        f"{self.name} revised action from {initial_action} to {revised_action}"
-                    )
-                    return revised_action
-
-            return initial_action
-
-        except LLMError as e:
-            self.logger.error(f"LLM error in get_action: {str(e)}")
-            return "call"
+        except Exception as e:
+            self.logger.error(f"Error in get_action: {str(e)}")
+            return "call"  # Safe fallback
 
     async def _query_gpt_async(self, prompt: str) -> str:
         """Asynchronous query to OpenAI's GPT model with error handling and timeout."""
@@ -1121,28 +1079,27 @@ Your table talk message:"""
 
         # Create planning prompt with escaped curly braces for the JSON template
         planning_prompt = f"""
-        You are a {self.strategy_style} poker player with these traits:
-        - Aggression: {self.personality_traits['aggression']:.1f}/1.0
-        - Bluff Frequency: {self.personality_traits['bluff_frequency']:.1f}/1.0
-        - Risk Tolerance: {self.personality_traits['risk_tolerance']:.1f}/1.0
-
+        You are a {self.strategy_style} poker player planning your strategy.
+        
         Current situation:
         {game_state}
-        Recent history: {self.perception_history[-3:] if self.perception_history else "None"}
         
-        Develop a short-term strategic plan. Consider:
-        1. Your chip stack and position
-        2. Recent opponent behavior
-        3. Your personality traits
-        4. Risk/reward balance
-        
-        Respond in this JSON format:
+        Create a strategic plan using this exact format:
         {{
-            "approach": "<aggressive/defensive/deceptive/balanced>",
+            "approach": "<aggressive/balanced/defensive>",
             "reasoning": "<brief explanation>",
             "bet_sizing": "<small/medium/large>",
-            "bluff_threshold": <0.0-1.0>,
-            "fold_threshold": <0.0-1.0>
+            "bluff_threshold": <float 0-1>,
+            "fold_threshold": <float 0-1>
+        }}
+        
+        Example:
+        {{
+            "approach": "aggressive",
+            "reasoning": "Strong hand, weak opponents",
+            "bet_sizing": "large",
+            "bluff_threshold": 0.7,
+            "fold_threshold": 0.2
         }}
         """
 
@@ -1409,3 +1366,58 @@ Your table talk message:"""
         except Exception as e:
             self.logger.warning(f"Error checking bubble situation: {str(e)}")
             return False
+
+    def _parse_decision(self, response: str) -> str:
+        """Parse the decision from LLM response with strict format checking."""
+        try:
+            # Look for DECISION: line
+            decision_line = [
+                line for line in response.split("\n") if line.startswith("DECISION:")
+            ]
+            if not decision_line:
+                logger.warning("No DECISION: line found in response")
+                return "call"  # safe default
+
+            # Extract action
+            action = decision_line[0].split("DECISION:")[1].strip().lower()
+
+            # Validate action
+            if action not in ["fold", "call", "raise"]:
+                logger.warning(f"Invalid action '{action}' found in response")
+                return "call"
+
+            return action
+
+        except Exception as e:
+            logger.error(f"Error parsing decision: {e}")
+            return "call"
+
+    def _parse_discard(self, response: str) -> List[int]:
+        """Parse the discard positions with strict format checking."""
+        try:
+            # Look for DISCARD: line
+            discard_line = [
+                line for line in response.split("\n") if line.startswith("DISCARD:")
+            ]
+            if not discard_line:
+                logger.warning("No DISCARD: line found in response")
+                return []
+
+            # Extract positions
+            positions_str = discard_line[0].split("DISCARD:")[1].strip()
+            if positions_str.lower() == "none":
+                return []
+
+            # Parse list of positions
+            positions = eval(positions_str)  # safely evaluate [0,2,4] format
+
+            # Validate positions
+            if not all(isinstance(p, int) and 0 <= p <= 4 for p in positions):
+                logger.warning(f"Invalid positions {positions} found in response")
+                return []
+
+            return sorted(positions)
+
+        except Exception as e:
+            logger.error(f"Error parsing discard positions: {e}")
+            return []
