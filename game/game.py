@@ -576,10 +576,12 @@ class AgenticPoker:
         logging.info("\n")
 
     def draw_phase(self) -> None:
-        """
-        Handle the draw phase where players can discard and draw new cards.
-        """
+        """Handle the draw phase where players can discard and draw new cards."""
         logging.info("\n--- Draw Phase ---")
+
+        # Track all discarded cards to ensure they don't get redealt
+        discarded_cards = []
+
         for player in self.players:
             if player.folded:
                 continue
@@ -595,6 +597,10 @@ class AgenticPoker:
                     discard_indices = sorted(discards)
                     logging.info(f"Discarding cards at positions: {discard_indices}")
 
+                    # Track discarded cards before removing them
+                    discarded = [player.hand.cards[i] for i in discard_indices]
+                    discarded_cards.extend(discarded)
+
                     # Remove discarded cards
                     player.hand.cards = [
                         card
@@ -604,11 +610,21 @@ class AgenticPoker:
 
                     # Draw exactly the same number of cards as were discarded
                     num_discards = len(discards)
+
+                    # Verify deck has enough cards
+                    if len(self.deck.cards) < num_discards:
+                        logging.info("Reshuffling discarded cards into deck")
+                        self.deck.cards.extend(discarded_cards)
+                        self.deck.shuffle()
+                        discarded_cards = []
+
                     new_cards = self.deck.deal(num_discards)
                     player.hand.add_cards(new_cards)
 
+                    # Log the new cards that were drawn
                     logging.info(
-                        f"Drew {num_discards} new card{'s' if num_discards != 1 else ''}"
+                        f"Drew {num_discards} new card{'s' if num_discards != 1 else ''}: "
+                        f"{', '.join(str(card) for card in new_cards)}"
                     )
             else:
                 # Non-AI players keep their hand
