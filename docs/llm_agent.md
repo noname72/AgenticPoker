@@ -217,7 +217,8 @@ The agent uses a flexible strategy cards system that combines:
    SITUATION_MODIFIERS = {
        "short_stack": "Adjusts for < 300 chips",
        "big_stack": "Adjusts for > 2000 chips",
-       "bubble": "Adjusts for tournament bubble"
+       "bubble": "Adjusts for tournament bubble",
+       "all_in": "Adjusts for all-in situations and side pots"
    }
    ```
 
@@ -264,6 +265,25 @@ prompt = strategy_manager.get_complete_prompt({
     "is_bubble": True  # Triggers bubble play modifier
 })
 ```
+
+### Decision Making Process
+The agent's decision-making process now includes awareness of side pots:
+
+1. **Game State Analysis**
+   - Evaluates current pot and any side pots
+   - Considers eligibility for different pots
+   - Adjusts strategy based on all-in situations
+
+2. **Side Pot Considerations**
+   ```python
+   def _analyze_side_pots(self, game_state: str) -> Dict[str, Any]:
+       """Analyzes side pot situation for strategic decision making."""
+       return {
+           "is_all_in": self.chips == 0,
+           "eligible_pots": self._get_eligible_pots(game_state),
+           "total_equity": self._calculate_pot_equity(game_state)
+       }
+   ```
 
 ## Usage Examples
 

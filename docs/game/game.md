@@ -20,6 +20,7 @@ Main game controller class that manages the poker game flow, including betting r
 - `max_rounds (Optional[int])`: Maximum number of rounds to play, or None for unlimited
 - `ante (int)`: Mandatory bet required from all players at start of each hand
 - `session_id (Optional[str])`: Unique identifier for this game session
+- `side_pots`: Optional list of dictionaries tracking side pots when players are all-in
 
 #### Methods
 
@@ -67,7 +68,34 @@ Manages the showdown phase, determines winners, and distributes pots. Handles:
 Calculates and splits the pot when players are all-in with different amounts.
 
 **Returns:**
-- List of tuples containing pot amounts and eligible players
+- List of tuples, each containing:
+  - `int`: The amount in this side pot
+  - `List[Player]`: Players eligible to win this specific pot
+
+**Example:**
+```python
+# With three players betting different amounts:
+# Player A: $100 (all-in)
+# Player B: $200 (all-in)
+# Player C: $300
+side_pots = game.handle_side_pots()
+# Returns: [
+#   (300, [player_a, player_b, player_c]),  # Main pot
+#   (300, [player_b, player_c]),            # First side pot
+#   (300, [player_c])                       # Second side pot
+# ]
+```
+
+##### `_calculate_side_pots(posted_amounts)`
+Helper method to calculate side pots based on posted amounts.
+
+**Parameters:**
+- `posted_amounts`: Dictionary mapping players to their bet amounts
+
+**Returns:**
+- List of dictionaries, each containing:
+  - `amount`: Size of this side pot
+  - `eligible_players`: List of player names eligible for this pot
 
 ##### `remove_bankrupt_players()`
 Removes players with zero chips and checks if game should continue.

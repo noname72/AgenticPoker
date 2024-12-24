@@ -1,5 +1,5 @@
 import logging
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from .betting import betting_round
 from .deck import Deck
@@ -86,6 +86,7 @@ class AgenticPoker:
         self.round_number = 0
         self.max_rounds = max_rounds
         self.ante = ante
+        self.side_pots = None
 
         # Log game configuration with clear session context
         logging.info(f"\n{'='*50}")
@@ -102,101 +103,108 @@ class AgenticPoker:
     def blinds_and_antes(self) -> None:
         """
         Collect mandatory bets (blinds and antes) at the start of each hand.
+        Handles partial postings and side pots correctly.
         """
-        # Calculate blind positions
+        # Track actual amounts posted for accurate pot calculation
+        posted_amounts = {player: 0 for player in self.players}
+
+        # Collect antes first
+        if self.ante > 0:
+            logging.info("\nCollecting antes...")
+            for player in self.players:
+                if player.chips > 0:
+                    actual_ante = min(self.ante, player.chips)
+                    actual_ante = player.place_bet(actual_ante)
+                    posted_amounts[player] += actual_ante
+                    status = " (all in)" if player.chips == 0 else ""
+                    logging.info(f"{player.name} posts ante of ${actual_ante}{status}")
+
+        # Collect blinds with accurate tracking
         sb_index = (self.dealer_index + 1) % len(self.players)
         bb_index = (self.dealer_index + 2) % len(self.players)
 
-        # Collect antes first (if using antes)
-        ante_amount = self.ante
-        total_antes = 0
-        if ante_amount > 0:
-            logging.info("\nCollecting antes...")
-            for player in self.players:
-                if player.chips > 0:  # Any player with chips must post ante
-                    actual_ante = min(
-                        ante_amount, player.chips
-                    )  # Can't ante more than you have
-                    if actual_ante > 0:
-                        actual_ante = player.place_bet(actual_ante)
-                        total_antes += actual_ante
-                        status = " (all in)" if player.chips == 0 else ""
-                        logging.info(
-                            f"{player.name} posts ante of ${actual_ante}{status}"
-                        )
-            if total_antes > 0:
-                self.pot += total_antes
-                logging.info(f"Total antes collected: ${total_antes}")
-
-        # Collect blinds
-        logging.info("\nCollecting blinds...")
-
-        # Small blind - player can go all-in for less
+        # Small blind
         sb_player = self.players[sb_index]
         if sb_player.chips > 0:
             actual_sb = min(self.small_blind, sb_player.chips)
             actual_sb = sb_player.place_bet(actual_sb)
-            self.pot += actual_sb
-            status = " (all in)" if sb_player.chips == 0 else ""
-            if actual_sb < self.small_blind:
-                logging.info(
-                    f"{sb_player.name} posts partial small blind of ${actual_sb}{status}"
-                )
-            else:
-                logging.info(
-                    f"{sb_player.name} posts small blind of ${actual_sb}{status}"
-                )
+            posted_amounts[sb_player] += actual_sb
+            self._log_blind_post("small", sb_player, actual_sb)
 
-        # Big blind - player can go all-in for less
+        # Big blind
         bb_player = self.players[bb_index]
         if bb_player.chips > 0:
             actual_bb = min(self.big_blind, bb_player.chips)
             actual_bb = bb_player.place_bet(actual_bb)
-            self.pot += actual_bb
-            status = " (all in)" if bb_player.chips == 0 else ""
-            if actual_bb < self.big_blind:
-                logging.info(
-                    f"{bb_player.name} posts partial big blind of ${actual_bb}{status}"
-                )
-            else:
-                logging.info(
-                    f"{bb_player.name} posts big blind of ${actual_bb}{status}"
-                )
+            posted_amounts[bb_player] += actual_bb
+            self._log_blind_post("big", bb_player, actual_bb)
 
-        # Log total pot after all mandatory bets
-        logging.info(
-            f"\nStarting pot: ${self.pot}"
-            + (f" (includes ${total_antes} in antes)" if total_antes > 0 else "")
-        )
+        # Calculate total pot and create initial side pots if needed
+        total_posted = sum(posted_amounts.values())
+        self.pot = total_posted
 
-        # Advance dealer position to next player with chips
-        current_index = (self.dealer_index + 1) % len(self.players)
-        while self.players[current_index].chips == 0:
-            current_index = (current_index + 1) % len(self.players)
-        self.dealer_index = current_index
+        # Initialize side pots if any players are all-in
+        all_in_players = [p for p in self.players if p.chips == 0]
+        if all_in_players:
+            self.side_pots = self._calculate_side_pots(posted_amounts)
+            self._log_side_pots()
+        else:
+            self.side_pots = None
+
+        # Log final pot state clearly
+        self._log_pot_summary(posted_amounts)
+
+    def _log_blind_post(self, blind_type: str, player: "Player", amount: int) -> None:
+        """Helper to log blind postings consistently."""
+        status = " (all in)" if player.chips == 0 else ""
+        if amount < (self.small_blind if blind_type == "small" else self.big_blind):
+            logging.info(
+                f"{player.name} posts partial {blind_type} blind of ${amount}{status}"
+            )
+        else:
+            logging.info(f"{player.name} posts {blind_type} blind of ${amount}{status}")
+
+    def _calculate_side_pots(self, posted_amounts: Dict["Player", int]) -> List[Dict]:
+        """
+        Calculate side pots based on posted amounts.
+        Returns list of dicts with amount and eligible players.
+        """
+        side_pots = []
+        sorted_players = sorted(posted_amounts.items(), key=lambda x: x[1])
+
+        current_amount = 0
+        for player, amount in sorted_players:
+            if amount > current_amount:
+                eligible = [p for p, a in posted_amounts.items() if a >= amount]
+                pot_size = (amount - current_amount) * len(eligible)
+                if pot_size > 0:
+                    side_pots.append(
+                        {
+                            "amount": pot_size,
+                            "eligible_players": [p.name for p in eligible],
+                        }
+                    )
+                current_amount = amount
+
+        return side_pots
+
+    def _log_pot_summary(self, posted_amounts: Dict["Player", int]) -> None:
+        """Log clear summary of pot state including any side pots."""
+        ante_total = sum(min(self.ante, p.chips) for p in self.players if p.chips > 0)
+
+        logging.info(f"\nStarting pot: ${self.pot}")
+        if ante_total > 0:
+            logging.info(f"  Includes ${ante_total} in antes")
+
+        if self.side_pots:
+            logging.info("\nSide pots:")
+            for i, pot in enumerate(self.side_pots, 1):
+                players_str = ", ".join(pot["eligible_players"])
+                logging.info(f"  Pot {i}: ${pot['amount']} (Eligible: {players_str})")
 
     def handle_side_pots(self) -> List[Tuple[int, List[Player]]]:
         """
         Calculate and split the pot when players are all-in with different amounts.
-
-        Creates separate pots based on the maximum amount each player could contribute,
-        ensuring fair distribution when players have gone all-in for different amounts.
-        Side pots are created in ascending order of bet sizes.
-
-        Returns:
-            List[Tuple[int, List[Player]]]: List of tuples containing:
-                - int: The amount in this side pot
-                - List[Player]: Players eligible to win this specific pot
-
-        Example:
-            If players bet:
-                - Player A: $100 (all-in)
-                - Player B: $200 (all-in)
-                - Player C: $300
-            Returns:
-                [(100, [A, B, C]),  # Main pot: all players eligible
-                 (100, [B, C]),     # First side pot: only B and C eligible
-                 (100, [C])]        # Second side pot: only C eligible
         """
         # Get only players who contributed to the pot
         active_players = [p for p in self.players if p.bet > 0]
@@ -204,9 +212,8 @@ class AgenticPoker:
             return [(self.pot, self.players)]
 
         active_players.sort(key=lambda p: p.bet)
-
         pots = []
-        remaining_pot = self.pot
+        pot_amount = int(self.pot)  # Ensure we're working with an integer
         previous_bet = 0
 
         while active_players:
@@ -215,15 +222,19 @@ class AgenticPoker:
             pot_contribution = bet_difference * len(active_players)
 
             if pot_contribution > 0:
+                # Create tuple of (pot_amount, eligible_players)
                 pots.append((pot_contribution, active_players[:]))
-                remaining_pot -= pot_contribution
+                pot_amount = max(
+                    0, pot_amount - pot_contribution
+                )  # Ensure we don't go negative
 
             previous_bet = current_bet
             active_players = active_players[1:]
 
         # If there's any remaining pot amount (from antes or odd chips), add it to the first pot
-        if remaining_pot > 0 and pots:
-            pots[0] = (pots[0][0] + remaining_pot, pots[0][1])
+        if pot_amount > 0 and pots:
+            first_pot_amount, first_pot_players = pots[0]
+            pots[0] = (first_pot_amount + pot_amount, first_pot_players)
 
         return pots
 
@@ -261,38 +272,49 @@ class AgenticPoker:
             self._log_chip_summary()
             return
 
-        # Collect and split the pot into main pot + any side pots.
-        side_pots = self.handle_side_pots()
+        # Use existing side pots if available, otherwise calculate them
+        if self.side_pots:
+            # Convert side_pots format to list of tuples
+            side_pots = [
+                (
+                    pot["amount"],
+                    [p for p in self.players if p.name in pot["eligible_players"]],
+                )
+                for pot in self.side_pots
+            ]
+        else:
+            side_pots = self.handle_side_pots()
+
         logging.info(f"\nDetected {len(side_pots)} pot(s) due to all-in players.")
-        # Once we've split into side pots, we reset self.pot to 0 and distribute each pot individually.
-        self.pot = 0
 
         for pot_index, (pot_amount, eligible_players) in enumerate(side_pots, start=1):
             if not eligible_players:
-                continue  # No one is eligible, skip
+                continue
 
             # Log which players can win this pot
             logging.info(
                 f"\nSide Pot #{pot_index}: ${pot_amount} among {[p.name for p in eligible_players]}"
             )
 
-            # For each side pot, find best hand among eligible players
+            # Find best hand among eligible players
             best_hand_value = max(eligible_players, key=lambda p: p.hand).hand
             winners = [p for p in eligible_players if p.hand == best_hand_value]
 
             # Distribute pot to winner(s)
             pot_share = pot_amount // len(winners)
             remainder = pot_amount % len(winners)
-            logging.info(f"  Distributing ${pot_amount} to {len(winners)} winner(s).")
 
+            logging.info(f"  Distributing ${pot_amount} to {len(winners)} winner(s).")
             for i, winner in enumerate(winners):
-                share = pot_share + (
-                    remainder if i == 0 else 0
-                )  # First winner gets leftover chip(s)
+                share = pot_share + (1 if i < remainder else 0)
                 winner.chips += share
                 logging.info(
                     f"  {winner.name} wins ${share} with {winner.hand.evaluate()}"
                 )
+
+        # Reset pot and side pots after distribution
+        self.pot = 0
+        self.side_pots = None
 
         # Log final chip movement summary
         self._log_chip_summary()
@@ -413,7 +435,10 @@ class AgenticPoker:
             # Pre-draw betting
             logging.info("\n--- Pre-Draw Betting ---")
             initial_chips = {p: p.chips for p in self.players}
-            self.pot = betting_round(self.players, self.pot)
+            pot_result, new_side_pots = betting_round(self.players, self.pot)
+            self.pot = pot_result
+            if new_side_pots:
+                self.side_pots = new_side_pots
 
             # Check if only one player remains after pre-draw betting
             active_players = [p for p in self.players if not p.folded]
@@ -441,7 +466,10 @@ class AgenticPoker:
 
             # Post-draw betting
             logging.info("\n--- Post-Draw Betting ---")
-            self.pot = betting_round(self.players, self.pot)
+            pot_result, new_side_pots = betting_round(self.players, self.pot)
+            self.pot = pot_result
+            if new_side_pots:
+                self.side_pots = new_side_pots
 
             # Handle showdown or single winner
             active_players = [p for p in self.players if not p.folded]
@@ -600,3 +628,18 @@ class AgenticPoker:
         self.pot = 0
         for player in self.players:
             player.reset_for_new_round()
+
+    def _log_side_pots(self) -> None:
+        """
+        Log the current side pot structure.
+
+        Formats and logs each side pot's amount and eligible players
+        for clear tracking of pot distribution.
+        """
+        if not self.side_pots:
+            return
+
+        logging.info("\nSide pots:")
+        for i, pot in enumerate(self.side_pots, 1):
+            players_str = ", ".join(pot["eligible_players"])
+            logging.info(f"  Pot {i}: ${pot['amount']} (Eligible: {players_str})")
