@@ -10,6 +10,15 @@ import numpy as np
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from agents.prompts import (
+    DECISION_PROMPT,
+    DISCARD_PROMPT,
+    EXECUTION_PROMPT,
+    INTERPRET_MESSAGE_PROMPT,
+    MESSAGE_PROMPT,
+    PLANNING_PROMPT,
+    STRATEGIC_MESSAGE_PROMPT,
+)
 from agents.strategy_cards import StrategyManager
 from agents.strategy_planner import StrategyPlanner
 from data.enums import StrategyStyle
@@ -204,16 +213,32 @@ class LLMAgent(BaseAgent):
             }
         )
 
-    def __del__(self):
-        """Cleanup when agent is destroyed.
+    def close(self):
+        """Clean up external resources explicitly.
 
-        Ensures proper cleanup of resources by:
-        1. Clearing all in-memory data
-        2. Closing and deleting memory store
-        3. Cleaning up OpenAI client
+        Ensures proper cleanup of:
+        1. In-memory data structures (perception history, conversation history, plans)
+        2. Memory store connection (ChromaDB)
+        3. OpenAI client
+
+        This method should be called explicitly when done with the agent, or used
+        via the context manager pattern:
+
+        Example:
+            # Method 1: Explicit cleanup
+            agent = LLMAgent(name="Bot1")
+            try:
+                # Use agent...
+            finally:
+                agent.close()
+
+            # Method 2: Context manager (preferred)
+            with LLMAgent(name="Bot2") as agent:
+                # Use agent...
+                # Cleanup happens automatically
         """
         try:
-            # First clear all in-memory data
+            # Clear in-memory data
             if hasattr(self, "perception_history"):
                 self.perception_history.clear()
                 del self.perception_history
@@ -234,10 +259,9 @@ class LLMAgent(BaseAgent):
                 self.opponent_models.clear()
                 del self.opponent_models
 
-            # Then clean up memory store - do this before client cleanup
+            # Clean up memory store
             if hasattr(self, "memory_store"):
                 try:
-                    # Don't clear the memories, just close the connection
                     self.memory_store.close()
                 except Exception as e:
                     if "Python is likely shutting down" not in str(e):
@@ -245,7 +269,7 @@ class LLMAgent(BaseAgent):
                 finally:
                     del self.memory_store
 
-            # Finally clean up OpenAI client
+            # Clean up OpenAI client
             if hasattr(self, "client"):
                 try:
                     del self.client
@@ -257,6 +281,53 @@ class LLMAgent(BaseAgent):
             if "Python is likely shutting down" not in str(e):
                 logging.error(f"Error in cleanup: {str(e)}")
 
+    def __enter__(self):
+        """Context manager entry point.
+
+        Enables the agent to be used with Python's 'with' statement for automatic
+        resource cleanup:
+
+            with LLMAgent(name="Bot") as agent:
+                # Agent is automatically cleaned up after this block
+
+        Returns:
+            LLMAgent: The agent instance
+        """
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit point.
+
+        Called automatically when exiting a 'with' block. Ensures cleanup happens
+        even if an exception occurs within the block.
+
+        Args:
+            exc_type: Type of exception that occurred (if any)
+            exc_val: Exception instance (if any)
+            exc_tb: Exception traceback (if any)
+
+        Note:
+            Exceptions are not suppressed and will propagate after cleanup.
+        """
+        self.close()
+
+    def __del__(self):
+        """Fallback cleanup if close() wasn't called explicitly.
+
+        This is a safety net for cases where the agent wasn't properly closed.
+        However, it's better to use either:
+        1. Explicit close() calls
+        2. Context manager ('with' statement)
+
+        Note:
+            Errors are suppressed here since this may be called during interpreter
+            shutdown when some resources are already gone.
+        """
+        try:
+            self.close()
+        except Exception:
+            pass  # Suppress errors during interpreter shutdown
+
     def _get_decision_prompt(self, game_state: str) -> str:
         """Creates a decision prompt combining strategy and game state."""
         strategy_prompt = self.strategy_manager.get_complete_prompt(
@@ -266,24 +337,11 @@ class LLMAgent(BaseAgent):
             }
         )
 
-        return f"""You are a {self.strategy_style} poker player. You must respond with exactly one action.
-
-{strategy_prompt}
-
-Current situation:
-{game_state}
-
-Respond ONLY in this format:
-DECISION: <action> <brief reason>
-where <action> must be exactly one of: fold, call, raise
-
-Example responses:
-DECISION: fold weak hand against aggressive raise
-DECISION: call decent draw with good pot odds
-DECISION: raise strong hand in position
-
-What is your decision?
-"""
+        return DECISION_PROMPT.format(
+            strategy_style=self.strategy_style,
+            strategy_prompt=strategy_prompt,
+            game_state=game_state,
+        )
 
     def decide_action(
         self, game_state: str, opponent_message: Optional[str] = None
@@ -350,30 +408,9 @@ What is your decision?
 
     def get_message(self, game_state: str) -> str:
         """Get a strategic message from the agent."""
-        prompt = f"""
-        You are a {self.strategy_style} poker player.
-        
-        Current situation:
-        {game_state}
-        
-        CRITICAL RULES:
-        1. Start with exactly "MESSAGE: "
-        2. Maximum 5 words after "MESSAGE: "
-        3. No punctuation except periods
-        4. No pronouns (I, you, we, etc)
-        
-        Valid examples:
-        MESSAGE: All in with strong hand
-        MESSAGE: Playing tight this round
-        MESSAGE: Time to bluff big
-        
-        Invalid examples:
-        MESSAGE: I'm going to bluff big time now!  (too long, has pronouns)
-        MESSAGE: Let's see who's brave enough  (has pronouns)
-        MESSAGE: Time to show my dominance at the table  (too long)
-        
-        Respond with exactly one message following these rules.
-        """
+        prompt = MESSAGE_PROMPT.format(
+            strategy_style=self.strategy_style, game_state=game_state
+        )
 
         try:
             response = self._query_llm(prompt).strip()
@@ -403,47 +440,15 @@ What is your decision?
         """Decide which cards to discard and draw new ones."""
         game_state = f"Hand: {self.hand.show()}"
 
-        prompt = f"""You are a {self.strategy_style} poker player deciding which cards to discard.
+        prompt = DISCARD_PROMPT.format(
+            strategy_style=self.strategy_style,
+            game_state=game_state,
+            cards=[
+                self.hand.cards[i] if i < len(self.hand.cards) else "N/A"
+                for i in range(5)
+            ],
+        )
 
-Current situation:
-{game_state}
-
-CRITICAL RULES:
-1. You MUST include a line starting with "DISCARD:" followed by:
-   - [x,y] for multiple positions
-   - [x] for single position
-   - none for keeping all cards
-2. Use ONLY card positions (0-4 from left to right)
-3. Maximum 3 cards can be discarded
-4. Format must be exactly as shown in examples
-
-Example responses:
-ANALYSIS:
-Pair of Kings, weak kickers
-Should discard both low cards
-
-DISCARD: [0,1]
-
-ANALYSIS:
-Strong two pair, keep everything
-
-DISCARD: none
-
-ANALYSIS:
-Weak high card only
-Discard three cards for new draw
-
-DISCARD: [2,3,4]
-
-Current hand positions:
-Card 0: {self.hand.cards[0] if len(self.hand.cards) > 0 else 'N/A'}
-Card 1: {self.hand.cards[1] if len(self.hand.cards) > 1 else 'N/A'}
-Card 2: {self.hand.cards[2] if len(self.hand.cards) > 2 else 'N/A'}
-Card 3: {self.hand.cards[3] if len(self.hand.cards) > 3 else 'N/A'}
-Card 4: {self.hand.cards[4] if len(self.hand.cards) > 4 else 'N/A'}
-
-What is your discard decision?
-"""
         try:
             response = self._query_llm(prompt)
 
@@ -571,20 +576,15 @@ What is your discard decision?
             ]
         )
 
-        prompt = f"""You are a {self.strategy_style} poker player.
-Your response must be a single short message (max 10 words) that fits your style.
-
-Game State: {game_state}
-Recent Observations: {self.perception_history[-3:] if self.perception_history else "None"}
-Relevant Memories: {memory_context}
-Recent Chat: {recent_conversation}
-
-Example responses:
-- "I always bet big with strong hands!"
-- "Playing it safe until I see weakness."
-- "You can't read my unpredictable style!"
-
-Your table talk message:"""
+        prompt = STRATEGIC_MESSAGE_PROMPT.format(
+            strategy_style=self.strategy_style,
+            game_state=game_state,
+            recent_observations=(
+                self.perception_history[-3:] if self.perception_history else "None"
+            ),
+            memory_context=memory_context,
+            recent_conversation=recent_conversation,
+        )
 
         message = self._query_llm(prompt).strip()
 
@@ -625,18 +625,11 @@ Your table talk message:"""
         """
         recent_history = self.perception_history[-3:] if self.perception_history else []
 
-        prompt = f"""
-        You are a {self.strategy_style} poker player.
-        Opponent's message: '{opponent_message}'
-        Recent game history: {recent_history}
-        
-        Based on your strategy style and the game history:
-        1. Analyze if they are bluffing, truthful, or misleading
-        2. Consider their previous behavior patterns
-        3. Think about how this fits your strategy style
-        
-        Respond with only: 'trust', 'ignore', or 'counter-bluff'
-        """
+        prompt = INTERPRET_MESSAGE_PROMPT.format(
+            strategy_style=self.strategy_style,
+            opponent_message=opponent_message,
+            recent_history=recent_history,
+        )
         return self._query_llm(prompt).strip().lower()
 
     def _normalize_action(self, action: str) -> str:
@@ -689,31 +682,14 @@ Your table talk message:"""
     ) -> str:
         """Determine the next action based on the game state and opponent's message."""
         try:
-            prompt = f"""
-            You are a {self.strategy_style} poker player.
-            
-            Current situation:
-            {game_state}
-            Opponent message: {opponent_message or 'None'}
-            
-            CRITICAL RULES:
-            1. Start with "ANALYSIS:" followed by 1-3 short lines
-            2. Then exactly "DECISION: <action>" where action is fold/call/raise
-            3. No additional text or explanations
-            4. No bet amounts or other details
-            
-            Valid example:
-            ANALYSIS:
-            Strong hand in position
-            Good pot odds
-            
-            DECISION: raise
-            
-            Invalid examples:
-            DECISION: raise to 300  (no amounts allowed)
-            DECISION: raise because I have a strong hand  (no explanations)
-            DECISION: check  (not a valid action)
-            """
+            prompt = EXECUTION_PROMPT.format(
+                strategy_style=self.strategy_style,
+                game_state=game_state,
+                plan_approach=self.current_plan["approach"],
+                plan_reasoning=self.current_plan["reasoning"],
+                bluff_threshold=self.current_plan["bluff_threshold"],
+                fold_threshold=self.current_plan["fold_threshold"],
+            )
 
             response = self._query_llm(prompt)
 
@@ -1143,30 +1119,9 @@ Your table talk message:"""
             return self.current_plan
 
         # Create planning prompt with escaped curly braces for the JSON template
-        planning_prompt = f"""
-        You are a {self.strategy_style} poker player planning your strategy.
-        
-        Current situation:
-        {game_state}
-        
-        Create a strategic plan using this exact format:
-        {{
-            "approach": "<aggressive/balanced/defensive>",
-            "reasoning": "<brief explanation>",
-            "bet_sizing": "<small/medium/large>",
-            "bluff_threshold": <float 0-1>,
-            "fold_threshold": <float 0-1>
-        }}
-        
-        Example:
-        {{
-            "approach": "aggressive",
-            "reasoning": "Strong hand, weak opponents",
-            "bet_sizing": "large",
-            "bluff_threshold": 0.7,
-            "fold_threshold": 0.2
-        }}
-        """
+        planning_prompt = PLANNING_PROMPT.format(
+            strategy_style=self.strategy_style, game_state=game_state
+        )
 
         try:
             response = self._query_llm(planning_prompt)
@@ -1245,21 +1200,14 @@ Your table talk message:"""
             - Considers bluff and fold thresholds from plan
             - Evaluates pot odds and immediate costs
         """
-        execution_prompt = f"""
-        You are a {self.strategy_style} poker player following this plan:
-        Approach: {plan['approach']}
-        Reasoning: {plan['reasoning']}
-        
-        Current situation:
-        {game_state}
-        
-        Given your {plan['approach']} approach:
-        1. Evaluate if the situation matches your plan
-        2. Consider pot odds and immediate action costs
-        3. Factor in your bluff_threshold ({plan['bluff_threshold']}) and fold_threshold ({plan['fold_threshold']})
-        
-        Respond with EXECUTE: <fold/call/raise> and brief reasoning
-        """
+        execution_prompt = EXECUTION_PROMPT.format(
+            strategy_style=self.strategy_style,
+            game_state=game_state,
+            plan_approach=self.current_plan["approach"],
+            plan_reasoning=self.current_plan["reasoning"],
+            bluff_threshold=self.current_plan["bluff_threshold"],
+            fold_threshold=self.current_plan["fold_threshold"],
+        )
 
         try:
             response = self._query_llm(execution_prompt)
