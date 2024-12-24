@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import random
+import re
 import time
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple
@@ -341,19 +342,56 @@ Consider:
 2. High cards worth keeping
 3. Your {self.strategy_style} style
 
-Your response:"""
+Your response must be ONLY numbers separated by spaces, or 'none'. No other text."""
 
         response = self._query_llm(prompt).strip().lower()
-        if response == "none":
+
+        # If the agent wants to keep all cards
+        if "none" in response or "keep" in response:
             return []
 
-        try:
-            indices = [int(i) for i in response.split()]
-            return [i for i in indices if 0 <= i <= 4]
-        except:
-            # If parsing fails, make a simple decision based on pairs
-            ranks = [card.rank for card in self.hand.cards]
-            return [i for i, rank in enumerate(ranks) if ranks.count(rank) == 1]
+        # First try to find numbers in various formats
+        # This handles: "0,1,2", "0 1 2", "0, 1, 2", "discard 0 1 2", etc.
+        positions = re.findall(r"\b[0-4]\b", response)
+
+        if positions:
+            # Convert matches to integers and validate
+            indices = [int(pos) for pos in positions]
+            valid_indices = [i for i in indices if 0 <= i < 5]
+
+            # Ensure no duplicates and proper ordering
+            valid_indices = sorted(list(set(valid_indices)))
+
+            # Log the decision process
+            self.logger.info(f"{self.name} discarding positions: {valid_indices}")
+            return valid_indices
+
+        # If no valid positions found, analyze hand for pairs
+        self.logger.warning(
+            f"{self.name} no valid discard positions found in response: '{response}'"
+        )
+        self.logger.info(f"{self.name} falling back to pairs analysis")
+
+        # Enhanced fallback strategy
+        ranks = [card.rank for card in self.hand.cards]
+        values = {"A": 14, "K": 13, "Q": 12, "J": 11}
+
+        # Convert ranks to numeric values for comparison
+        numeric_ranks = [values.get(str(r), int(str(r))) for r in ranks]
+
+        # Keep pairs and high cards (K or better)
+        keep_positions = [
+            i
+            for i, r in enumerate(numeric_ranks)
+            if ranks.count(ranks[i]) > 1 or r >= 13
+        ]
+
+        discard_positions = [i for i in range(5) if i not in keep_positions]
+        self.logger.info(
+            f"{self.name} fallback strategy discarding: {discard_positions}"
+        )
+
+        return discard_positions
 
     def perceive(self, game_state: str, opponent_message: str) -> Dict[str, Any]:
         """Process and store new game information in memory systems.
@@ -428,7 +466,10 @@ Your response:"""
             [f"Memory {i+1}: {mem['text']}" for i, mem in enumerate(relevant_memories)]
         )
         recent_conversation = "\n".join(
-            [f"{msg['sender']}: {msg['message']}" for msg in self.conversation_history[-5:]]
+            [
+                f"{msg['sender']}: {msg['message']}"
+                for msg in self.conversation_history[-5:]
+            ]
         )
 
         prompt = f"""You are a {self.strategy_style} poker player.
