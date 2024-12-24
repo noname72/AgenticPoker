@@ -569,9 +569,6 @@ class AgenticPoker:
             if hasattr(player, "get_message"):
                 game_state = f"Round {self.round_number}, Your chips: ${player.chips}"
                 message = player.get_message(game_state)
-                if message:
-                    message = message.encode("ascii", "replace").decode("ascii")
-                    logging.info(f"\n{player.name} says: {message}")
 
         logging.info("\n")
 

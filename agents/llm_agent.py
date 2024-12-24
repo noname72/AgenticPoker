@@ -761,7 +761,7 @@ Your table talk message:"""
                 response = await asyncio.get_event_loop().run_in_executor(
                     None,
                     lambda: self.client.chat.completions.create(
-                        model="gpt-3.5-turbo",
+                        model="gpt-3.5-turbo",  # Standardized to 3.5-turbo
                         messages=messages,
                         max_tokens=150,
                         temperature=0.7,
