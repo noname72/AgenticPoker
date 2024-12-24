@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 from agents.strategy_cards import StrategyManager
+from agents.strategy_planner import StrategyPlanner
 from data.enums import StrategyStyle
 from data.memory import ChromaMemoryStore
 from exceptions import LLMError, OpenAIError
@@ -144,9 +145,11 @@ class LLMAgent(BaseAgent):
 
         # Add plan tracking (only if planning is enabled)
         if self.use_planning:
-            self.current_plan: Optional[Dict[str, Any]] = None
-            self.plan_expiry: float = 0
-            self.plan_duration: float = 30.0  # Plan lasts for 30 seconds by default
+            self.strategy_planner = StrategyPlanner(
+                strategy_style=self.strategy_style,
+                client=self.client,
+                plan_duration=30.0,
+            )
 
         # Initialize memory store with session-specific collection name
         collection_name = f"agent_{name.lower().replace(' ', '_')}_{session_id}_memory"
@@ -287,10 +290,22 @@ What is your decision?
     ) -> str:
         """Uses strategy-aware prompting to make decisions."""
         try:
-            # Get only the most recent and relevant memories
+            # Use strategy planner if enabled
+            if self.use_planning:
+                self.logger.info(f"[{self.name}] Using strategy planner for decision")
+                # Get plan and execute action
+                plan = self.strategy_planner.plan_strategy(game_state, self.chips)
+                action = self.strategy_planner.execute_action(game_state)
+                self.logger.info(
+                    f"[{self.name}] Strategy plan: {plan['approach']} -> Action: {action}"
+                )
+                return action
+
+            self.logger.info(f"[{self.name}] Using basic decision making")
+            # Fallback to basic decision making if planning disabled
             relevant_memories = self.memory_store.get_relevant_memories(
                 query=game_state,
-                k=2,  # Reduce from default 3 to avoid over-weighting past events
+                k=2,
             )
 
             # Format memories for prompt
