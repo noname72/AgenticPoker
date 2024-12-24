@@ -108,16 +108,25 @@ The module includes comprehensive error handling:
    - Store concise, relevant information
    - Include meaningful metadata
    - Use consistent timestamp format
+   - Ensure unique collection names with session IDs
 
 2. Memory Retrieval:
    - Use specific queries for better relevance
    - Limit retrieval count (k) based on context
    - Consider filtering by metadata when needed
+   - Default k=2 for decision-making to prevent over-weighting past events
 
 3. Performance:
-   - Clear old memories periodically
-   - Monitor storage size
-   - Use appropriate k values for retrieval
+   - Collections persist across game sessions
+   - Automatic retry mechanism for initialization
+   - Graceful handling of connection issues
+   - Safe cleanup without destroying collections
+
+4. Collection Management:
+   - Collections are session-specific
+   - Format: `agent_{name}_{session_id}_memory`
+   - Preserved between rounds
+   - Automatic reconnection on errors
 
 ## Integration with Agents
 
@@ -127,28 +136,28 @@ The memory system integrates with AI agents through:
 3. Strategic decision making
 4. Behavioral pattern analysis
 
-Example integration:
+Example integration with recent changes:
 
 ```python
 class Agent:
-    def __init__(self, name: str):
-        self.memory = ChromaMemoryStore(f"agent_{name}")
-        
-    def perceive(self, game_state: str):
-        self.memory.add_memory(
-            text=game_state,
-            metadata={
-                "type": "perception",
-                "timestamp": time.time()
-            }
-        )
+    def __init__(self, name: str, session_id: str):
+        self.memory = ChromaMemoryStore(f"agent_{name}_{session_id}_memory")
         
     def make_decision(self, current_state: str):
+        # Get limited relevant memories to avoid over-weighting history
         relevant_history = self.memory.get_relevant_memories(
             query=current_state,
-            k=5
+            k=2  # Reduced from default 3
         )
-        # Use relevant_history to inform decision
+        
+        # Format memories for context
+        memory_context = "\nRecent relevant experiences:\n" + "\n".join(
+            [f"- {mem['text']}" for mem in relevant_history]
+        )
+        
+        # Use memory context in decision making
+        decision = self._make_decision(current_state + memory_context)
+        return decision
 ```
 
 ## Future Improvements

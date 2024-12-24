@@ -66,63 +66,23 @@ def setup_logging(session_id=0):
 
 
 def clear_results_directory() -> None:
-    """
-    Clear the results directory containing ChromaDB data.
-
-    Performs a thorough cleanup of the ChromaDB directory by:
-    1. Deleting any existing ChromaDB collections
-    2. Closing the client connection
-    3. Creating a fresh directory if needed
-    """
+    """Clear previous game results while preserving ChromaDB connections."""
     results_dir = os.path.join(os.getcwd(), "results")
     chroma_dir = os.path.join(results_dir, "chroma_db")
 
     try:
-        # First try to reset ChromaDB using its own methods
-        try:
-            import chromadb
-            from chromadb.config import Settings
+        # Only remove non-ChromaDB files/directories
+        for item in os.listdir(results_dir):
+            item_path = os.path.join(results_dir, item)
+            if item != "chroma_db":  # Skip the ChromaDB directory
+                if os.path.isfile(item_path):
+                    os.remove(item_path)
+                elif os.path.isdir(item_path):
+                    shutil.rmtree(item_path)
 
-            if os.path.exists(chroma_dir):
-                client = chromadb.PersistentClient(
-                    path=chroma_dir,
-                    settings=Settings(
-                        allow_reset=True, anonymized_telemetry=False, is_persistent=True
-                    ),
-                )
-
-                # Get all collection names and delete them
-                collections = client.list_collections()
-                for collection in collections:
-                    client.delete_collection(collection.name)
-                    logger.info(f"Deleted collection: {collection.name}")
-
-                # Reset and close the client properly
-                client.reset()
-                del client
-
-                logger.info("Reset ChromaDB successfully")
-
-                # Wait briefly for resources to be released
-                time.sleep(0.5)
-
-        except Exception as e:
-            logger.warning(f"Failed to reset ChromaDB cleanly: {str(e)}")
-
-        # Remove old directory if it exists
-        if os.path.exists(chroma_dir):
-            try:
-                shutil.rmtree(chroma_dir)
-                logger.info("Removed old ChromaDB directory")
-            except Exception as e:
-                logger.warning(f"Could not remove old ChromaDB directory: {str(e)}")
-
-        # Create fresh directory
-        os.makedirs(chroma_dir, exist_ok=True)
-        logger.info("Created fresh ChromaDB directory")
-
+        logger.info("Cleared previous game results (preserved ChromaDB)")
     except Exception as e:
-        logger.error(f"Failed to clear results directory: {str(e)}")
+        logger.error(f"Error clearing results directory: {str(e)}")
 
 
 def load_agent_configs() -> Dict:

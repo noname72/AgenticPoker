@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
@@ -68,12 +69,24 @@ class ChromaMemoryStore(MemoryStore):
         persist_dir = os.path.join(results_dir, "chroma_db")
         os.makedirs(persist_dir, exist_ok=True)
 
-        # Sanitize collection name
+        # Sanitize collection name and ensure uniqueness
         self.safe_name = "".join(c for c in collection_name if c.isalnum() or c in "_-")
         self.persist_dir = persist_dir
         self.id_counter = 0
 
-        self._initialize_client()
+        # Initialize client with retries
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                self._initialize_client()
+                break
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    logger.error(
+                        f"Failed to initialize ChromaDB after {max_retries} attempts: {str(e)}"
+                    )
+                    raise
+                time.sleep(1)  # Wait before retry
 
     def _initialize_client(self):
         """Initialize or reinitialize the ChromaDB client and collection."""
@@ -184,38 +197,16 @@ class ChromaMemoryStore(MemoryStore):
     def close(self) -> None:
         """Close the Chroma client connection and cleanup resources."""
         try:
-            if hasattr(self, "collection") and self.collection:
-                try:
-                    # Get and delete all documents first
-                    results = self.collection.get()
-                    if results and results["ids"]:
-                        self.collection.delete(ids=results["ids"])
-
-                    # Then delete the collection itself
-                    collection_name = self.collection.name
-                    try:
-                        self.client.delete_collection(collection_name)
-                    except Exception as e:
-                        if "no such table" not in str(e):  # Ignore if already deleted
-                            logger.warning(f"Error deleting collection: {str(e)}")
-                except Exception as e:
-                    if "no such table" not in str(e):  # Ignore if table already gone
-                        logger.warning(f"Error cleaning up collection: {str(e)}")
-                finally:
-                    self.collection = None
-
             if hasattr(self, "client") and self.client:
                 try:
                     self.client.reset()
                 except Exception as e:
-                    if "Python is likely shutting down" not in str(
-                        e
-                    ) and "no such table" not in str(e):
+                    if "Python is likely shutting down" not in str(e):
                         logger.warning(f"Error resetting client: {str(e)}")
                 finally:
                     self.client = None
 
-            logger.info("Closed ChromaDB connection")
+            logger.info(f"Closed ChromaDB connection for {self.safe_name}")
         except Exception as e:
-            if "no such table" not in str(e):  # Only log non-table errors
+            if "Python is likely shutting down" not in str(e):
                 logger.error(f"Error closing ChromaDB connection: {str(e)}")

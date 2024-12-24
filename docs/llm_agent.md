@@ -19,7 +19,7 @@ The LLM (Language Learning Model) Agent is an AI poker player that uses natural 
 
 ### Memory System
 The agent uses a vector-based memory store to:
-- Maintain long-term memory across games
+- Maintain session-specific long-term memory
 - Store and retrieve relevant experiences
 - Track conversation history
 - Analyze opponent patterns
@@ -31,18 +31,57 @@ Memory types include:
    - Opponent actions
    - Hand histories
    - Timestamps and metadata
+   - Session-specific collections
 
 2. **Conversation Memory**
    - Table talk
    - Opponent messages
    - Own responses
    - Communication patterns
+   - Limited to recent context
 
 3. **Strategic Memory**
    - Past decisions
    - Outcome analysis
    - Pattern recognition
    - Strategy adaptations
+   - Weighted by recency
+
+### Memory Integration in Decision Making
+The agent now uses a more refined approach to memory integration:
+
+```python
+def decide_action(self, game_state: str, opponent_message: Optional[str] = None) -> str:
+    """Uses strategy-aware prompting with limited memory context."""
+    # Get only recent relevant memories
+    relevant_memories = self.memory_store.get_relevant_memories(
+        query=game_state,
+        k=2  # Reduced from 3 to avoid over-weighting past events
+    )
+    
+    # Format memories for context
+    memory_context = ""
+    if relevant_memories:
+        memory_context = "\nRecent relevant experiences:\n" + "\n".join(
+            [f"- {mem['text']}" for mem in relevant_memories]
+        )
+
+    # Combine current state with memory context
+    prompt = self._get_decision_prompt(game_state + memory_context)
+    # ... rest of decision making process
+```
+
+### Configuration Updates
+When creating an agent, you must now provide a session ID:
+
+```python
+agent = LLMAgent(
+    "Alice",
+    chips=1000,
+    strategy_style="Aggressive Bluffer",
+    session_id="20241223_173937",  # Required for memory persistence
+)
+```
 
 ### Opponent Modeling System
 The agent includes an optional opponent modeling system that:

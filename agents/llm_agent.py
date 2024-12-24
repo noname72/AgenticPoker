@@ -93,6 +93,7 @@ class LLMAgent(BaseAgent):
         use_reward_learning: bool = False,
         learning_rate: float = 0.1,
         config: Optional[Dict] = None,
+        session_id: Optional[str] = None,
     ) -> None:
         """Initialize LLM-powered poker agent.
 
@@ -110,6 +111,7 @@ class LLMAgent(BaseAgent):
             use_reward_learning: Whether to use reward-based learning
             learning_rate: Learning rate for reward-based learning
             config: Optional configuration dictionary
+            session_id: Session ID for collection differentiation
         """
         super().__init__(name, chips)
         self.use_reasoning = use_reasoning
@@ -146,8 +148,8 @@ class LLMAgent(BaseAgent):
             self.plan_expiry: float = 0
             self.plan_duration: float = 30.0  # Plan lasts for 30 seconds by default
 
-        # Initialize memory store with sanitized name for collection
-        collection_name = f"agent_{name.lower().replace(' ', '_')}_memory"
+        # Initialize memory store with session-specific collection name
+        collection_name = f"agent_{name.lower().replace(' ', '_')}_{session_id}_memory"
         self.memory_store = ChromaMemoryStore(collection_name)
 
         # Keep short-term memory in lists for immediate context
@@ -232,7 +234,7 @@ class LLMAgent(BaseAgent):
             # Then clean up memory store - do this before client cleanup
             if hasattr(self, "memory_store"):
                 try:
-                    self.memory_store.clear()
+                    # Don't clear the memories, just close the connection
                     self.memory_store.close()
                 except Exception as e:
                     if "Python is likely shutting down" not in str(e):
@@ -250,7 +252,7 @@ class LLMAgent(BaseAgent):
 
         except Exception as e:
             if "Python is likely shutting down" not in str(e):
-                logging.warning(f"Error during LLMAgent cleanup: {str(e)}")
+                logging.error(f"Error in cleanup: {str(e)}")
 
     def _get_decision_prompt(self, game_state: str) -> str:
         """Creates a decision prompt combining strategy and game state."""
@@ -285,7 +287,20 @@ What is your decision?
     ) -> str:
         """Uses strategy-aware prompting to make decisions."""
         try:
-            prompt = self._get_decision_prompt(game_state)
+            # Get only the most recent and relevant memories
+            relevant_memories = self.memory_store.get_relevant_memories(
+                query=game_state,
+                k=2,  # Reduce from default 3 to avoid over-weighting past events
+            )
+
+            # Format memories for prompt
+            memory_context = ""
+            if relevant_memories:
+                memory_context = "\nRecent relevant experiences:\n" + "\n".join(
+                    [f"- {mem['text']}" for mem in relevant_memories]
+                )
+
+            prompt = self._get_decision_prompt(game_state + memory_context)
             response = self._query_llm(prompt)
 
             if "DECISION:" not in response:

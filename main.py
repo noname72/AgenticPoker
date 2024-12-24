@@ -39,6 +39,7 @@ players = [
         use_reward_learning=True,
         learning_rate=0.1,
         config=agent_configs.get("Alice"),
+        session_id=session_id,
     ),
     LLMAgent(
         "Bob",
@@ -49,6 +50,7 @@ players = [
         use_planning=False,
         use_opponent_modeling=True,
         config=agent_configs.get("Bob"),
+        session_id=session_id,
     ),
     LLMAgent(
         "Charlie",
@@ -59,6 +61,7 @@ players = [
         use_planning=False,
         use_opponent_modeling=False,
         config=agent_configs.get("Charlie"),
+        session_id=session_id,
     ),
 ]
 
@@ -74,7 +77,7 @@ game = AgenticPoker(
 
 
 def main():
-    # Clear previous game data
+    # Clear previous game data BEFORE creating agents
     clear_results_directory()
 
     logger.info("\n" + "=" * 70)
