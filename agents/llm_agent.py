@@ -388,52 +388,87 @@ What is your decision?
         """Decide which cards to discard and draw new ones."""
         game_state = f"Hand: {self.hand.show()}"
 
-        prompt = f"""
-        You are a {self.strategy_style} poker player deciding which cards to discard.
-        
-        Current situation:
-        {game_state}
-        
-        CRITICAL: You must format your response EXACTLY like this example:
-        ANALYSIS:
-        Current hand is two pair, Kings and Queens
-        Drawing could improve to full house
-        
-        DISCARD: [0,1]
-        
-        REASONING:
-        Keeping both pairs, discarding first two cards
-        
-        IMPORTANT RULES:
-        - Use ONLY card positions (0-4 from left to right)
-        - Do NOT use card ranks or values
-        - Maximum 3 cards can be discarded
-        - Format must be exactly [x,y] or [x] or none
-        
-        Example hand: "8♣ A♥ A♣ 9♣ 7♣"
-        Position numbers:  0  1  2  3  4
-        """
+        prompt = f"""You are a {self.strategy_style} poker player deciding which cards to discard.
 
-        response = self._query_llm(prompt).strip()
+Current situation:
+{game_state}
 
+CRITICAL RULES:
+1. You MUST include a line starting with "DISCARD:" followed by:
+   - [x,y] for multiple positions
+   - [x] for single position
+   - none for keeping all cards
+2. Use ONLY card positions (0-4 from left to right)
+3. Maximum 3 cards can be discarded
+4. Format must be exactly as shown in examples
+
+Example responses:
+ANALYSIS:
+Pair of Kings, weak kickers
+Should discard both low cards
+
+DISCARD: [0,1]
+
+ANALYSIS:
+Strong two pair, keep everything
+
+DISCARD: none
+
+ANALYSIS:
+Weak high card only
+Discard three cards for new draw
+
+DISCARD: [2,3,4]
+
+Current hand positions:
+Card 0: {self.hand.cards[0] if len(self.hand.cards) > 0 else 'N/A'}
+Card 1: {self.hand.cards[1] if len(self.hand.cards) > 1 else 'N/A'}
+Card 2: {self.hand.cards[2] if len(self.hand.cards) > 2 else 'N/A'}
+Card 3: {self.hand.cards[3] if len(self.hand.cards) > 3 else 'N/A'}
+Card 4: {self.hand.cards[4] if len(self.hand.cards) > 4 else 'N/A'}
+
+What is your discard decision?
+"""
         try:
-            # Parse with strict format checking
+            response = self._query_llm(prompt)
+
+            # First try to parse with strict format
             discard_positions = self._parse_discard(response)
 
-            # Validate number of discards
-            if len(discard_positions) > 3:
+            # If no DISCARD line found, try to extract from free text
+            if not discard_positions and "discard" in response.lower():
                 self.logger.warning(
-                    f"{self.name} tried to discard {len(discard_positions)} cards. Limiting to 3."
+                    f"No DISCARD: line found, attempting to parse from text: {response}"
                 )
-                discard_positions = discard_positions[:3]
 
-            # Validate each position
+                # Look for numbers in text after "discard"
+                import re
+
+                numbers = re.findall(
+                    r"\b[0-4]\b", response.lower().split("discard", 1)[1]
+                )
+                if numbers:
+                    discard_positions = [
+                        int(n) for n in numbers[:3]
+                    ]  # Limit to 3 cards
+                    self.logger.info(
+                        f"Extracted positions from text: {discard_positions}"
+                    )
+
+            # Validate positions
             valid_positions = []
             for pos in discard_positions:
                 if not isinstance(pos, int) or pos < 0 or pos > 4:
                     self.logger.warning(f"Invalid discard position {pos}")
                     continue
                 valid_positions.append(pos)
+
+            # Limit to 3 cards
+            if len(valid_positions) > 3:
+                self.logger.warning(
+                    f"Too many discards ({len(valid_positions)}), limiting to 3"
+                )
+                valid_positions = valid_positions[:3]
 
             self.logger.info(f"{self.name} discarding positions: {valid_positions}")
             return valid_positions
