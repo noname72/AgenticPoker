@@ -9,6 +9,7 @@ from util import (
     load_agent_configs,
     setup_logging,
 )
+from agents.random_agent import RandomAgent
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -62,6 +63,10 @@ players = [
         use_opponent_modeling=False,
         config=agent_configs.get("Charlie"),
         session_id=session_id,
+    ),
+    RandomAgent(
+        "Randy",
+        chips=1000,
     ),
 ]
 
