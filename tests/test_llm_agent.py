@@ -209,3 +209,131 @@ def test_openai_client_initialization(mock_openai, mock_getenv):
 
     mock_openai.assert_called_once_with(api_key="test-api-key")
     assert hasattr(agent, "client")
+
+
+@pytest.fixture
+def mock_llm_response():
+    """Mock LLM response for testing."""
+    return """MESSAGE: [confident] The odds are in my favor now
+INTENT: Create uncertainty about hand strength
+CONFIDENCE: 8"""
+
+
+def test_communication_style_initialization(agent):
+    """Test that communication style is properly initialized."""
+    assert agent.communication_style == "Intimidating"
+    assert agent.emotional_state == "confident"
+    assert isinstance(agent.table_history, list)
+
+
+@patch("agents.llm_agent.LLMAgent._query_llm")
+def test_get_message_success(mock_query, agent, mock_llm_response):
+    """Test successful message generation with full response."""
+    mock_query.return_value = mock_llm_response
+    
+    message = agent.get_message("pot: $100")
+    
+    assert message == "[confident] The odds are in my favor now"
+    assert agent.emotional_state == "confident"
+    assert len(agent.table_history) == 1
+    assert agent._last_message_intent == "Create uncertainty about hand strength"
+    assert agent._last_message_confidence == 8
+
+
+@patch("agents.llm_agent.LLMAgent._query_llm")
+def test_get_message_fallback(mock_query, agent):
+    """Test fallback to simple message when banter fails."""
+    # First call fails, second call (fallback) succeeds
+    mock_query.side_effect = [
+        "Invalid response",
+        "MESSAGE: [thoughtful] Playing it safe"
+    ]
+    
+    message = agent.get_message("pot: $100")
+    
+    assert message == "[thoughtful] Playing it safe"
+    assert len(agent.table_history) == 1
+
+
+def test_update_emotional_state(agent):
+    """Test emotional state updates based on confidence levels."""
+    test_cases = [
+        (9, "confident"),
+        (3, "nervous"),
+        (5, "thoughtful"),
+        (7, "amused")
+    ]
+    
+    for confidence, expected_state in test_cases:
+        agent._update_emotional_state(confidence)
+        assert agent.emotional_state == expected_state
+
+
+def test_format_recent_actions(agent):
+    """Test formatting of recent actions."""
+    # Case with no action history
+    assert agent._format_recent_actions() == "No recent actions"
+    
+    # Case with action history
+    if not hasattr(agent, 'action_history'):
+        agent.action_history = []
+    agent.action_history = ["fold", "call", "raise", "fold"]
+    formatted = agent._format_recent_actions()
+    assert isinstance(formatted, str)
+    assert "fold" in formatted
+    assert len(formatted.split('\n')) <= 3  # Only last 3 actions
+
+
+def test_get_opponent_patterns(agent):
+    """Test opponent pattern analysis formatting."""
+    # Case with no opponent data
+    assert agent._get_opponent_patterns() == "No opponent data"
+    
+    # Case with opponent data
+    agent.opponent_models = {
+        "Player1": {"style": "aggressive"},
+        "Player2": {"style": "passive"}
+    }
+    patterns = agent._get_opponent_patterns()
+    assert "Player1: aggressive" in patterns
+    assert "Player2: passive" in patterns
+
+
+def test_perceive_with_message(agent):
+    """Test perception handling with opponent message."""
+    game_state = "pot: $200"
+    message = "I'm all in!"
+    
+    perception = agent.perceive(game_state, message)
+    
+    assert isinstance(perception, dict)
+    assert len(agent.table_history) == 1
+    assert "Opponent: I'm all in!" in agent.table_history[0]
+
+
+def test_table_history_limit(agent):
+    """Test that table history is properly limited."""
+    # Add more than 10 messages
+    for i in range(12):
+        agent.perceive("pot: $100", f"Message {i}")
+    
+    assert len(agent.table_history) == 10  # Should be limited to 10
+    assert "Message 11" in agent.table_history[-1]  # Should have most recent
+    assert "Message 0" not in agent.table_history  # Should not have oldest
+
+
+@patch("agents.llm_agent.LLMAgent._query_llm")
+def test_communication_styles(mock_query, agent):
+    """Test different communication styles affect messaging."""
+    test_styles = [
+        ("Intimidating", "[confident] Your chips are mine"),
+        ("Analytical", "[thoughtful] Probability suggests a fold"),
+        ("Friendly", "[amused] Good luck with that decision!")
+    ]
+    
+    for style, expected_message in test_styles:
+        agent.communication_style = style
+        mock_query.return_value = f"MESSAGE: {expected_message}\nINTENT: test\nCONFIDENCE: 7"
+        
+        message = agent.get_message("pot: $100")
+        assert message == expected_message

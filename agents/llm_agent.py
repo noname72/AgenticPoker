@@ -17,6 +17,7 @@ from agents.prompts import (
     INTERPRET_MESSAGE_PROMPT,
     MESSAGE_PROMPT,
     PLANNING_PROMPT,
+    STRATEGIC_BANTER_PROMPT,
     STRATEGIC_MESSAGE_PROMPT,
 )
 from agents.strategy_cards import StrategyManager
@@ -92,18 +93,16 @@ class LLMAgent(BaseAgent):
         self,
         name: str,
         chips: int = 1000,
-        strategy_style: Optional[str] = None,
-        personality_traits: Optional[Dict[str, float]] = None,
-        max_retries: int = 3,
-        retry_delay: float = 1.0,
+        strategy_style: str = "Aggressive Bluffer",
         use_reasoning: bool = True,
         use_reflection: bool = True,
         use_planning: bool = True,
-        use_opponent_modeling: bool = False,
+        use_opponent_modeling: bool = True,
         use_reward_learning: bool = False,
         learning_rate: float = 0.1,
         config: Optional[Dict] = None,
         session_id: Optional[str] = None,
+        communication_style: str = "Analytical",
     ) -> None:
         """Initialize LLM-powered poker agent.
 
@@ -122,8 +121,10 @@ class LLMAgent(BaseAgent):
             learning_rate: Learning rate for reward-based learning
             config: Optional configuration dictionary
             session_id: Session ID for collection differentiation
+            communication_style: Default communication style
         """
         super().__init__(name, chips)
+        self.config = config
         self.use_reasoning = use_reasoning
         self.use_reflection = use_reflection
         self.use_planning = use_planning
@@ -135,12 +136,13 @@ class LLMAgent(BaseAgent):
         self.last_opponent_action = None
         self.perception_history: List[Dict[str, Any]] = []
         self.conversation_history: List[Dict[str, Any]] = []
-        self.strategy_style = strategy_style or random.choice(
-            [s.value for s in StrategyStyle]
-        )
-        self.max_retries = max_retries
-        self.retry_delay = retry_delay
-        self.personality_traits = personality_traits or {
+        self.strategy_style = strategy_style
+        self.communication_style = communication_style
+        self.emotional_state = "confident"
+        self.table_history = []
+        self.max_retries = 3
+        self.retry_delay = 1.0
+        self.personality_traits = {
             "aggression": 0.5,
             "bluff_frequency": 0.5,
             "risk_tolerance": 0.5,
@@ -407,34 +409,123 @@ class LLMAgent(BaseAgent):
             return None
 
     def get_message(self, game_state: str) -> str:
-        """Get a strategic message from the agent."""
-        prompt = MESSAGE_PROMPT.format(
-            strategy_style=self.strategy_style, game_state=game_state
+        """Generate table talk based on communication style and game state."""
+        # Get recent table history
+        table_history = (
+            "\n".join(self.table_history[-3:])
+            if self.table_history
+            else "No recent history"
         )
 
+        # First get strategic banter with intent
+        banter_prompt = STRATEGIC_BANTER_PROMPT.format(
+            strategy_style=self.strategy_style,
+            game_state=game_state,
+            position=self.position if hasattr(self, "position") else "unknown",
+            recent_actions=self._format_recent_actions(),
+            opponent_patterns=self._get_opponent_patterns(),
+            communication_style=self.communication_style,
+            emotional_state=self.emotional_state,
+        )
+
+        banter_response = self._query_llm(banter_prompt)
+
+        # Parse the strategic response
         try:
-            response = self._query_llm(prompt).strip()
+            message_line = next(
+                line
+                for line in banter_response.split("\n")
+                if line.startswith("MESSAGE:")
+            )
+            intent_line = next(
+                line
+                for line in banter_response.split("\n")
+                if line.startswith("INTENT:")
+            )
+            confidence_line = next(
+                line
+                for line in banter_response.split("\n")
+                if line.startswith("CONFIDENCE:")
+            )
 
-            # Extract and validate message
-            if "MESSAGE:" in response:
-                message = response.split("MESSAGE:")[1].strip()
-                # Validate length
-                words = message.split()
-                if len(words) > 5:
-                    message = " ".join(words[:5])
-                # Remove punctuation except periods
-                message = "".join(
-                    c for c in message if c.isalnum() or c.isspace() or c == "."
-                )
-                self.last_message = message
-                return message
+            # Store the intent and confidence for future reference
+            self._last_message_intent = intent_line.replace("INTENT:", "").strip()
+            self._last_message_confidence = int(
+                confidence_line.replace("CONFIDENCE:", "").strip()
+            )
 
-            self.logger.warning(f"Invalid message format: {response}")
-            return "Thinking about next move"
+            # Update emotional state based on confidence
+            self._update_emotional_state(self._last_message_confidence)
+
+            # Store in table history
+            self.table_history.append(
+                f"{self.name}: {message_line.replace('MESSAGE:', '').strip()}"
+            )
+
+            return message_line.replace("MESSAGE:", "").strip()
 
         except Exception as e:
-            self.logger.error(f"Error generating message: {e}")
-            return "Thinking about next move"
+            logger.error(f"Error parsing banter response: {e}")
+            # Fallback to simple message prompt
+            return self._get_simple_message(game_state, table_history)
+
+    def _get_simple_message(self, game_state: str, table_history: str) -> str:
+        """Fallback method for simple message generation."""
+        prompt = MESSAGE_PROMPT.format(
+            strategy_style=self.strategy_style,
+            game_state=game_state,
+            communication_style=self.communication_style,
+            table_history=table_history,
+        )
+        message = self._query_llm(prompt)
+        if message.startswith("MESSAGE:"):
+            message = message.replace("MESSAGE:", "").strip()
+        self.table_history.append(f"{self.name}: {message}")
+        return message
+
+    def _format_recent_actions(self) -> str:
+        """Format recent game actions for context."""
+        if not hasattr(self, "action_history"):
+            return "No recent actions"
+        return (
+            "\n".join(self.action_history[-3:])
+            if self.action_history
+            else "No recent actions"
+        )
+
+    def _get_opponent_patterns(self) -> str:
+        """Analyze and format opponent behavior patterns."""
+        if not hasattr(self, "opponent_models"):
+            return "No opponent data"
+        patterns = []
+        for opponent, model in self.opponent_models.items():
+            if "style" in model:
+                patterns.append(f"{opponent}: {model['style']}")
+        return "\n".join(patterns) if patterns else "No clear patterns"
+
+    def _update_emotional_state(self, confidence: int) -> None:
+        """Update emotional state based on confidence and game situation."""
+        if confidence >= 8:
+            self.emotional_state = "confident"
+        elif confidence <= 3:
+            self.emotional_state = "nervous"
+        elif 4 <= confidence <= 5:
+            self.emotional_state = "thoughtful"
+        elif 6 <= confidence <= 7:
+            self.emotional_state = "amused"
+        # Keep current state if no clear reason to change
+
+    def perceive(self, game_state: str, opponent_message: Optional[str] = None) -> Dict:
+        """Enhanced perception with communication context."""
+        perception = super().perceive(game_state, opponent_message)
+
+        if opponent_message:
+            self.table_history.append(f"Opponent: {opponent_message}")
+            # Trim history if too long
+            if len(self.table_history) > 10:
+                self.table_history = self.table_history[-10:]
+
+        return perception
 
     def decide_draw(self) -> List[int]:
         """Decide which cards to discard and draw new ones."""
@@ -496,70 +587,6 @@ class LLMAgent(BaseAgent):
         except Exception as e:
             self.logger.error(f"Error in decide_draw: {str(e)}")
             return []  # Safe fallback - keep all cards
-
-    def perceive(self, game_state: str, opponent_message: str) -> Dict[str, Any]:
-        """Process and store new game information in memory systems.
-
-        Updates both short-term memory (recent events) and long-term memory (ChromaDB)
-        with new game states and messages for future reference.
-
-        Args:
-            game_state: Current state of the game
-            opponent_message: Message from opponent
-
-        Returns:
-            dict: Perception entry containing game state, message, and timestamp
-
-        Note:
-            Maintains limited-size short-term memory and unlimited long-term memory.
-        """
-        # Create perception entry
-        perception = {
-            "game_state": game_state,
-            "opponent_message": opponent_message,
-            "timestamp": time.time(),
-        }
-
-        # Store in short-term memory
-        if len(self.perception_history) >= self.short_term_limit:
-            self.perception_history.pop(0)
-        self.perception_history.append(perception)
-
-        # Store in long-term memory
-        memory_text = f"Game State: {game_state}\nOpponent Message: {opponent_message}"
-        self.memory_store.add_memory(
-            text=memory_text,
-            metadata={
-                "type": "perception",
-                "timestamp": time.time(),
-                "strategy_style": self.strategy_style,
-            },
-        )
-
-        # Handle conversation history
-        if opponent_message:
-            if len(self.conversation_history) >= self.short_term_limit:
-                self.conversation_history.pop(0)
-            self.conversation_history.append(
-                {
-                    "sender": "opponent",
-                    "message": opponent_message,
-                    "timestamp": time.time(),
-                }
-            )
-
-            # Store conversation in long-term memory
-            self.memory_store.add_memory(
-                text=opponent_message,
-                metadata={
-                    "type": "conversation",
-                    "sender": "opponent",
-                    "timestamp": time.time(),
-                    "strategy_style": self.strategy_style,
-                },
-            )
-
-        return perception
 
     def _get_strategic_message(self, game_state: str) -> str:
         """Enhanced message generation with memory retrieval."""

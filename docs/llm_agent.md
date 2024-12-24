@@ -759,3 +759,44 @@ The strategy manager will automatically:
 - Load the appropriate core strategy
 - Enable specified cognitive modules
 - Handle situational adaptations
+
+### Communication System
+The agent now includes an enhanced communication system with:
+
+1. **Communication Styles**
+   - "Intimidating" - Uses psychological pressure and dominance
+   - "Analytical" - Focuses on probabilities and logical observations
+   - "Friendly" - Maintains light atmosphere while masking intentions
+
+2. **Emotional States**
+   - "confident" (confidence >= 8)
+   - "nervous" (confidence <= 3)
+   - "thoughtful" (4 <= confidence <= 5)
+   - "amused" (6 <= confidence <= 7)
+
+3. **Strategic Banter**
+   ```python
+   {
+       "message": "[confident] Those pot odds don't look good for you",
+       "intent": "Create doubt about bluffing frequency",
+       "confidence": 8
+   }
+   ```
+
+4. **Table History**
+   - Maintains last 10 messages
+   - Includes both agent and opponent messages
+   - Used for context in future communications
+
+### Communication Configuration
+```python
+agent = LLMAgent(
+    name="Alice",
+    chips=1000,
+    strategy_style="Aggressive Bluffer",
+    communication_style="Intimidating",  # New parameter
+    use_reasoning=True,
+    use_reflection=True,
+    use_planning=True
+)
+```

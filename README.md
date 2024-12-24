@@ -23,6 +23,12 @@ A sophisticated poker game simulation featuring AI players powered by Large Lang
   - Natural language communication
   - Contextual table talk
   - Emotional responses
+  - Strategic banter with hidden intents
+  - Adaptive emotional states
+- Communication styles:
+  - Intimidating - psychological pressure
+  - Analytical - logical observations
+  - Friendly - light but strategic
 - Advanced capabilities:
   - Strategic reasoning with explicit logic chains
   - Hand history reflection and learning
@@ -145,6 +151,7 @@ player = LLMAgent(
     name="Alice",
     chips=1000,
     strategy_style="Aggressive Bluffer",
+    communication_style="Intimidating",
     use_reasoning=True,     # Enable detailed decision reasoning
     use_reflection=True,    # Enable learning from past hands
     use_planning=True,      # Enable multi-step planning
@@ -156,6 +163,17 @@ player = LLMAgent(
     }
 )
 ```
+
+### Communication Styles
+- "Intimidating" - Uses psychological pressure and dominance
+- "Analytical" - Focuses on probabilities and logical observations
+- "Friendly" - Maintains light atmosphere while masking intentions
+
+Each style comes with:
+- Emotional state tracking
+- Strategic intent tracking
+- Confidence-based responses
+- Table history awareness
 
 ## Database Integration
 

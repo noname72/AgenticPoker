@@ -28,26 +28,37 @@ What is your decision?
 # Variables:
 # - strategy_style: Agent's current strategy style
 # - game_state: Current game situation
-MESSAGE_PROMPT = """You are a {strategy_style} poker player.
+# - communication_style: Agent's current communication style
+# - table_history: Recent table history
+MESSAGE_PROMPT = """You are a {strategy_style} poker player with a {communication_style} communication style.
 
 Current situation:
 {game_state}
 
+Recent table history:
+{table_history}
+
 CRITICAL RULES:
 1. Start with exactly "MESSAGE: "
-2. Maximum 5 words after "MESSAGE: "
-3. No punctuation except periods
-4. No pronouns (I, you, we, etc)
+2. Maximum 15 words after "MESSAGE: "
+3. Stay in character for your communication style
+4. No explicit card information
+5. Include one of these tones: [confident, nervous, amused, frustrated, thoughtful]
+
+Communication Style Guidelines:
+- Intimidating: Use subtle psychological pressure and dominance
+- Analytical: Focus on probabilities and logical observations
+- Friendly: Keep atmosphere light while masking true intentions
 
 Valid examples:
-MESSAGE: All in with strong hand
-MESSAGE: Playing tight this round
-MESSAGE: Time to bluff big
+MESSAGE: [confident] Those pot odds don't look so good for you now
+MESSAGE: [thoughtful] Interesting how aggressive the table plays after midnight
+MESSAGE: [amused] Math suggests this is profitable, but psychology says otherwise
 
 Invalid examples:
-MESSAGE: I'm going to bluff big time now!  (too long, has pronouns)
-MESSAGE: Let's see who's brave enough  (has pronouns)
-MESSAGE: Time to show my dominance at the table  (too long)
+MESSAGE: I have pocket aces  (reveals cards)
+MESSAGE: Let's collude against the big stack  (suggests unfair play)
+MESSAGE: [angry] You're all terrible players!  (too hostile/negative)
 
 Respond with exactly one message following these rules.
 """
@@ -188,4 +199,33 @@ Given your {plan_approach} approach:
 3. Factor in your bluff_threshold ({bluff_threshold}) and fold_threshold ({fold_threshold})
 
 Respond with EXECUTE: <fold/call/raise> and brief reasoning
+"""
+
+# Add a new prompt for richer table talk interactions
+STRATEGIC_BANTER_PROMPT = """You are a {strategy_style} poker player engaging in table talk.
+
+Current situation:
+{game_state}
+Your position: {position}
+Recent actions: {recent_actions}
+Opponent tendencies: {opponent_patterns}
+
+Communication style: {communication_style}
+Current tone: {emotional_state}
+
+Generate strategic table talk that:
+1. Hints at your strategy without revealing it
+2. Responds to recent table dynamics
+3. Maintains your personality and style
+4. Uses psychological elements appropriately
+
+Format:
+MESSAGE: [tone] <message>
+INTENT: <hidden strategic purpose>
+CONFIDENCE: <level 1-10>
+
+Example:
+MESSAGE: [amused] The odds of this working get better every orbit
+INTENT: Create doubt about bluffing frequency
+CONFIDENCE: 8
 """

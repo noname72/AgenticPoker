@@ -41,6 +41,7 @@ players = [
         learning_rate=0.1,
         config=agent_configs.get("Alice"),
         session_id=session_id,
+        communication_style="Intimidating",
     ),
     LLMAgent(
         "Bob",
@@ -52,6 +53,7 @@ players = [
         use_opponent_modeling=True,
         config=agent_configs.get("Bob"),
         session_id=session_id,
+        communication_style="Analytical",
     ),
     LLMAgent(
         "Charlie",
@@ -63,6 +65,7 @@ players = [
         use_opponent_modeling=False,
         config=agent_configs.get("Charlie"),
         session_id=session_id,
+        communication_style="Friendly",
     ),
     RandomAgent(
         "Randy",
