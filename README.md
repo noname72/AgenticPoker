@@ -1,6 +1,6 @@
 # AgenticPoker Game
 
-A sophisticated poker game simulation featuring AI players powered by Large Language Models (LLMs). The system implements 5-card draw poker with intelligent agents that can reason about their decisions, learn from past hands, and engage in natural language table talk.
+A poker game simulation featuring AI players powered by Large Language Models (LLMs). The system implements 5-card draw poker with intelligent agents that can reason about their decisions, learn from past hands, and engage in natural language table talk.
 
 ## Features
 
