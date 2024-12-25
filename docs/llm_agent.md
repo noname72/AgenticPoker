@@ -4,7 +4,7 @@ The system's design emphasizes adaptability, efficiency, and intuitive resource 
 
 ---
 
-## Key Features and Updates
+## Key Features
 
 ### 1. **Memory System Optimization**
 The agent employs a focused memory retrieval mechanism to ensure efficient decision-making by prioritizing only the most relevant historical experiences. 
