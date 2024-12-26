@@ -1,162 +1,144 @@
-# AgenticPoker Game
+# AgenticPoker
 
-A sophisticated poker game simulation featuring AI players powered by Large Language Models (LLMs). The system implements 5-card draw poker with intelligent agents that can reason about their decisions, learn from past hands, and engage in natural language table talk.
+AgenticPoker is a poker game simulation featuring AI players powered by Large Language Models (LLMs). The system simulates **5-card draw poker**, with intelligent agents capable of making strategic decisions, learning from past hands, and engaging in natural language table talk. 
 
-## Features
+Designed for realism and adaptability, AgenticPoker offers a comprehensive poker experience, blending advanced AI capabilities with detailed game mechanics.
 
-### Core Game
-- Complete 5-card draw poker implementation
-- Robust hand evaluation and comparison
-- Side pot handling for all-in situations
-- Configurable game parameters (blinds, antes, etc.)
-- Session-based gameplay with unique IDs
-- Support for tournament and cash game formats
+---
+
+## Key Features
+
+### Core Game Mechanics
+- **Game Variants**: Fully implements 5-card draw poker.
+- **Hand Evaluation**: Accurate hand evaluation and comparison logic.
+- **Side Pot Management**: Handles complex all-in scenarios seamlessly.
+- **Customizable Parameters**: Configure blinds, antes, starting chips, and game modes.
+- **Session Tracking**: Unique session IDs for organized gameplay.
+- **Formats**: Supports both tournament and cash game styles.
 
 ### AI Players
-- LLM-powered decision making with:
-  - Dynamic strategy adaptation
-  - Probabilistic reasoning
-  - Pattern recognition
-  - Psychological modeling
-- Multiple personality profiles:
-  - Unique playing styles
-  - Natural language communication
-  - Contextual table talk
-  - Emotional responses
-  - Strategic banter with hidden intents
-  - Adaptive emotional states
-- Communication styles:
-  - Intimidating - psychological pressure
-  - Analytical - logical observations
-  - Friendly - light but strategic
-- Advanced capabilities:
-  - Strategic reasoning with explicit logic chains
-  - Hand history reflection and learning
-  - Multi-round planning and adaptation
-  - Opponent modeling and exploitation
-  - Bankroll management
-  - Risk assessment
+AgenticPoker introduces intelligent LLM-powered agents with unique personalities and advanced decision-making capabilities.
 
-### Data Management
-- SQLAlchemy ORM for game state persistence
-- Comprehensive player statistics tracking
-- Game replay and analysis tools
-- Detailed action and event logging
-- Performance analytics
-- Machine learning integration ready
+#### Decision-Making Capabilities:
+- **Dynamic Strategy Adaptation**: Real-time adjustments based on gameplay.
+- **Probabilistic Reasoning**: Calculates odds and expected value.
+- **Pattern Recognition**: Identifies trends in opponent behavior.
+- **Psychological Modeling**: Explores emotional and strategic manipulation.
 
-## Quick Start
+#### Personality Profiles:
+Each agent embodies a distinct playing style and communication approach:
+- **Playing Styles**: Aggressive, cautious, unpredictable, or balanced strategies.
+- **Communication Styles**: 
+  - **Intimidating**: Applies psychological pressure.
+  - **Analytical**: Focuses on probabilities and logical observations.
+  - **Friendly**: Engages with light, strategic banter.
+- **Emotional Traits**: Adaptive emotional responses, strategic banter, and table talk.
 
-1. Install dependencies:
+#### Advanced AI Features:
+- Strategic reasoning with detailed logic chains.
+- Hand history reflection for continuous learning.
+- Multi-round planning and opponent modeling.
+- Risk assessment and bankroll management.
+
+---
+
+## Data Management
+AgenticPoker leverages robust data management tools for seamless game state tracking and analysis.
+
+- **SQLAlchemy ORM**: For game state persistence.
+- **Player Statistics**: Tracks wins, losses, earnings, and key performance metrics.
+- **Replay & Analysis Tools**: Revisit and analyze past games.
+- **Event Logging**: Detailed logs for all player actions and outcomes.
+- **Machine Learning Integration**: Ready for advanced analytics and training.
+
+---
+
+## Quick Start Guide
+
+### Step 1: Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-2. Set up environment variables:
+### Step 2: Set Up Environment Variables
 ```bash
-# Create .env file with your OpenAI API key
+# Create .env file and add OpenAI API key
 echo "OPENAI_API_KEY=your_key_here" > .env
 ```
 
-3. Run a basic game:
+### Step 3: Run a Basic Game
 ```python
 from game import PokerGame
 from agents.llm_agent import LLMAgent
+from datetime import datetime
 
-# Create AI players with different personalities
+# Create AI players with unique configurations
 players = [
-    LLMAgent(
-        name="Alice",
-        chips=1000,
-        strategy_style="Aggressive Bluffer",
-        use_reasoning=True,
-        use_reflection=True
-    ),
-    LLMAgent(
-        name="Bob",
-        chips=1000,
-        strategy_style="Calculated and Cautious",
-        use_opponent_modeling=True
-    ),
-    LLMAgent(
-        name="Charlie",
-        chips=1000,
-        strategy_style="Chaotic and Unpredictable"
-    )
+    LLMAgent(name="Alice", chips=1000, strategy_style="Aggressive Bluffer"),
+    LLMAgent(name="Bob", chips=1000, strategy_style="Calculated and Cautious"),
+    LLMAgent(name="Charlie", chips=1000, strategy_style="Chaotic and Unpredictable"),
 ]
 
-# Start the game with custom settings
+# Start a poker game with custom settings
 game = PokerGame(
     players,
     starting_chips=1000,
     small_blind=10,
     big_blind=20,
-    session_id=datetime.now().strftime("%Y%m%d_%H%M%S")
+    session_id=datetime.now().strftime("%Y%m%d_%H%M%S"),
 )
 game.start_game()
 ```
 
+---
+
 ## Project Structure
 
-```
+```plaintext
 poker-ai/
 ├── agents/             # AI player implementations
-│   ├── llm_agent.py   # LLM-based AI player
-│   └── base_agent.py  # Base agent interface
-├── game/              # Core poker game logic
-│   ├── betting.py     # Betting round mechanics
-│   ├── card.py        # Card representation
-│   ├── deck.py        # Deck management
-│   ├── evaluator.py   # Hand evaluation
-│   ├── game.py        # Main game controller
-│   ├── hand.py        # Hand representation
-│   └── player.py      # Player state management
-├── data/              # Data persistence
-│   ├── model.py       # Database models
-│   └── repositories.py # Data access layer
-├── docs/              # Documentation
-│   ├── game/          # Game module docs
-│   └── data/          # Data layer docs
-├── tests/             # Test suite
-├── configs/           # Configuration files
-└── main.py           # Application entry point
+│   ├── llm_agent.py    # LLM-based AI player
+│   └── base_agent.py   # Base agent interface
+├── game/               # Core poker game logic
+│   ├── betting.py      # Betting mechanics
+│   ├── card.py         # Card representation
+│   ├── deck.py         # Deck management
+│   ├── evaluator.py    # Hand evaluation logic
+│   ├── game.py         # Main game controller
+│   ├── hand.py         # Hand representation
+│   └── player.py       # Player state management
+├── data/               # Data persistence layer
+│   ├── model.py        # Database models
+│   └── repositories.py # Data access utilities
+├── docs/               # Documentation
+├── tests/              # Test suite
+└── main.py             # Application entry point
 ```
 
-## Configuration
+---
+
+## Customization Options
 
 ### Strategy Styles
-- "Aggressive Bluffer" - High aggression, frequent bluffs, psychological warfare
-- "Calculated and Cautious" - Mathematical approach, tight play, selective aggression
-- "Chaotic and Unpredictable" - Mixed strategies, table talk, emotional decisions
-- "Tight and Aggressive" - Premium hands only, maximum value extraction
-- "Loose and Passive" - Speculative play, minimal aggression, trap setting
+Define unique AI playing strategies:
+- **Aggressive Bluffer**: High aggression, frequent bluffs, psychological pressure.
+- **Calculated and Cautious**: Tight play, selective aggression, mathematical precision.
+- **Chaotic and Unpredictable**: Erratic moves, table talk, emotional decisions.
+- **Tight and Aggressive**: Premium hands, value-maximizing aggression.
+- **Loose and Passive**: Speculative play, trap setting.
 
-### Game Parameters
-```python
-game = PokerGame(
-    players,
-    starting_chips=1000,  # Starting stack for each player
-    small_blind=10,       # Small blind amount
-    big_blind=20,         # Big blind amount
-    ante=5,               # Optional ante amount
-    max_rounds=100,       # Optional maximum rounds
-    session_id=None,      # Optional custom session ID
-    tournament_mode=False # Tournament vs cash game
-)
-```
-
-### AI Player Configuration
+### AI Configuration
+Customize AI behavior for any personality:
 ```python
 player = LLMAgent(
     name="Alice",
     chips=1000,
     strategy_style="Aggressive Bluffer",
     communication_style="Intimidating",
-    use_reasoning=True,     # Enable detailed decision reasoning
-    use_reflection=True,    # Enable learning from past hands
-    use_planning=True,      # Enable multi-step planning
-    use_opponent_modeling=True,  # Enable opponent behavior analysis
-    personality_traits={    # Custom personality configuration
+    use_reasoning=True,
+    use_reflection=True,
+    use_opponent_modeling=True,
+    personality_traits={
         "aggression": 0.8,
         "bluff_frequency": 0.7,
         "risk_tolerance": 0.6
@@ -164,107 +146,67 @@ player = LLMAgent(
 )
 ```
 
-### Communication Styles
-- "Intimidating" - Uses psychological pressure and dominance
-- "Analytical" - Focuses on probabilities and logical observations
-- "Friendly" - Maintains light atmosphere while masking intentions
+### Game Parameters
+Adjust game rules to suit your preferences:
+```python
+game = PokerGame(
+    players=players,
+    starting_chips=1500,
+    small_blind=15,
+    big_blind=30,
+    ante=5,
+    max_rounds=50,
+    tournament_mode=True,
+)
+```
 
-Each style comes with:
-- Emotional state tracking
-- Strategic intent tracking
-- Confidence-based responses
-- Table history awareness
+---
 
 ## Database Integration
-
+Set up a database for persistent storage:
 ```python
 from data.model import Base
-from data.repositories import GameRepository, PlayerRepository
 from sqlalchemy import create_engine
+from data.repositories import GameRepository, PlayerRepository
 
-# Set up database
+# Configure SQLite database
 engine = create_engine('sqlite:///poker_game.db')
 Base.metadata.create_all(engine)
 
 # Initialize repositories
-game_repo = GameRepository(session)
-player_repo = PlayerRepository(session)
-
-# Create and track game
-game_record = game_repo.create(
-    small_blind=10,
-    big_blind=20,
-    ante=5,
-    max_players=6
-)
-
-# Track player statistics
-player_repo.update_stats(
-    player_id=1,
-    game_stats={
-        "won": True,
-        "winnings": 500,
-        "pot_size": 1000,
-        "duration": 300,
-        "hands_played": 15,
-        "showdowns_won": 3
-    }
-)
+game_repo = GameRepository(engine)
+player_repo = PlayerRepository(engine)
 ```
 
-## Testing
+---
 
-Run the test suite:
+## Testing & Logging
+
+### Testing
+Run the full test suite:
 ```bash
-# Run all tests
-pytest tests/
-
-# Generate coverage report
 pytest tests/ --cov=./ --cov-report=xml
-
-# Run specific test categories
-pytest tests/game/       # Test game logic
-pytest tests/agents/     # Test AI behavior
-pytest tests/data/      # Test data layer
+```
+Focus on specific modules:
+```bash
+pytest tests/game/       # Game logic
+pytest tests/agents/     # AI behavior
+pytest tests/data/        # Data management
 ```
 
-## Logging
+### Logging
+Detailed logs track every aspect of the game:
+- Player actions, decisions, and outcomes.
+- Betting rounds and hand evaluations.
+- AI reasoning and learning processes.
+Logs are saved in session-specific files under `logs/`.
 
-The system provides comprehensive logging:
-- Game configuration and setup
-- Player actions and decisions
-- Betting rounds and pot management
-- Hand evaluations and showdowns
-- Player eliminations and game outcomes
-- AI reasoning and decision factors
-- Performance metrics and statistics
-
-Logs are written to both console and session-specific log files in the `logs/` directory.
+---
 
 ## Documentation
-
+Explore detailed guides for all components:
 - [Quickstart Guide](docs/quickstart.md)
-- [Game Module Documentation](docs/game/)
-- [AI Agent Documentation](docs/llm_agent.md)
-- [Database Schema](docs/data/model.md)
-- [Repository Pattern](docs/data/repositories.md)
-- [Analysis Tools](docs/analysis.md)
+- [AI Agent Configuration](docs/llm_agent.md)
+- [Game Logic](docs/game/)
+- [Data Management](docs/data/model.md)
 - [Tournament Mode](docs/tournament.md)
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- OpenAI for the GPT models powering the AI players
-- The poker community for strategy insights
-- Contributors and testers

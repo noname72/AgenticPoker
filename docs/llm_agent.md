@@ -1,7 +1,8 @@
-# LLM Poker Agent Documentation
+The **LLM Poker Agent** is an advanced AI poker player designed to simulate human-like decision-making, interpret opponent behavior, and communicate effectively during gameplay. Powered by natural language processing (NLP), the agent combines poker domain expertise with configurable personality traits, cognitive mechanisms, and a persistent memory system for enhanced gameplay. 
 
-## Overview
-The LLM (Language Learning Model) Agent is an AI poker player that uses natural language processing to make strategic decisions, interpret opponent behavior, and communicate during gameplay. It combines poker domain knowledge with configurable personality traits, cognitive mechanisms, and a persistent memory system.
+The system's design emphasizes adaptability, efficiency, and intuitive resource management, making it ideal for a variety of poker scenarios.
+
+---
 
 ## Core Features
 
@@ -65,7 +66,7 @@ The agent implements proper resource cleanup through context management:
 # Method 1: Explicit cleanup
 agent = LLMAgent(name="Bot1")
 try:
-    # Use agent...
+    # Use the agent for gameplay...
 finally:
     agent.close()
 
