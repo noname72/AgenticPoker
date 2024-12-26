@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import os
-import random
 import time
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple
@@ -10,6 +9,7 @@ import numpy as np
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from agents.base_agent import BaseAgent
 from agents.prompts import (
     DECISION_PROMPT,
     DISCARD_PROMPT,
@@ -22,41 +22,13 @@ from agents.prompts import (
 )
 from agents.strategy_cards import StrategyManager
 from agents.strategy_planner import StrategyPlanner
-from data.enums import StrategyStyle
 from data.memory import ChromaMemoryStore
 from exceptions import LLMError, OpenAIError
-from game.player import Player
 
 # Load environment variables
 load_dotenv()
 
 logger = logging.getLogger(__name__)
-
-
-class BaseAgent(Player):
-    """Base class for all poker agents, providing core player functionality."""
-
-    def __init__(
-        self,
-        name: str,
-        chips: int = 1000,
-    ) -> None:
-        super().__init__(name, chips)
-        self.logger = logging.getLogger(__name__)
-
-    def decide_action(
-        self, game_state: str, opponent_message: Optional[str] = None
-    ) -> str:
-        """Base method for deciding actions."""
-        return "call"  # Default safe action instead of raising NotImplementedError
-
-    def get_message(self, game_state: str) -> str:
-        """Base method for generating messages."""
-        return ""
-
-    def decide_draw(self) -> List[int]:
-        """Base method for deciding which cards to draw."""
-        return []
 
 
 class LLMAgent(BaseAgent):
@@ -187,6 +159,9 @@ class LLMAgent(BaseAgent):
                 }
             )
             self.opponent_models = {}
+
+        # Initialize action history
+        self.action_history = []
 
         # Initialize reward learning structures if enabled
         if self.use_reward_learning:
@@ -516,14 +491,31 @@ class LLMAgent(BaseAgent):
         # Keep current state if no clear reason to change
 
     def perceive(self, game_state: str, opponent_message: Optional[str] = None) -> Dict:
-        """Enhanced perception with communication context."""
+        """Enhanced perception with communication context.
+
+        Args:
+            game_state (str): Current state of the game
+            opponent_message (Optional[str]): Message from opponent, if any
+
+        Returns:
+            Dict: Enhanced perception data including memory updates
+        """
+        # Get base perception from parent class
         perception = super().perceive(game_state, opponent_message)
 
+        # Add opponent message to table history if present
         if opponent_message:
             self.table_history.append(f"Opponent: {opponent_message}")
             # Trim history if too long
             if len(self.table_history) > 10:
                 self.table_history = self.table_history[-10:]
+
+        # Store perception in memory
+        self.memory_store.add_memory(
+            text=f"Game State: {game_state}"
+            + (f"\nOpponent: {opponent_message}" if opponent_message else ""),
+            metadata={"type": "perception", "timestamp": perception["timestamp"]},
+        )
 
         return perception
 
@@ -660,23 +652,21 @@ class LLMAgent(BaseAgent):
         return self._query_llm(prompt).strip().lower()
 
     def _normalize_action(self, action: str) -> str:
-        """Normalize the LLM's action response to a valid action.
-
-        Processes and standardizes action strings from LLM responses into
-        valid poker actions. Handles variations and embedded actions in sentences.
+        """Normalize the LLM's action response to a valid poker action.
 
         Args:
-            action (str): Raw action string from LLM
+            action (str): Raw action string from LLM (e.g. 'check', 'bet', or sentence)
 
         Returns:
             str: Normalized action ('fold', 'call', or 'raise')
-            None: If action cannot be normalized
 
-        Note:
-            - Normalizes 'check' to 'call'
-            - Normalizes 'bet' to 'raise'
-            - Handles actions embedded in sentences
-            - Strips punctuation and quotes
+        Examples:
+            >>> agent._normalize_action("I want to check")
+            'call'
+            >>> agent._normalize_action("bet 100")
+            'raise'
+            >>> agent._normalize_action("FOLD!")
+            'fold'
         """
         # Remove any quotes and extra whitespace
         action = action.lower().strip().strip("'\"")
@@ -736,7 +726,27 @@ class LLMAgent(BaseAgent):
             return "call"  # Safe fallback
 
     async def _query_gpt_async(self, prompt: str) -> str:
-        """Asynchronous query to OpenAI's GPT model with error handling and timeout."""
+        """Asynchronous query to OpenAI's GPT model with error handling and timeout.
+
+        Makes an asynchronous request to GPT with proper context management and
+        timeout handling.
+
+        Args:
+            prompt (str): The prompt to send to GPT
+
+        Returns:
+            str: Response from GPT model
+
+        Raises:
+            OpenAIError: If query fails or times out
+            asyncio.TimeoutError: If query exceeds 10 second timeout
+
+        Note:
+            - Sets system message based on agent's traits and enabled features
+            - Includes recent conversation history for context
+            - Uses GPT-3.5-turbo model with standardized parameters
+            - Implements 10 second timeout for queries
+        """
         try:
             # Adjust system message based on enabled features
             system_content = f"""You are a {self.strategy_style} poker player with these traits:
@@ -816,7 +826,10 @@ class LLMAgent(BaseAgent):
             LLMError: If all retry attempts fail or other unrecoverable error occurs
 
         Note:
-            Uses self.max_retries and self.retry_delay for retry configuration.
+            - Uses self.max_retries (default: 3) for number of attempts
+            - Uses self.retry_delay (default: 1.0) for delay between retries
+            - Implements exponential backoff between retries
+            - Logs all attempts and errors for debugging
         """
         last_error = None
 
@@ -1053,32 +1066,11 @@ class LLMAgent(BaseAgent):
             stats["showdown_hands"].append(hand_shown)
 
     def reset_state(self) -> None:
-        """Reset agent's state for a new game.
-
-        Clears all temporary state including:
-            - Perception history
-            - Conversation history
-            - Current plan
-            - Memory store
-            - Last message
-
-        Note:
-            Reinitializes memory store with clean collection.
-            Logs reset operation for debugging.
-        """
-        if hasattr(self, "memory_store"):
-            self.memory_store.close()
+        """Reset agent's state and clear memory store."""
         self.perception_history = []
         self.conversation_history = []
         self.last_message = ""
-        if self.use_planning:
-            self.current_plan = None
-            self.plan_expiry = 0
-
-        # Reinitialize memory store
-        collection_name = f"agent_{self.name.lower().replace(' ', '_')}_memory"
-        self.memory_store = ChromaMemoryStore(collection_name)
-        self.logger.info(f"[Reset] Agent {self.name} reset for new game")
+        self.memory_store.clear()
 
     def get_stats(self) -> Dict[str, Any]:
         """Retrieve current agent statistics and state information.
@@ -1408,7 +1400,21 @@ class LLMAgent(BaseAgent):
             return False
 
     def _parse_decision(self, response: str) -> str:
-        """Parse the decision from LLM response with strict format checking."""
+        """Parse the decision from LLM response with strict format checking.
+
+        Extracts and validates the action from a response containing a 'DECISION:' line.
+
+        Args:
+            response (str): Full LLM response text
+
+        Returns:
+            str: Validated action ('fold', 'call', or 'raise'). Defaults to 'call' if parsing fails.
+
+        Example:
+            >>> response = "Analysis: Good hand\nDECISION: raise\nReasoning: Strong cards"
+            >>> agent._parse_decision(response)
+            'raise'
+        """
         try:
             # Look for DECISION: line
             decision_line = [
@@ -1433,7 +1439,22 @@ class LLMAgent(BaseAgent):
             return "call"
 
     def _parse_discard(self, response: str) -> List[int]:
-        """Parse the discard positions with strict format checking."""
+        """Parse the discard positions from LLM response with strict format checking.
+
+        Extracts and validates card positions to discard from a response containing a 'DISCARD:' line.
+
+        Args:
+            response (str): Full LLM response text
+
+        Returns:
+            List[int]: List of valid card positions (0-4) to discard, limited to 3 cards.
+                      Returns empty list if parsing fails.
+
+        Example:
+            >>> response = "Analysis: Weak cards\nDISCARD: [0, 2, 4]\nReasoning: Poor cards"
+            >>> agent._parse_discard(response)
+            [0, 2, 4]
+        """
         try:
             # Look for DISCARD: line
             discard_line = [
@@ -1456,7 +1477,8 @@ class LLMAgent(BaseAgent):
                 logger.warning(f"Invalid positions {positions} found in response")
                 return []
 
-            return sorted(positions)
+            # Sort positions and limit to 3 cards
+            return sorted(positions)[:3]  # Add this line to limit to 3 cards
 
         except Exception as e:
             logger.error(f"Error parsing discard positions: {e}")
