@@ -42,17 +42,6 @@ Each agent embodies a distinct playing style and communication approach:
 
 ---
 
-## Data Management
-AgenticPoker leverages robust data management tools for seamless game state tracking and analysis.
-
-- **SQLAlchemy ORM**: For game state persistence.
-- **Player Statistics**: Tracks wins, losses, earnings, and key performance metrics.
-- **Replay & Analysis Tools**: Revisit and analyze past games.
-- **Event Logging**: Detailed logs for all player actions and outcomes.
-- **Machine Learning Integration**: Ready for advanced analytics and training.
-
----
-
 ## Quick Start Guide
 
 ### Step 1: Install Dependencies
@@ -68,7 +57,7 @@ echo "OPENAI_API_KEY=your_key_here" > .env
 
 ### Step 3: Run a Basic Game
 ```python
-from game import PokerGame
+from game import AgenticPoker
 from agents.llm_agent import LLMAgent
 from datetime import datetime
 
@@ -80,7 +69,7 @@ players = [
 ]
 
 # Start a poker game with custom settings
-game = PokerGame(
+game = AgenticPoker(
     players,
     starting_chips=1000,
     small_blind=10,
@@ -96,23 +85,29 @@ game.start_game()
 
 ```plaintext
 poker-ai/
-├── agents/             # AI player implementations
-│   ├── llm_agent.py    # LLM-based AI player
-│   └── base_agent.py   # Base agent interface
-├── game/               # Core poker game logic
-│   ├── betting.py      # Betting mechanics
-│   ├── card.py         # Card representation
-│   ├── deck.py         # Deck management
-│   ├── evaluator.py    # Hand evaluation logic
-│   ├── game.py         # Main game controller
-│   ├── hand.py         # Hand representation
-│   └── player.py       # Player state management
-├── data/               # Data persistence layer
-│   ├── model.py        # Database models
-│   └── repositories.py # Data access utilities
-├── docs/               # Documentation
-├── tests/              # Test suite
-└── main.py             # Application entry point
+├── agents/                 # AI player implementations
+│   ├── llm_agent.py       # LLM-based AI player
+│   ├── base_agent.py      # Base agent interface
+│   ├── random_agent.py    # Random action agent
+│   ├── strategy_cards.py  # Strategy definitions
+│   ├── strategy_planner.py# Strategic planning
+│   └── prompts.py         # LLM prompt templates
+├── game/                  # Core poker game logic
+│   ├── betting.py         # Betting mechanics
+│   ├── card.py           # Card representation
+│   ├── deck.py           # Deck management
+│   ├── evaluator.py      # Hand evaluation logic
+│   ├── game.py           # Main game controller
+│   ├── hand.py           # Hand representation
+│   └── player.py         # Player state management
+├── data/                 # Data persistence layer
+│   ├── memory.py         # Memory store implementation
+│   ├── enums.py         # Game enumerations
+│   └── model.py         # Data models
+├── docs/                 # Documentation
+├── tests/                # Test suite
+├── util.py              # Utility functions
+└── main.py              # Application entry point
 ```
 
 ---
@@ -124,8 +119,6 @@ Define unique AI playing strategies:
 - **Aggressive Bluffer**: High aggression, frequent bluffs, psychological pressure.
 - **Calculated and Cautious**: Tight play, selective aggression, mathematical precision.
 - **Chaotic and Unpredictable**: Erratic moves, table talk, emotional decisions.
-- **Tight and Aggressive**: Premium hands, value-maximizing aggression.
-- **Loose and Passive**: Speculative play, trap setting.
 
 ### AI Configuration
 Customize AI behavior for any personality:
@@ -137,11 +130,14 @@ player = LLMAgent(
     communication_style="Intimidating",
     use_reasoning=True,
     use_reflection=True,
+    use_planning=True,
     use_opponent_modeling=True,
+    use_reward_learning=True,
+    learning_rate=0.1,
     personality_traits={
-        "aggression": 0.8,
-        "bluff_frequency": 0.7,
-        "risk_tolerance": 0.6
+        "aggression": 0.5,
+        "bluff_frequency": 0.5,
+        "risk_tolerance": 0.5
     }
 )
 ```
@@ -149,7 +145,7 @@ player = LLMAgent(
 ### Game Parameters
 Adjust game rules to suit your preferences:
 ```python
-game = PokerGame(
+game = AgenticPoker(
     players=players,
     starting_chips=1500,
     small_blind=15,
@@ -158,24 +154,6 @@ game = PokerGame(
     max_rounds=50,
     tournament_mode=True,
 )
-```
-
----
-
-## Database Integration
-Set up a database for persistent storage:
-```python
-from data.model import Base
-from sqlalchemy import create_engine
-from data.repositories import GameRepository, PlayerRepository
-
-# Configure SQLite database
-engine = create_engine('sqlite:///poker_game.db')
-Base.metadata.create_all(engine)
-
-# Initialize repositories
-game_repo = GameRepository(engine)
-player_repo = PlayerRepository(engine)
 ```
 
 ---
@@ -191,7 +169,7 @@ Focus on specific modules:
 ```bash
 pytest tests/game/       # Game logic
 pytest tests/agents/     # AI behavior
-pytest tests/data/        # Data management
+pytest tests/data/       # Data management
 ```
 
 ### Logging
@@ -208,5 +186,4 @@ Explore detailed guides for all components:
 - [Quickstart Guide](docs/quickstart.md)
 - [AI Agent Configuration](docs/llm_agent.md)
 - [Game Logic](docs/game/)
-- [Data Management](docs/data/model.md)
 - [Tournament Mode](docs/tournament.md)

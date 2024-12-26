@@ -26,21 +26,41 @@ The quickest way to start a game is using the default configuration:
 ```python
 from game import AgenticPoker
 from agents.llm_agent import LLMAgent
+from datetime import datetime
+
+# Generate unique session ID
+session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 # Create AI players with different strategies
 players = [
-    LLMAgent("Alice", chips=1000, strategy_style="Aggressive Bluffer"),
-    LLMAgent("Bob", chips=1000, strategy_style="Calculated and Cautious"),
-    LLMAgent("Charlie", chips=1000, strategy_style="Chaotic and Unpredictable")
+    LLMAgent(
+        "Alice", 
+        chips=1000, 
+        strategy_style="Aggressive Bluffer",
+        session_id=session_id
+    ),
+    LLMAgent(
+        "Bob", 
+        chips=1000, 
+        strategy_style="Calculated and Cautious",
+        session_id=session_id
+    ),
+    LLMAgent(
+        "Charlie", 
+        chips=1000, 
+        strategy_style="Chaotic and Unpredictable",
+        session_id=session_id
+    )
 ]
 
 # Initialize and start the game
 game = AgenticPoker(
     players,
     starting_chips=1000,
-    small_blind=10,
-    big_blind=20,
-    ante=0
+    small_blind=50,
+    big_blind=100,
+    ante=10,
+    session_id=session_id
 )
 
 game.start_game()
@@ -59,7 +79,9 @@ player = LLMAgent(
     use_planning=True,      # Enable multi-step planning
     use_opponent_modeling=True,  # Enable opponent behavior analysis
     use_reward_learning=True,    # Enable reward-based learning
-    learning_rate=0.1           # Learning rate for reward updates
+    learning_rate=0.1,          # Learning rate for reward updates
+    communication_style="Intimidating",  # Communication approach
+    session_id=session_id       # For memory persistence
 )
 ```
 
@@ -67,8 +89,11 @@ player = LLMAgent(
 - "Aggressive Bluffer"
 - "Calculated and Cautious"
 - "Chaotic and Unpredictable"
-- "Tight and Aggressive"
-- "Loose and Passive"
+
+### Communication Styles
+- "Intimidating"
+- "Analytical"
+- "Friendly"
 
 ### Reward Learning Configuration
 Enable reward-based learning for adaptive gameplay:
@@ -80,18 +105,13 @@ learning_agent = LLMAgent(
     chips=1000,
     strategy_style="Aggressive Bluffer",
     use_reward_learning=True,
-    learning_rate=0.1
+    learning_rate=0.1,
+    session_id=session_id
 )
 
-# Update agent based on game outcomes
-learning_agent.update_from_reward(
-    reward=100,  # Positive reward for winning
-    game_state={
-        "all_in": True,
-        "bluff_successful": True,
-        "position": "dealer"
-    }
-)
+# Personality traits are automatically adjusted based on outcomes
+print(f"Initial traits: {learning_agent.personality_traits}")
+# {'aggression': 0.5, 'bluff_frequency': 0.5, 'risk_tolerance': 0.5}
 ```
 
 ## Game Configuration
@@ -101,85 +121,41 @@ learning_agent.update_from_reward(
 game = AgenticPoker(
     players,
     starting_chips=1000,  # Starting chips for each player
-    small_blind=10,       # Small blind amount
-    big_blind=20,        # Big blind amount
-    ante=5,              # Ante amount (optional)
-    max_rounds=100       # Maximum number of rounds (optional)
+    small_blind=50,       # Small blind amount
+    big_blind=100,        # Big blind amount
+    ante=10,             # Ante amount
+    session_id=session_id # For logging and memory management
 )
 ```
 
 ### Logging Configuration
-The game provides detailed logging of all actions:
+The game automatically sets up logging with the session ID:
 
 ```python
-import logging
+from util import setup_logging
 
 # Set up logging with session ID
-session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-logging.basicConfig(
-    level=logging.INFO,
-    filename=f"logs/game_{session_id}.log",
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+setup_logging(session_id)
 ```
 
-## Database Integration
+## Memory Management
 
-### Setting Up the Database
+### Using ChromaDB for Persistent Memory
+The LLM Agent automatically manages memory using ChromaDB:
+
 ```python
-from data.model import Base
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+# Memory is initialized with session-specific collection
+collection_name = f"agent_{name.lower().replace(' ', '_')}_{session_id}_memory"
+memory_store = ChromaMemoryStore(collection_name)
 
-# Create database engine
-engine = create_engine('sqlite:///poker_game.db')
-Base.metadata.create_all(engine)
-
-# Create session
-Session = sessionmaker(bind=engine)
-session = Session()
-```
-
-### Using Repositories
-```python
-from data.repositories import GameRepository, PlayerRepository
-
-# Initialize repositories
-game_repo = GameRepository(session)
-player_repo = PlayerRepository(session)
-
-# Create and track game
-game_record = game_repo.create(
-    small_blind=10,
-    big_blind=20,
-    ante=5
-)
-
-# Update player statistics
-player_repo.update_stats(
-    player_id=1,
-    game_stats={
-        "won": True,
-        "winnings": 500,
-        "pot_size": 1000,
-        "duration": 300
-    }
+# Memory is automatically used for decision making
+relevant_memories = memory_store.get_relevant_memories(
+    query=game_state,
+    k=2
 )
 ```
 
 ## Common Patterns
-
-### Handling Game Events
-```python
-# Listen for specific game events
-@game.on_round_start
-def handle_round_start(round_number):
-    logging.info(f"Round {round_number} started")
-
-@game.on_player_action
-def handle_player_action(player, action, amount):
-    logging.info(f"{player.name} {action} {amount}")
-```
 
 ### Analyzing Game Results
 ```python
@@ -187,28 +163,24 @@ def handle_player_action(player, action, amount):
 for player in game.players:
     print(f"{player.name}:")
     print(f"  Final chips: ${player.chips}")
-    print(f"  Hands won: {player.stats.hands_won}")
-    print(f"  Largest pot: ${player.stats.largest_pot}")
 ```
 
-### Analyzing Learning Progress
+### Monitoring Agent Learning
 ```python
-# Check action values after learning
-print(f"Action Values: {player.action_values}")
-print(f"Recent Rewards: {[r for _, _, r in player.action_history[-5:]]}")
+# Check action probabilities
+print(f"Action probabilities: {player._get_action_probabilities()}")
 
 # Monitor personality trait changes
-print(f"Current Traits: {player.personality_traits}")
+print(f"Current traits: {player.personality_traits}")
 ```
 
 ## Next Steps
 - Review the detailed module documentation in `docs/`
 - Explore advanced AI configurations in `docs/llm_agent.md`
-- Check out example strategies in `examples/`
 - Learn about game analysis tools in `docs/analysis.md`
 
 ## Troubleshooting
-- Ensure your OpenAI API key is properly set
+- Ensure your OpenAI API key is properly set in `.env`
 - Check logs in the `logs/` directory for detailed error information
-- Verify database connectivity if using persistence
-- Consult the full documentation for specific error messages 
+- Verify ChromaDB is working properly for memory persistence
+- Review the error handling section in `docs/llm_agent.md` 
