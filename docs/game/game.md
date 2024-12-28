@@ -21,11 +21,12 @@ Main game controller class that manages the poker game flow, including betting r
 - `ante (int)`: Mandatory bet required from all players at start of each hand
 - `session_id (Optional[str])`: Unique identifier for this game session
 - `side_pots`: Optional list of dictionaries tracking side pots when players are all-in
+- `round_starting_stacks (Dict[Player, int])`: Records chip counts at start of each round
 
 #### Methods
 
 ##### `__init__(players, starting_chips=1000, small_blind=10, big_blind=20, max_rounds=None, ante=0, session_id=None)`
-Initializes a new poker game.
+Initializes a new poker game with specified parameters.
 
 **Parameters:**
 - `players`: List of player names or Player objects
@@ -36,26 +37,115 @@ Initializes a new poker game.
 - `ante`: Mandatory bet required from all players
 - `session_id`: Unique identifier for this game session
 
-##### `start_game()`
-Executes the main game loop until a winner is determined or max rounds reached. Controls the overall flow including:
-1. Pre-draw betting (including blinds/antes)
-2. Draw phase
-3. Post-draw betting
-4. Showdown
+**Side Effects:**
+- Creates Player objects if names provided
+- Initializes game state attributes
+- Sets up logging with session context
+- Logs initial game configuration
+
+**Example:**
+```python
+game = AgenticPoker(['Alice', 'Bob'], starting_chips=500)
+game = AgenticPoker(player_list, small_blind=5, big_blind=10, ante=1)
+
+Game Configuration
+=================================================
+Players: Alice, Bob
+Starting chips: $500
+Blinds: $5/$10
+Ante: $1
+=================================================
+```
 
 ##### `start_round()`
-Initiates a new round of poker by:
-- Incrementing round number
-- Shuffling deck
-- Dealing cards
-- Setting dealer and blind positions
-- Logging round information
+Initializes a new round of poker by setting up game state and dealing cards.
+
+**Steps:**
+1. Increments round number
+2. Resets pot to zero
+3. Rotates dealer position
+4. Records starting chip counts
+5. Shuffles deck and deals hands
+6. Resets player states (bets, folded status)
+7. Logs round information
+
+**Side Effects:**
+- Updates game state (round_number, pot, dealer_index, round_starting_stacks)
+- Modifies player state (hand, bet, folded status)
+- Creates new shuffled deck
+- Logs round setup information
+
+**Example:**
+```python
+game.start_round()
+=================================================
+Round 42
+=================================================
+
+Starting stacks (before antes/blinds):
+  Alice: $1200
+  Bob: $800
+  Charlie: $15 (short stack)
+
+Dealer: Alice
+Small Blind: Bob
+Big Blind: Charlie
+```
 
 ##### `blinds_and_antes()`
-Collects mandatory bets (blinds and antes) at the start of each hand.
+Collects mandatory bets at the start of each hand.
+
+**Process:**
+1. Collects antes from all players (if any)
+2. Collects small blind from player left of dealer
+3. Collects big blind from player left of small blind
+
+**Features:**
+- Handles partial postings for short stacks
+- Creates side pots for all-in situations
+- Tracks posted amounts accurately
+- Handles special cases (missing blinds, short stacks)
+
+**Example:**
+```python
+game.blinds_and_antes()
+
+Collecting antes...
+Alice posts ante of $1
+Bob posts ante of $1
+Charlie posts ante of $1 (all in)
+
+Bob posts small blind of $10
+Charlie posts partial big blind of $5 (all in)
+
+Starting pot: $18
+  Includes $3 in antes
+
+Side pots:
+  Pot 1: $15 (Eligible: Alice, Bob)
+  Pot 2: $3 (Eligible: Alice, Bob, Charlie)
+```
 
 ##### `draw_phase()`
-Handles the card drawing phase where players can discard and draw new cards.
+Handles the card drawing phase where players can exchange cards.
+
+**Features:**
+- Players can discard 0-5 cards and draw replacements
+- Tracks discarded cards to prevent redealing
+- Reshuffles discards if deck runs low
+- Handles AI player decision-making
+- Maintains exactly 5 cards per hand
+
+**Example:**
+```python
+game.draw_phase()
+--- Draw Phase ---
+
+Alice's turn to draw
+Current hand: A♠ K♠ 3♣ 4♥ 7♦
+Discarding cards at positions: [2, 3, 4]
+Drew 3 new cards: Q♣, J♥, 10♦
+```
 
 ##### `showdown()`
 Manages the showdown phase, determines winners, and distributes pots. Handles:

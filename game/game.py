@@ -40,25 +40,42 @@ class AgenticPoker:
         session_id: Optional[str] = None,
     ) -> None:
         """
-        Initialize a new poker game.
+        Initialize a new poker game with specified parameters.
 
         Args:
-            players (Union[List[str], List[Player]]): List of player names or Player objects.
+            players (Union[List[str], List[Player]]): List of player names or Player objects
             starting_chips (int): Initial chip amount for each player. Defaults to 1000.
             small_blind (int): Small blind bet amount. Defaults to 10.
             big_blind (int): Big blind bet amount. Defaults to 20.
             max_rounds (Optional[int]): Maximum number of rounds to play. Defaults to None.
             ante (int): Mandatory bet required from all players. Defaults to 0.
             session_id (Optional[str]): Unique identifier for this game session.
-                Defaults to None.
 
         Raises:
-            ValueError: If players list is empty, starting chips <= 0, blinds <= 0,
-                      or ante < 0.
+            ValueError: If any of these conditions are met:
+                - Empty players list
+                - starting_chips <= 0
+                - small_blind <= 0
+                - big_blind <= 0
+                - ante < 0
+
+        Side Effects:
+            - Creates Player objects if names provided
+            - Initializes game state attributes
+            - Sets up logging with session context
+            - Logs initial game configuration
 
         Example:
-            >>> game = AgenticPoker(['Alice', 'Bob', 'Charlie'], starting_chips=500)
+            >>> game = AgenticPoker(['Alice', 'Bob'], starting_chips=500)
             >>> game = AgenticPoker(player_list, small_blind=5, big_blind=10, ante=1)
+
+            Game Configuration
+            =================================================
+            Players: Alice, Bob
+            Starting chips: $500
+            Blinds: $5/$10
+            Ante: $1
+            =================================================
         """
         if not players:
             raise ValueError("Must provide at least 2 players")
@@ -103,7 +120,48 @@ class AgenticPoker:
     def blinds_and_antes(self) -> None:
         """
         Collect mandatory bets (blinds and antes) at the start of each hand.
-        Handles partial postings and side pots correctly.
+
+        Collects forced bets in this order:
+        1. Antes from all players (if any)
+        2. Small blind from player left of dealer
+        3. Big blind from player left of small blind
+
+        The method handles:
+        - Partial postings when players can't cover full amounts
+        - All-in situations and side pot creation
+        - Accurate tracking of posted amounts per player
+        - Special cases like short stacks and missing blinds
+
+        Side Effects:
+            - Reduces player chip counts
+            - Updates pot total
+            - Creates side pots if needed
+            - Updates player bet amounts
+            - Logs all chip movements
+
+        Attributes Modified:
+            - self.pot: Updated with total collected bets
+            - self.side_pots: Created if players are all-in with different amounts
+            - player.chips: Reduced by posted amounts
+            - player.bet: Updated with posted amounts
+
+        Example:
+            >>> game.blinds_and_antes()
+
+            Collecting antes...
+            Alice posts ante of $1
+            Bob posts ante of $1
+            Charlie posts ante of $1 (all in)
+
+            Bob posts small blind of $10
+            Charlie posts partial big blind of $5 (all in)
+
+            Starting pot: $18
+              Includes $3 in antes
+
+            Side pots:
+              Pot 1: $15 (Eligible: Alice, Bob)
+              Pot 2: $3 (Eligible: Alice, Bob, Charlie)
         """
         # Track actual amounts posted for accurate pot calculation
         posted_amounts = {player: 0 for player in self.players}
@@ -461,7 +519,6 @@ class AgenticPoker:
                 continue
 
             # Draw phase
-            logging.info("\n--- Draw Phase ---")
             self.draw_phase()
 
             # Post-draw betting
@@ -510,20 +567,50 @@ class AgenticPoker:
 
     def start_round(self) -> None:
         """
-        Start a new round of poker.
+        Start a new round of poker by initializing game state and dealing cards.
 
-        Initializes the round by:
-        - Incrementing round number
-        - Resetting pot
-        - Shuffling deck
-        - Dealing cards
-        - Setting dealer and blind positions
-        - Logging round information
+        The method performs these steps in order:
+        1. Increments round number
+        2. Resets pot to zero
+        3. Rotates dealer position
+        4. Records starting chip counts
+        5. Shuffles deck and deals hands
+        6. Resets player states (bets, folded status)
+        7. Logs round information
 
         Side Effects:
-            - Updates game state for new round
-            - Deals cards to players
-            - Logs round information and player messages
+            - Updates game state:
+                - round_number: Incremented
+                - pot: Reset to 0
+                - dealer_index: Rotated
+                - round_starting_stacks: Set
+            - Modifies player state:
+                - hand: New 5-card hand
+                - bet: Reset to 0
+                - folded: Reset to False
+            - Creates new shuffled deck
+            - Logs round setup information
+
+        Notes:
+            - Each player receives exactly 5 cards
+            - Players with chips < big blind are marked as "short stack"
+            - AI players may send pre-round messages
+            - Dealer button moves clockwise each round
+
+        Example:
+            >>> game.start_round()
+            =================================================
+            Round 42
+            =================================================
+
+            Starting stacks (before antes/blinds):
+              Alice: $1200
+              Bob: $800
+              Charlie: $15 (short stack)
+
+            Dealer: Alice
+            Small Blind: Bob
+            Big Blind: Charlie
         """
         self.round_number += 1
         self.pot = 0
@@ -573,7 +660,39 @@ class AgenticPoker:
         logging.info("\n")
 
     def draw_phase(self) -> None:
-        """Handle the draw phase where players can discard and draw new cards."""
+        """
+        Handle the draw phase where players can discard and draw new cards.
+
+        During this phase, each non-folded player gets one opportunity to:
+        1. Discard any number of cards from their hand (0-5)
+        2. Draw an equal number of new cards from the deck
+
+        The method handles:
+        - Tracking discarded cards to prevent redealing
+        - Reshuffling discards if deck runs low
+        - AI player decision-making for discards
+        - Maintaining hand size of exactly 5 cards
+
+        Side Effects:
+            - Modifies player hands
+            - Updates deck composition
+            - Logs all discard and draw actions
+
+        Notes:
+            - Players who have folded are skipped
+            - AI players use their decide_draw() method to choose discards
+            - Non-AI players automatically keep their current hand
+            - If deck runs low, discarded cards are reshuffled back in
+
+        Example:
+            >>> game.draw_phase()
+            --- Draw Phase ---
+
+            Alice's turn to draw
+            Current hand: A♠ K♠ 3♣ 4♥ 7♦
+            Discarding cards at positions: [2, 3, 4]
+            Drew 3 new cards: Q♣, J♥, 10♦
+        """
         logging.info("\n--- Draw Phase ---")
 
         # Track all discarded cards to ensure they don't get redealt
