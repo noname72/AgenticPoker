@@ -1,3 +1,3 @@
-from .game import AgenticPoker
+from .game import AgenticPoker, GameConfig
 
-__all__ = ["AgenticPoker"]
+__all__ = ["AgenticPoker", "GameConfig"]

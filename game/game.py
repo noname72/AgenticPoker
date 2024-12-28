@@ -1,10 +1,42 @@
 import logging
-from typing import Dict, List, Optional, Tuple, Union, TypedDict, NamedTuple
+from dataclasses import dataclass
+from typing import Dict, List, NamedTuple, Optional, Tuple, TypedDict, Union
 
 from .betting import betting_round
 from .deck import Deck
 from .hand import Hand
 from .player import Player
+
+
+@dataclass
+class GameConfig:
+    """
+    Configuration parameters for a poker game.
+
+    Attributes:
+        starting_chips: Initial chip amount for each player
+        small_blind: Small blind bet amount
+        big_blind: Big blind bet amount
+        ante: Mandatory bet required from all players
+        max_rounds: Maximum number of rounds to play (None for unlimited)
+        session_id: Unique identifier for the game session
+    """
+
+    starting_chips: int = 1000
+    small_blind: int = 10
+    big_blind: int = 20
+    ante: int = 0
+    max_rounds: Optional[int] = None
+    session_id: Optional[str] = None
+
+    def __post_init__(self):
+        """Validate configuration parameters."""
+        if self.starting_chips <= 0:
+            raise ValueError("Starting chips must be positive")
+        if self.small_blind <= 0 or self.big_blind <= 0:
+            raise ValueError("Blinds must be positive")
+        if self.ante < 0:
+            raise ValueError("Ante cannot be negative")
 
 
 class SidePot(NamedTuple):
@@ -43,8 +75,10 @@ class AgenticPoker:
         session_id (Optional[str]): Unique identifier for this game session.
         side_pots (Optional[List[SidePot]]): List of side pots in the game.
         round_starting_stacks (Dict[Player, int]): Dictionary of starting chip counts for each round.
+        config (GameConfig): Configuration parameters for the game.
     """
 
+    # Class attributes defined before __init__
     deck: Deck
     players: List[Player]
     pot: int
@@ -58,93 +92,66 @@ class AgenticPoker:
     side_pots: Optional[List[SidePot]]
     session_id: Optional[str]
     round_starting_stacks: Dict[Player, int]
+    config: GameConfig
 
     def __init__(
         self,
         players: Union[List[str], List[Player]],
-        starting_chips: int = 1000,
-        small_blind: int = 10,
-        big_blind: int = 20,
-        max_rounds: Optional[int] = None,
-        ante: int = 0,
-        session_id: Optional[str] = None,
+        config: Optional[GameConfig] = None,
     ) -> None:
         """
-        Initialize a new poker game with specified parameters.
+        Initialize a new poker game with specified players and configuration.
 
         Args:
-            players (Union[List[str], List[Player]]): List of player names or Player objects
-            starting_chips (int): Initial chip amount for each player. Defaults to 1000.
-            small_blind (int): Small blind bet amount. Defaults to 10.
-            big_blind (int): Big blind bet amount. Defaults to 20.
-            max_rounds (Optional[int]): Maximum number of rounds to play. Defaults to None.
-            ante (int): Mandatory bet required from all players. Defaults to 0.
-            session_id (Optional[str]): Unique identifier for this game session.
+            players: List of player names or Player objects
+            config: Game configuration parameters. If None, uses defaults.
 
         Raises:
-            ValueError: If any of these conditions are met:
-                - Empty players list
-                - starting_chips <= 0
-                - small_blind <= 0
-                - big_blind <= 0
-                - ante < 0
+            ValueError: If players list is empty
 
         Side Effects:
             - Creates Player objects if names provided
             - Initializes game state attributes
             - Sets up logging with session context
             - Logs initial game configuration
-
-        Example:
-            >>> game = AgenticPoker(['Alice', 'Bob'], starting_chips=500)
-            >>> game = AgenticPoker(player_list, small_blind=5, big_blind=10, ante=1)
-
-            Game Configuration
-            =================================================
-            Players: Alice, Bob
-            Starting chips: $500
-            Blinds: $5/$10
-            Ante: $1
-            =================================================
         """
         if not players:
             raise ValueError("Must provide at least 2 players")
-        if starting_chips <= 0:
-            raise ValueError("Starting chips must be positive")
-        if small_blind <= 0 or big_blind <= 0:
-            raise ValueError("Blinds must be positive")
-        if ante < 0:
-            raise ValueError("Ante cannot be negative")
 
-        # Initialize session-specific logging
-        self.session_id = session_id
+        self.config = config or GameConfig()
+        self.session_id = self.config.session_id
 
         self.deck = Deck()
         # Convert names to players if needed
         if players and isinstance(players[0], str):
-            self.players = [Player(name, starting_chips) for name in players]
+            self.players = [
+                Player(name, self.config.starting_chips) for name in players
+            ]
         else:
             self.players = players  # Use provided Player objects
+
         self.pot = 0
-        self.small_blind = small_blind
-        self.big_blind = big_blind
+        self.small_blind = self.config.small_blind
+        self.big_blind = self.config.big_blind
         self.dealer_index = 0
         self.round_count = 0
         self.round_number = 0
-        self.max_rounds = max_rounds
-        self.ante = ante
+        self.max_rounds = self.config.max_rounds
+        self.ante = self.config.ante
         self.side_pots = None
 
-        # Log game configuration with clear session context
+        # Log game configuration
         logging.info(f"\n{'='*50}")
         logging.info(f"Game Configuration")
         logging.info(f"{'='*50}")
-        logging.info(f"Players: {', '.join([p.name for p in players])}")
-        logging.info(f"Starting chips: ${starting_chips}")
-        logging.info(f"Blinds: ${small_blind}/${big_blind}")
-        logging.info(f"Ante: ${ante}")
-        if max_rounds:
-            logging.info(f"Max rounds: {max_rounds}")
+        logging.info(f"Players: {', '.join([p.name for p in self.players])}")
+        logging.info(f"Starting chips: ${self.config.starting_chips}")
+        logging.info(f"Blinds: ${self.config.small_blind}/${self.config.big_blind}")
+        logging.info(f"Ante: ${self.config.ante}")
+        if self.config.max_rounds:
+            logging.info(f"Max rounds: {self.config.max_rounds}")
+        if self.config.session_id:
+            logging.info(f"Session ID: {self.config.session_id}")
         logging.info(f"{'='*50}\n")
 
     def blinds_and_antes(self) -> None:
@@ -531,9 +538,11 @@ class AgenticPoker:
         if self.max_rounds and self.round_count >= self.max_rounds:
             logging.info("Game ended due to maximum rounds limit")
 
-        all_players = sorted(
-            self.players + eliminated_players, key=lambda p: p.chips, reverse=True
-        )
+        # Use a set to ensure unique players
+        all_players = list({player for player in (self.players + eliminated_players)})
+        # Sort by chips (eliminated players will have 0)
+        all_players.sort(key=lambda p: p.chips, reverse=True)
+
         logging.info("\nFinal Standings:")
         for i, player in enumerate(all_players, 1):
             status = " (eliminated)" if player in eliminated_players else ""
