@@ -1,10 +1,24 @@
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union, TypedDict, NamedTuple
 
 from .betting import betting_round
 from .deck import Deck
 from .hand import Hand
 from .player import Player
+
+
+class SidePot(NamedTuple):
+    """Represents a side pot with its amount and eligible players"""
+
+    amount: int
+    eligible_players: List["Player"]
+
+
+class SidePotView(TypedDict):
+    """View-model for displaying side pot information"""
+
+    amount: int
+    eligible_players: List[str]
 
 
 class AgenticPoker:
@@ -27,11 +41,27 @@ class AgenticPoker:
         max_rounds (Optional[int]): Maximum number of rounds to play, or None for unlimited.
         ante (int): Mandatory bet required from all players at start of each hand.
         session_id (Optional[str]): Unique identifier for this game session.
+        side_pots (Optional[List[SidePot]]): List of side pots in the game.
+        round_starting_stacks (Dict[Player, int]): Dictionary of starting chip counts for each round.
     """
+
+    deck: Deck
+    players: List[Player]
+    pot: int
+    small_blind: int
+    big_blind: int
+    dealer_index: int
+    round_count: int
+    round_number: int
+    max_rounds: Optional[int]
+    ante: int
+    side_pots: Optional[List[SidePot]]
+    session_id: Optional[str]
+    round_starting_stacks: Dict[Player, int]
 
     def __init__(
         self,
-        players,
+        players: Union[List[str], List[Player]],
         starting_chips: int = 1000,
         small_blind: int = 10,
         big_blind: int = 20,
@@ -222,10 +252,17 @@ class AgenticPoker:
         else:
             logging.info(f"{player.name} posts {blind_type} blind of ${amount}{status}")
 
-    def _calculate_side_pots(self, posted_amounts: Dict["Player", int]) -> List[Dict]:
+    def _calculate_side_pots(
+        self, posted_amounts: Dict["Player", int]
+    ) -> List[SidePot]:
         """
         Calculate side pots based on posted amounts.
-        Returns list of dicts with amount and eligible players.
+
+        Args:
+            posted_amounts: Dictionary mapping players to their total posted amounts
+
+        Returns:
+            List of SidePot objects containing pot amounts and eligible players
         """
         side_pots = []
         sorted_players = sorted(posted_amounts.items(), key=lambda x: x[1])
@@ -236,15 +273,28 @@ class AgenticPoker:
                 eligible = [p for p, a in posted_amounts.items() if a >= amount]
                 pot_size = (amount - current_amount) * len(eligible)
                 if pot_size > 0:
-                    side_pots.append(
-                        {
-                            "amount": pot_size,
-                            "eligible_players": [p.name for p in eligible],
-                        }
-                    )
+                    side_pots.append(SidePot(pot_size, eligible))
                 current_amount = amount
 
         return side_pots
+
+    def _get_side_pots_view(self, side_pots: List[SidePot]) -> List[SidePotView]:
+        """
+        Convert side pots to a view-friendly format for logging/display.
+
+        Args:
+            side_pots: List of SidePot objects
+
+        Returns:
+            List of SidePotView dictionaries with player names instead of objects
+        """
+        return [
+            {
+                "amount": pot.amount,
+                "eligible_players": [p.name for p in pot.eligible_players],
+            }
+            for pot in side_pots
+        ]
 
     def _log_pot_summary(self, posted_amounts: Dict["Player", int]) -> None:
         """Log clear summary of pot state including any side pots."""
@@ -256,45 +306,38 @@ class AgenticPoker:
 
         if self.side_pots:
             logging.info("\nSide pots:")
-            for i, pot in enumerate(self.side_pots, 1):
+            side_pots_view = self._get_side_pots_view(self.side_pots)
+            for i, pot in enumerate(side_pots_view, 1):
                 players_str = ", ".join(pot["eligible_players"])
                 logging.info(f"  Pot {i}: ${pot['amount']} (Eligible: {players_str})")
 
-    def handle_side_pots(self) -> List[Tuple[int, List[Player]]]:
+    def handle_side_pots(self) -> List[SidePot]:
         """
         Calculate and split the pot when players are all-in with different amounts.
+
+        Returns:
+            List of SidePot objects containing pot amounts and eligible players
         """
         # Get only players who contributed to the pot
         active_players = [p for p in self.players if p.bet > 0]
         if not active_players:
-            return [(self.pot, self.players)]
+            return [SidePot(self.pot, self.players)]
 
-        active_players.sort(key=lambda p: p.bet)
-        pots = []
-        pot_amount = int(self.pot)  # Ensure we're working with an integer
-        previous_bet = 0
+        # Calculate posted amounts for each player
+        posted_amounts = {player: player.bet for player in active_players}
+        side_pots = self._calculate_side_pots(posted_amounts)
 
-        while active_players:
-            current_bet = active_players[0].bet
-            bet_difference = current_bet - previous_bet
-            pot_contribution = bet_difference * len(active_players)
+        # Handle any remaining chips from antes or odd amounts
+        total_allocated = sum(pot.amount for pot in side_pots)
+        remainder = self.pot - total_allocated
+        if remainder > 0 and side_pots:
+            # Add remainder to first pot
+            first_pot = side_pots[0]
+            side_pots[0] = SidePot(
+                first_pot.amount + remainder, first_pot.eligible_players
+            )
 
-            if pot_contribution > 0:
-                # Create tuple of (pot_amount, eligible_players)
-                pots.append((pot_contribution, active_players[:]))
-                pot_amount = max(
-                    0, pot_amount - pot_contribution
-                )  # Ensure we don't go negative
-
-            previous_bet = current_bet
-            active_players = active_players[1:]
-
-        # If there's any remaining pot amount (from antes or odd chips), add it to the first pot
-        if pot_amount > 0 and pots:
-            first_pot_amount, first_pot_players = pots[0]
-            pots[0] = (first_pot_amount + pot_amount, first_pot_players)
-
-        return pots
+        return side_pots
 
     def showdown(self) -> None:
         """
@@ -332,37 +375,30 @@ class AgenticPoker:
 
         # Use existing side pots if available, otherwise calculate them
         if self.side_pots:
-            # Convert side_pots format to list of tuples
-            side_pots = [
-                (
-                    pot["amount"],
-                    [p for p in self.players if p.name in pot["eligible_players"]],
-                )
-                for pot in self.side_pots
-            ]
+            side_pots = self.side_pots
         else:
             side_pots = self.handle_side_pots()
 
         logging.info(f"\nDetected {len(side_pots)} pot(s) due to all-in players.")
 
-        for pot_index, (pot_amount, eligible_players) in enumerate(side_pots, start=1):
-            if not eligible_players:
+        for pot_index, pot in enumerate(side_pots, start=1):
+            if not pot.eligible_players:
                 continue
 
             # Log which players can win this pot
             logging.info(
-                f"\nSide Pot #{pot_index}: ${pot_amount} among {[p.name for p in eligible_players]}"
+                f"\nSide Pot #{pot_index}: ${pot.amount} among {[p.name for p in pot.eligible_players]}"
             )
 
             # Find best hand among eligible players
-            best_hand_value = max(eligible_players, key=lambda p: p.hand).hand
-            winners = [p for p in eligible_players if p.hand == best_hand_value]
+            best_hand_value = max(pot.eligible_players, key=lambda p: p.hand).hand
+            winners = [p for p in pot.eligible_players if p.hand == best_hand_value]
 
             # Distribute pot to winner(s)
-            pot_share = pot_amount // len(winners)
-            remainder = pot_amount % len(winners)
+            pot_share = pot.amount // len(winners)
+            remainder = pot.amount % len(winners)
 
-            logging.info(f"  Distributing ${pot_amount} to {len(winners)} winner(s).")
+            logging.info(f"  Distributing ${pot.amount} to {len(winners)} winner(s).")
             for i, winner in enumerate(winners):
                 share = pot_share + (1 if i < remainder else 0)
                 winner.chips += share
@@ -772,6 +808,7 @@ class AgenticPoker:
             return
 
         logging.info("\nSide pots:")
-        for i, pot in enumerate(self.side_pots, 1):
+        side_pots_view = self._get_side_pots_view(self.side_pots)
+        for i, pot in enumerate(side_pots_view, 1):
             players_str = ", ".join(pot["eligible_players"])
             logging.info(f"  Pot {i}: ${pot['amount']} (Eligible: {players_str})")
