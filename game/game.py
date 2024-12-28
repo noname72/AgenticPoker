@@ -460,139 +460,84 @@ class AgenticPoker:
 
         return True
 
-    def start_game(self) -> None:
+    def _handle_eliminated_players(self, eliminated_players: List[Player]) -> None:
+        """Check for and handle any newly eliminated players."""
+        for player in self.players:
+            if player.chips <= 0 and player not in eliminated_players:
+                eliminated_players.append(player)
+                logging.info(f"\n{player.name} is eliminated (out of chips)!")
+
+    def _handle_single_remaining_player(
+        self, initial_chips: Dict[Player, int], phase: str
+    ) -> bool:
         """
-        Execute the main game loop until a winner is determined or max rounds reached.
+        Handle case where only one player remains after betting.
 
-        Controls the overall flow of the poker game, managing rounds until an end condition
-        is met. Each round consists of:
-        1. Pre-draw betting (including blinds/antes)
-        2. Draw phase (players can discard and draw new cards)
-        3. Post-draw betting
-        4. Showdown (if multiple players remain)
+        Args:
+            initial_chips: Dictionary mapping players to their starting chip counts
+            phase: String indicating game phase ('pre-draw' or 'post-draw')
 
-        Game End Conditions:
-            - Only one player has chips remaining
-            - Maximum number of rounds reached (if specified)
-
-        Side Effects:
-            - Updates player chip counts
-            - Tracks eliminated players
-            - Logs all game actions and results
-            - Produces final standings and game summary
-
-        Example Round Flow:
-            1. Collect blinds/antes
-            2. Pre-draw betting round
-            3. Players discard and draw new cards
-            4. Post-draw betting round
-            5. Winner determination:
-               - Single player remaining (others folded)
-               - Showdown between multiple players
-            6. Chip distribution and round cleanup
-
-        Note:
-            - Players can play as long as they have any chips (no minimum)
-            - Eliminated players (0 chips) are tracked for final standings
-            - All chip movements are logged with net changes
+        Returns:
+            bool: True if there was a single winner, False otherwise
         """
-        eliminated_players = []
+        active_players = [p for p in self.players if not p.folded]
+        if len(active_players) == 1:
+            winner = active_players[0]
+            winner.chips += self.pot
+            logging.info(
+                f"\n{winner.name} wins ${self.pot} (all others folded {phase})"
+            )
+            self._log_chip_movements(initial_chips)
+            self._log_chip_summary()
+            return True
+        return False
 
-        while len(self.players) > 1:
-            # Track all players with chips
-            all_players = self.players.copy()
+    def _handle_pre_draw_betting(self) -> Tuple[bool, Dict[Player, int]]:
+        """
+        Handle the pre-draw betting round.
 
-            # Check which players can still play
-            active_players = []
-            for player in all_players:
-                if player.chips > 0:  # Any player with chips can play
-                    active_players.append(player)
-                else:
-                    if player not in eliminated_players:
-                        eliminated_players.append(player)
-                        logging.info(f"\n{player.name} is eliminated (out of chips)!")
+        Returns:
+            Tuple[bool, Dict[Player, int]]: (should_continue, initial_chip_counts)
+        """
+        logging.info("\n--- Pre-Draw Betting ---")
+        initial_chips = {p: p.chips for p in self.players}
+        pot_result, new_side_pots = betting_round(self.players, self.pot)
+        self.pot = pot_result
+        if new_side_pots:
+            self.side_pots = new_side_pots
 
-            # If only one player has chips, they win
-            if len(active_players) <= 1:
-                break
+        if self._handle_single_remaining_player(initial_chips, "pre-draw"):
+            return False, initial_chips
 
-            # Check if max rounds reached
-            if self.max_rounds and self.round_count >= self.max_rounds:
-                logging.info(f"\nGame ended after {self.max_rounds} rounds!")
-                break
+        return True, initial_chips
 
-            # Start new round with all players who have chips
-            self.players = active_players
-            self.start_round()
-            self.blinds_and_antes()
+    def _handle_post_draw_betting(self, initial_chips: Dict[Player, int]) -> None:
+        """Handle the post-draw betting round and winner determination."""
+        logging.info("\n--- Post-Draw Betting ---")
+        pot_result, new_side_pots = betting_round(self.players, self.pot)
+        self.pot = pot_result
+        if new_side_pots:
+            self.side_pots = new_side_pots
 
-            # Pre-draw betting
-            logging.info("\n--- Pre-Draw Betting ---")
-            initial_chips = {p: p.chips for p in self.players}
-            pot_result, new_side_pots = betting_round(self.players, self.pot)
-            self.pot = pot_result
-            if new_side_pots:
-                self.side_pots = new_side_pots
+        if not self._handle_single_remaining_player(initial_chips, "post-draw"):
+            self.showdown()
 
-            # Check if only one player remains after pre-draw betting
-            active_players = [p for p in self.players if not p.folded]
-            if len(active_players) == 1:
-                winner = active_players[0]
-                winner.chips += self.pot
+    def _log_chip_movements(self, initial_chips: Dict[Player, int]) -> None:
+        """Log the chip movements for each player from their initial amounts."""
+        for player in self.players:
+            if player.chips != initial_chips[player]:
+                net_change = player.chips - initial_chips[player]
                 logging.info(
-                    f"\n{winner.name} wins ${self.pot} (all others folded pre-draw)"
+                    f"{player.name}: ${initial_chips[player]} → ${player.chips} ({net_change:+d})"
                 )
-                # Log chip movements
-                for player in self.players:
-                    if player.chips != initial_chips[player]:
-                        net_change = player.chips - initial_chips[player]
-                        logging.info(
-                            f"{player.name}: ${initial_chips[player]} → ${player.chips} ({net_change:+d})"
-                        )
-                self._log_chip_summary()
-                self.round_count += 1
-                self._reset_round()
-                continue
 
-            # Draw phase
-            self.draw_phase()
-
-            # Post-draw betting
-            logging.info("\n--- Post-Draw Betting ---")
-            pot_result, new_side_pots = betting_round(self.players, self.pot)
-            self.pot = pot_result
-            if new_side_pots:
-                self.side_pots = new_side_pots
-
-            # Handle showdown or single winner
-            active_players = [p for p in self.players if not p.folded]
-            if len(active_players) > 1:
-                self.showdown()
-            else:
-                winner = active_players[0]
-                winner.chips += self.pot
-                logging.info(
-                    f"\n{winner.name} wins ${self.pot} (all others folded post-draw)"
-                )
-                # Log chip movements
-                for player in self.players:
-                    if player.chips != initial_chips[player]:
-                        net_change = player.chips - initial_chips[player]
-                        logging.info(
-                            f"{player.name}: ${initial_chips[player]} → ${player.chips} ({net_change:+d})"
-                        )
-                self._log_chip_summary()
-
-            self.round_count += 1
-            self._reset_round()
-
-        # Log final game results including eliminated players
+    def _log_game_summary(self, eliminated_players: List[Player]) -> None:
+        """Log the final game summary and standings."""
         logging.info("\n=== Game Summary ===")
         logging.info(f"Total rounds played: {self.round_count}")
         if self.max_rounds and self.round_count >= self.max_rounds:
             logging.info("Game ended due to maximum rounds limit")
 
-        # Include all players in final standings, sorted by chips
         all_players = sorted(
             self.players + eliminated_players, key=lambda p: p.chips, reverse=True
         )
@@ -601,67 +546,15 @@ class AgenticPoker:
             status = " (eliminated)" if player in eliminated_players else ""
             logging.info(f"{i}. {player.name}: ${player.chips}{status}")
 
-    def start_round(self) -> None:
-        """
-        Start a new round of poker by initializing game state and dealing cards.
-
-        The method performs these steps in order:
-        1. Increments round number
-        2. Resets pot to zero
-        3. Rotates dealer position
-        4. Records starting chip counts
-        5. Shuffles deck and deals hands
-        6. Resets player states (bets, folded status)
-        7. Logs round information
-
-        Side Effects:
-            - Updates game state:
-                - round_number: Incremented
-                - pot: Reset to 0
-                - dealer_index: Rotated
-                - round_starting_stacks: Set
-            - Modifies player state:
-                - hand: New 5-card hand
-                - bet: Reset to 0
-                - folded: Reset to False
-            - Creates new shuffled deck
-            - Logs round setup information
-
-        Notes:
-            - Each player receives exactly 5 cards
-            - Players with chips < big blind are marked as "short stack"
-            - AI players may send pre-round messages
-            - Dealer button moves clockwise each round
-
-        Example:
-            >>> game.start_round()
-            =================================================
-            Round 42
-            =================================================
-
-            Starting stacks (before antes/blinds):
-              Alice: $1200
-              Bob: $800
-              Charlie: $15 (short stack)
-
-            Dealer: Alice
-            Small Blind: Bob
-            Big Blind: Charlie
-        """
+    def _initialize_round(self) -> None:
+        """Initialize the basic round state."""
         self.round_number += 1
         self.pot = 0
-
-        logging.info(f"\n{'='*50}")
-        logging.info(f"Round {self.round_number}")
-        logging.info(f"{'='*50}")
-
-        # Ensure dealer index is valid for current number of players
         self.dealer_index = self.dealer_index % len(self.players)
-
-        # Store true starting stacks before any deductions
         self.round_starting_stacks = {player: player.chips for player in self.players}
 
-        # Reset deck and deal new hands
+    def _deal_cards(self) -> None:
+        """Reset the deck and deal new hands to all players."""
         self.deck = Deck()
         self.deck.shuffle()
         for player in self.players:
@@ -670,7 +563,12 @@ class AgenticPoker:
             player.hand = Hand()
             player.hand.add_cards(self.deck.deal(5))
 
-        # Log true starting stacks before any deductions
+    def _log_round_info(self) -> None:
+        """Log the round information including stacks and positions."""
+        logging.info(f"\n{'='*50}")
+        logging.info(f"Round {self.round_number}")
+        logging.info(f"{'='*50}")
+
         logging.info("\nStarting stacks (before antes/blinds):")
         for player in self.players:
             chips_str = f"${self.round_starting_stacks[player]}"
@@ -678,22 +576,59 @@ class AgenticPoker:
                 chips_str += " (short stack)"
             logging.info(f"  {player.name}: {chips_str}")
 
-        # Log dealer and blind positions
-        dealer = self.players[self.dealer_index].name
         sb_index = (self.dealer_index + 1) % len(self.players)
         bb_index = (self.dealer_index + 2) % len(self.players)
 
         logging.info(f"\nDealer: {self.players[self.dealer_index].name}")
         logging.info(f"Small Blind: {self.players[sb_index].name}")
         logging.info(f"Big Blind: {self.players[bb_index].name}")
+        logging.info("\n")
 
-        # Let AI players send pre-round messages
+    def start_game(self) -> None:
+        """Execute the main game loop until a winner is determined or max rounds reached."""
+        eliminated_players = []
+
+        while len(self.players) > 1:
+            self._handle_eliminated_players(eliminated_players)
+
+            # Check end conditions
+            if len([p for p in self.players if p.chips > 0]) <= 1:
+                break
+            if self.max_rounds and self.round_count >= self.max_rounds:
+                logging.info(f"\nGame ended after {self.max_rounds} rounds!")
+                break
+
+            # Start new round
+            self.players = [p for p in self.players if p.chips > 0]
+            self.start_round()
+            self.blinds_and_antes()
+
+            # Handle betting rounds
+            should_continue, initial_chips = self._handle_pre_draw_betting()
+            if not should_continue:
+                self.round_count += 1
+                self._reset_round()
+                continue
+
+            self.draw_phase()
+            self._handle_post_draw_betting(initial_chips)
+
+            self.round_count += 1
+            self._reset_round()
+
+        self._log_game_summary(eliminated_players)
+
+    def start_round(self) -> None:
+        """Start a new round of poker by initializing game state and dealing cards."""
+        self._initialize_round()
+        self._log_round_info()
+        self._deal_cards()
+
+        # Handle AI player pre-round messages
         for player in self.players:
             if hasattr(player, "get_message"):
                 game_state = f"Round {self.round_number}, Your chips: ${player.chips}"
                 message = player.get_message(game_state)
-
-        logging.info("\n")
 
     def draw_phase(self) -> None:
         """
