@@ -313,10 +313,13 @@ class AgenticPoker:
 
     def handle_side_pots(self) -> List[SidePot]:
         """
-        Calculate and split the pot when players are all-in with different amounts.
+        Calculate and manage side pots for all-in situations.
+
+        Handles cases where players are all-in with different amounts,
+        ensuring fair pot distribution.
 
         Returns:
-            List of SidePot objects containing pot amounts and eligible players
+            List[SidePot]: Side pots with their amounts and eligible players
         """
         # Get only players who contributed to the pot
         active_players = [p for p in self.players if p.bet > 0]
@@ -341,25 +344,16 @@ class AgenticPoker:
 
     def showdown(self) -> None:
         """
-        Handle the showdown phase of the poker game.
+        Determine winner(s) and distribute pot(s) at the end of betting.
 
-        Determines winner(s) and distributes pot(s) according to poker rules:
-        1. If only one active player remains, they win the entire pot
-        2. For multiple players, handles side pots for all-in situations
-        3. Compares hands of remaining players to determine winner(s)
-        4. Splits pots equally among tied winners
+        Handles both single-winner scenarios (when all others fold) and
+        multi-player showdowns. Manages side pots when players are all-in
+        with different amounts.
 
         Side Effects:
             - Updates player chip counts
-            - Logs detailed pot distribution and chip movements
-            - Resets pot to 0 after distribution
-
-        Example:
-            With three players and a $300 pot:
-            - Player A (all-in): Pair of Kings
-            - Player B (all-in): Two Pair
-            - Player C: Fold
-            Result: Player B wins the pot, chips are transferred, and results are logged
+            - Resets pot and side pots
+            - Logs detailed pot distribution
         """
         logging.info(f"\n{'='*20} SHOWDOWN {'='*20}")
 
@@ -417,11 +411,8 @@ class AgenticPoker:
         """
         Log a summary of all players' chip counts, sorted by amount.
 
-        Creates a formatted log entry showing each player's current chip count,
-        sorted in descending order by amount.
-
         Side Effects:
-            - Writes to game log with current chip counts
+            - Writes chip counts to game log
             - Adds separator lines for readability
         """
         logging.info("\nFinal chip counts (sorted by amount):")
@@ -435,15 +426,13 @@ class AgenticPoker:
         """
         Remove players with zero chips and check if game should continue.
 
-        Players are only removed when they have exactly 0 chips.
-
         Returns:
-            bool: True if game should continue, False if game should end
-                 (only one or zero players remain).
+            bool: True if game can continue, False if game should end
+                  (one or zero players remain)
 
         Side Effects:
-            - Updates self.players list
-            - Logs game over messages if appropriate
+            - Updates players list
+            - Logs elimination messages
         """
         # Only remove players with exactly 0 chips
         self.players = [player for player in self.players if player.chips > 0]
@@ -471,14 +460,18 @@ class AgenticPoker:
         self, initial_chips: Dict[Player, int], phase: str
     ) -> bool:
         """
-        Handle case where only one player remains after betting.
+        Award pot to last remaining player after others fold.
 
         Args:
-            initial_chips: Dictionary mapping players to their starting chip counts
-            phase: String indicating game phase ('pre-draw' or 'post-draw')
+            initial_chips: Starting chip counts for tracking changes
+            phase: Game phase when win occurred ('pre-draw' or 'post-draw')
 
         Returns:
-            bool: True if there was a single winner, False otherwise
+            bool: True if single winner found, False if multiple players remain
+
+        Side Effects:
+            - Updates winner's chip count
+            - Logs win and chip movements
         """
         active_players = [p for p in self.players if not p.folded]
         if len(active_players) == 1:
@@ -564,7 +557,14 @@ class AgenticPoker:
             player.hand.add_cards(self.deck.deal(5))
 
     def _log_round_info(self) -> None:
-        """Log the round information including stacks and positions."""
+        """
+        Log the current round state including stacks and positions.
+
+        Side Effects:
+            - Logs round number
+            - Logs each player's stack and short stack status
+            - Logs dealer and blind positions
+        """
         logging.info(f"\n{'='*50}")
         logging.info(f"Round {self.round_number}")
         logging.info(f"{'='*50}")
@@ -634,99 +634,69 @@ class AgenticPoker:
         """
         Handle the draw phase where players can discard and draw new cards.
 
-        During this phase, each non-folded player gets one opportunity to:
-        1. Discard any number of cards from their hand (0-5)
-        2. Draw an equal number of new cards from the deck
-
-        The method handles:
-        - Tracking discarded cards to prevent redealing
-        - Reshuffling discards if deck runs low
-        - AI player decision-making for discards
-        - Maintaining hand size of exactly 5 cards
+        Each non-folded player gets one opportunity to discard 0-5 cards and draw
+        replacements. AI players use decide_draw() to choose discards, while non-AI
+        players keep their current hand.
 
         Side Effects:
             - Modifies player hands
             - Updates deck composition
-            - Logs all discard and draw actions
+            - Logs all actions
 
         Notes:
-            - Players who have folded are skipped
-            - AI players use their decide_draw() method to choose discards
-            - Non-AI players automatically keep their current hand
-            - If deck runs low, discarded cards are reshuffled back in
-
-        Example:
-            >>> game.draw_phase()
-            --- Draw Phase ---
-
-            Alice's turn to draw
-            Current hand: A♠ K♠ 3♣ 4♥ 7♦
-            Discarding cards at positions: [2, 3, 4]
-            Drew 3 new cards: Q♣, J♥, 10♦
+            - Discarded cards are tracked to prevent redealing
+            - Deck is reshuffled with discards if it runs low
         """
         logging.info("\n--- Draw Phase ---")
-
-        # Track all discarded cards to ensure they don't get redealt
         discarded_cards = []
 
-        for player in self.players:
-            if player.folded:
-                continue
-
+        active_players = [p for p in self.players if not p.folded]
+        for player in active_players:
             logging.info(f"\n{player.name}'s turn to draw")
             logging.info(f"Current hand: {player.hand.show()}")
 
-            if hasattr(player, "decide_draw"):
-                # AI players decide which cards to discard
-                discards = player.decide_draw()
-                if discards:
-                    # Log the intended discards before making changes
-                    discard_indices = sorted(discards)
-                    logging.info(f"Discarding cards at positions: {discard_indices}")
-
-                    # Track discarded cards before removing them
-                    discarded = [player.hand.cards[i] for i in discard_indices]
-                    discarded_cards.extend(discarded)
-
-                    # Remove discarded cards
-                    player.hand.cards = [
-                        card
-                        for i, card in enumerate(player.hand.cards)
-                        if i not in discards
-                    ]
-
-                    # Draw exactly the same number of cards as were discarded
-                    num_discards = len(discards)
-
-                    # Verify deck has enough cards
-                    if len(self.deck.cards) < num_discards:
-                        logging.info("Reshuffling discarded cards into deck")
-                        self.deck.cards.extend(discarded_cards)
-                        self.deck.shuffle()
-                        discarded_cards = []
-
-                    new_cards = self.deck.deal(num_discards)
-                    player.hand.add_cards(new_cards)
-
-                    # Log the new cards that were drawn
-                    logging.info(
-                        f"Drew {num_discards} new card{'s' if num_discards != 1 else ''}: "
-                        f"{', '.join(str(card) for card in new_cards)}"
-                    )
-            else:
-                # Non-AI players keep their hand
+            if not hasattr(player, "decide_draw"):
                 logging.info("Keeping current hand")
+                continue
+
+            # Handle AI player discards
+            discards = player.decide_draw()
+            if not discards:
+                continue
+
+            # Process discards
+            discard_indices = sorted(discards)
+            logging.info(f"Discarding cards at positions: {discard_indices}")
+
+            # Track and remove discarded cards
+            discarded = [player.hand.cards[i] for i in discard_indices]
+            discarded_cards.extend(discarded)
+            player.hand.cards = [
+                card for i, card in enumerate(player.hand.cards) if i not in discards
+            ]
+
+            # Reshuffle if needed
+            if len(self.deck.cards) < len(discards):
+                logging.info("Reshuffling discarded cards into deck")
+                self.deck.cards.extend(discarded_cards)
+                self.deck.shuffle()
+                discarded_cards = []
+
+            # Draw and add new cards
+            new_cards = self.deck.deal(len(discards))
+            player.hand.add_cards(new_cards)
+            logging.info(
+                f"Drew {len(discards)} new card{'s' if len(discards) != 1 else ''}: "
+                f"{', '.join(str(card) for card in new_cards)}"
+            )
 
     def _reset_round(self) -> None:
         """
-        Reset game state for the next round.
-
-        Resets the pot and player states between rounds to ensure
-        clean state for the next round of play.
+        Reset game state between rounds.
 
         Side Effects:
-            - Sets pot to 0
-            - Resets all player round-specific attributes (bets, folded status)
+            - Resets pot to 0
+            - Resets player bets and folded status
         """
         self.pot = 0
         for player in self.players:
@@ -736,8 +706,8 @@ class AgenticPoker:
         """
         Log the current side pot structure.
 
-        Formats and logs each side pot's amount and eligible players
-        for clear tracking of pot distribution.
+        Side Effects:
+            - Logs each pot's amount and eligible players
         """
         if not self.side_pots:
             return
