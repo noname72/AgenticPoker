@@ -37,3 +37,4 @@ results/
 .env
 
 !docs/example_log.log
+*.ipynb
