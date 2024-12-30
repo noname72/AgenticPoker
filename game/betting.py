@@ -4,7 +4,7 @@ from .types import SidePot
 
 
 def betting_round(
-    players: List[Player], current_pot: int
+    players: List[Player], current_pot: int, game_state: Optional[dict] = None
 ) -> Union[int, Tuple[int, List[SidePot]]]:
     """
     Execute a betting round among active players.
@@ -12,6 +12,7 @@ def betting_round(
     Args:
         players: List of players in the betting round
         current_pot: Current amount in the pot
+        game_state: Optional dictionary containing current game state for AI decisions
 
     Returns:
         Either:
@@ -34,7 +35,14 @@ def betting_round(
 
         # Get player's action
         if hasattr(player, "decide_action"):
-            action, amount = player.decide_action()
+            # Handle LLMAgent's decision format
+            decision = player.decide_action(game_state)
+            if isinstance(decision, tuple):
+                action, amount = decision
+            else:
+                # LLMAgent might return just the action
+                action = decision
+                amount = current_bet if action == "call" else player.chips
         else:
             action, amount = "call", current_bet
 

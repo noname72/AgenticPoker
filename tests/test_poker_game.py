@@ -104,10 +104,10 @@ def test_betting_rounds(mock_betting, game, mock_players):
         player.folded = False
 
     # Test pre-draw betting
-    game.pot = mock_betting(active_players, game.pot)
+    game.pot = mock_betting(active_players, game.pot, {})  # Pass empty game state
 
     # Verify betting round was called
-    mock_betting.assert_called_with(active_players, 150)
+    mock_betting.assert_called_with(active_players, 150, {})
     assert game.pot == 300  # New pot amount from mock
 
 
@@ -206,21 +206,42 @@ def test_full_betting_round(mock_betting, game, mock_players):
     game.pot = 150
     game.players = mock_players
 
-    # Configure mock players' decide_action methods
+    # Configure mock players' decide_action methods to return just the action
     for player in mock_players:
-        player.decide_action = Mock(return_value=("call", 200))
+        player.decide_action = Mock(return_value="call")
 
     # Mock betting round to return just the pot amount
     mock_betting.return_value = 750  # Just return the pot amount
+
+    # Expected game state
+    expected_state = {
+        "pot": 150,
+        "players": [
+            {
+                "name": p.name,
+                "chips": p.chips,
+                "bet": p.bet,
+                "folded": p.folded,
+                "position": i,
+            }
+            for i, p in enumerate(mock_players)
+        ],
+        "current_bet": 0,
+        "small_blind": game.small_blind,
+        "big_blind": game.big_blind,
+        "dealer_index": game.dealer_index,
+    }
 
     # Run pre-draw betting
     game._handle_pre_draw_betting()
 
     # Verify pot increased correctly
-    assert game.pot == 750  # Initial 150 + 200*3
+    assert game.pot == 750
 
     # Verify betting round was called with correct arguments
-    mock_betting.assert_called_once_with(mock_players, 150)
+    mock_betting.assert_called_once_with(
+        [p for p in mock_players if not p.folded], 150, expected_state
+    )
 
 
 @patch("game.game.betting_round")
@@ -234,6 +255,25 @@ def test_full_betting_round_with_side_pots(mock_betting, game, mock_players):
     side_pots = [(300, [mock_players[0], mock_players[1]])]
     mock_betting.return_value = (750, side_pots)
 
+    # Expected game state
+    expected_state = {
+        "pot": 150,
+        "players": [
+            {
+                "name": p.name,
+                "chips": p.chips,
+                "bet": p.bet,
+                "folded": p.folded,
+                "position": i,
+            }
+            for i, p in enumerate(mock_players)
+        ],
+        "current_bet": 0,
+        "small_blind": game.small_blind,
+        "big_blind": game.big_blind,
+        "dealer_index": game.dealer_index,
+    }
+
     # Run pre-draw betting
     game._handle_pre_draw_betting()
 
@@ -242,7 +282,7 @@ def test_full_betting_round_with_side_pots(mock_betting, game, mock_players):
     assert game.side_pots == side_pots
 
     # Verify betting round was called with correct arguments
-    mock_betting.assert_called_once_with(mock_players, 150)
+    mock_betting.assert_called_once_with(mock_players, 150, expected_state)
 
 
 @patch("game.game.betting_round")
@@ -269,6 +309,25 @@ def test_all_in_scenario(mock_betting, game, mock_players):
     ]
     mock_betting.return_value = (900, side_pots)  # Total pot of 900
 
+    # Expected game state
+    expected_state = {
+        "pot": 150,
+        "players": [
+            {
+                "name": p.name,
+                "chips": p.chips,
+                "bet": p.bet,
+                "folded": p.folded,
+                "position": i,
+            }
+            for i, p in enumerate(mock_players)
+        ],
+        "current_bet": 0,
+        "small_blind": game.small_blind,
+        "big_blind": game.big_blind,
+        "dealer_index": game.dealer_index,
+    }
+
     # Run pre-draw betting
     game._handle_pre_draw_betting()
 
@@ -276,7 +335,9 @@ def test_all_in_scenario(mock_betting, game, mock_players):
     assert game.pot == 900
 
     # Verify betting round was called with correct arguments
-    mock_betting.assert_called_once_with([p for p in mock_players if not p.folded], 150)
+    mock_betting.assert_called_once_with(
+        [p for p in mock_players if not p.folded], 150, expected_state
+    )
 
 
 def test_blinds_collection_order(game, mock_players):
@@ -399,6 +460,107 @@ def test_ante_collection_with_short_stacks(game, mock_players):
     # Player 1: 20 (full ante)
     # Player 2: 20 (ante) + 100 (big blind)
     assert game.pot == 155
+
+
+@patch("game.game.AgenticPoker.showdown")
+@patch("game.game.betting_round")
+def test_post_draw_betting(mock_betting, mock_showdown, game, mock_players):
+    """Test post-draw betting with and without side pots."""
+    initial_chips = {p: p.chips for p in mock_players}
+
+    # Set initial pot value
+    game.pot = 150
+
+    # Set up mock hands for showdown
+    for i, player in enumerate(mock_players):
+        player.hand = Mock()
+        player.hand.evaluate = Mock(return_value=f"Hand {i}")
+        player.folded = False
+        player.chips = 1000
+
+    # Test case 1: Simple pot (no side pots)
+    # Make one player fold to avoid showdown
+    mock_players[0].folded = True
+
+    # Expected game state
+    expected_state = {
+        "pot": 150,
+        "players": [
+            {
+                "name": p.name,
+                "chips": p.chips,
+                "bet": p.bet,
+                "folded": p.folded,
+                "position": i,
+            }
+            for i, p in enumerate(mock_players)
+        ],
+        "current_bet": 0,
+        "small_blind": game.small_blind,
+        "big_blind": game.big_blind,
+        "dealer_index": game.dealer_index,
+    }
+
+    # Set up mock returns
+    mock_betting.return_value = 300
+
+    # Run post-draw betting
+    game._handle_post_draw_betting(initial_chips)
+
+    # Verify betting round was called correctly
+    mock_betting.assert_called_once_with(game.players, 150, expected_state)
+
+    # Verify showdown was called
+    mock_showdown.assert_called_once()
+
+    # Verify the pot was updated
+    assert game.pot == 300
+    assert game.side_pots is None
+
+    # Reset for second test
+    mock_betting.reset_mock()
+    mock_showdown.reset_mock()
+    game.pot = 150
+    mock_players[0].folded = False
+
+    # Test case 2: With side pots
+    mock_players[0].folded = True
+
+    # Update expected state
+    expected_state = {
+        "pot": 150,
+        "players": [
+            {
+                "name": p.name,
+                "chips": p.chips,
+                "bet": p.bet,
+                "folded": p.folded,
+                "position": i,
+            }
+            for i, p in enumerate(mock_players)
+        ],
+        "current_bet": 0,
+        "small_blind": game.small_blind,
+        "big_blind": game.big_blind,
+        "dealer_index": game.dealer_index,
+    }
+
+    # Set up mock returns for second test
+    side_pots = [(200, [mock_players[0], mock_players[1]])]
+    mock_betting.return_value = (400, side_pots)
+
+    # Run post-draw betting again
+    game._handle_post_draw_betting(initial_chips)
+
+    # Verify betting round was called correctly
+    mock_betting.assert_called_once_with(game.players, 150, expected_state)
+
+    # Verify showdown was called
+    mock_showdown.assert_called_once()
+
+    # Verify pot and side pots were updated
+    assert game.pot == 400
+    assert game.side_pots == side_pots
 
 
 # ... Rest of the tests converted to pytest style ...

@@ -384,6 +384,26 @@ class AgenticPoker:
             return True
         return False
 
+    def _create_game_state(self) -> dict:
+        """Create a dictionary containing the current game state."""
+        return {
+            "pot": self.pot,
+            "players": [
+                {
+                    "name": p.name,
+                    "chips": p.chips,
+                    "bet": p.bet,
+                    "folded": p.folded,
+                    "position": i,
+                }
+                for i, p in enumerate(self.players)
+            ],
+            "current_bet": max(p.bet for p in self.players) if self.players else 0,
+            "small_blind": self.small_blind,
+            "big_blind": self.big_blind,
+            "dealer_index": self.dealer_index,
+        }
+
     def _handle_pre_draw_betting(self) -> Tuple[bool, Dict[Player, int]]:
         """Handle the pre-draw betting round."""
         logging.info("\n--- Pre-Draw Betting ---")
@@ -392,8 +412,11 @@ class AgenticPoker:
         # Get active players
         active_players = [p for p in self.players if not p.folded]
 
+        # Create game state for AI decisions
+        game_state = self._create_game_state()
+
         # Call betting round and update pot
-        result = betting_round(active_players, self.pot)
+        result = betting_round(active_players, self.pot, game_state)
         if isinstance(result, tuple):
             new_pot, new_side_pots = result
             self.pot = new_pot
@@ -409,10 +432,19 @@ class AgenticPoker:
     def _handle_post_draw_betting(self, initial_chips: Dict[Player, int]) -> None:
         """Handle the post-draw betting round and winner determination."""
         logging.info("\n--- Post-Draw Betting ---")
-        pot_result, new_side_pots = betting_round(self.players, self.pot)
-        self.pot = pot_result
-        if new_side_pots:
+
+        # Create game state for AI decisions
+        game_state = self._create_game_state()
+
+        # Call betting round and update pot
+        result = betting_round(self.players, self.pot, game_state)
+        if isinstance(result, tuple):
+            new_pot, new_side_pots = result
+            self.pot = new_pot
             self.side_pots = new_side_pots
+        else:
+            self.pot = result
+            self.side_pots = None
 
         if not self._handle_single_remaining_player(initial_chips, "post-draw"):
             self.showdown()
