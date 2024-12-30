@@ -1,5 +1,7 @@
 from datetime import datetime
 from unittest.mock import Mock, patch
+from typing import List
+from unittest.mock import call
 
 import pytest
 
@@ -44,7 +46,6 @@ def game(mock_players):
     """Fixture to create game instance."""
     return AgenticPoker(
         players=mock_players,
-        starting_chips=1000,
         small_blind=50,
         big_blind=100,
         ante=10,
@@ -59,6 +60,9 @@ def test_game_initialization(game, mock_players):
     assert game.big_blind == 100
     assert game.ante == 10
     assert game.session_id is not None
+    # Verify all players have initial chips
+    for player in game.players:
+        assert player.chips == 1000
 
 
 def test_invalid_game_initialization(mock_players):
@@ -66,21 +70,25 @@ def test_invalid_game_initialization(mock_players):
     with pytest.raises(ValueError):
         AgenticPoker(
             players=[],  # Empty players list
-            starting_chips=1000,
             small_blind=50,
             big_blind=100,
+            ante=10,
         )
 
     with pytest.raises(ValueError):
+        # Create players with negative chips
+        invalid_players = [
+            Mock(spec=LLMAgent, chips=-1000, name=f"Player{i}") for i in range(3)
+        ]
         AgenticPoker(
-            players=mock_players,
-            starting_chips=-1000,  # Negative chips
+            players=invalid_players,
             small_blind=50,
             big_blind=100,
+            ante=10,
         )
 
 
-@patch("game.betting.betting_round")
+@patch("game.game.betting_round")
 def test_betting_rounds(mock_betting, game, mock_players):
     """Test betting round mechanics."""
     # Mock betting round function
@@ -189,6 +197,208 @@ def test_game_end_conditions(game, mock_players):
 
     assert not result  # Game should end
     assert len(game.players) == 1
+
+
+@patch("game.game.betting_round")
+def test_full_betting_round(mock_betting, game, mock_players):
+    """Test a complete betting round with raises and calls."""
+    # Set up initial state
+    game.pot = 150
+    game.players = mock_players
+
+    # Configure mock players' decide_action methods
+    for player in mock_players:
+        player.decide_action = Mock(return_value=("call", 200))
+
+    # Mock betting round to return just the pot amount
+    mock_betting.return_value = 750  # Just return the pot amount
+
+    # Run pre-draw betting
+    game._handle_pre_draw_betting()
+
+    # Verify pot increased correctly
+    assert game.pot == 750  # Initial 150 + 200*3
+
+    # Verify betting round was called with correct arguments
+    mock_betting.assert_called_once_with(mock_players, 150)
+
+
+@patch("game.game.betting_round")
+def test_full_betting_round_with_side_pots(mock_betting, game, mock_players):
+    """Test betting round that creates side pots."""
+    # Set up initial state
+    game.pot = 150
+    game.players = mock_players
+
+    # Mock betting round to return pot amount and side pots
+    side_pots = [(300, [mock_players[0], mock_players[1]])]
+    mock_betting.return_value = (750, side_pots)
+
+    # Run pre-draw betting
+    game._handle_pre_draw_betting()
+
+    # Verify pot and side pots
+    assert game.pot == 750
+    assert game.side_pots == side_pots
+
+    # Verify betting round was called with correct arguments
+    mock_betting.assert_called_once_with(mock_players, 150)
+
+
+@patch("game.game.betting_round")
+def test_all_in_scenario(mock_betting, game, mock_players):
+    """Test handling of all-in situations."""
+    # Set up initial state
+    game.pot = 150  # Set initial pot
+
+    # Set up players with different chip amounts
+    mock_players[0].chips = 500
+    mock_players[1].chips = 300
+    mock_players[2].chips = 100
+
+    # Configure mock players' decide_action methods
+    mock_players[0].decide_action = Mock(return_value=("raise", 500))
+    mock_players[1].decide_action = Mock(return_value=("call", 300))
+    mock_players[2].decide_action = Mock(return_value=("call", 100))
+
+    # Mock betting round to return final pot and side pots
+    side_pots = [
+        (300, [mock_players[0], mock_players[1], mock_players[2]]),
+        (400, [mock_players[0], mock_players[1]]),
+        (200, [mock_players[0]]),
+    ]
+    mock_betting.return_value = (900, side_pots)  # Total pot of 900
+
+    # Run pre-draw betting
+    game._handle_pre_draw_betting()
+
+    # Verify correct pot amount
+    assert game.pot == 900
+
+    # Verify betting round was called with correct arguments
+    mock_betting.assert_called_once_with([p for p in mock_players if not p.folded], 150)
+
+
+def test_blinds_collection_order(game, mock_players):
+    """Test that blinds are collected in the correct order."""
+    initial_chips = 1000
+    game.dealer_index = 0
+
+    # Track bet order
+    bet_sequence = []
+
+    def track_bet(amount):
+        nonlocal bet_sequence
+        bet_sequence.append((amount))
+        return amount
+
+    for player in mock_players:
+        player.place_bet = Mock(side_effect=track_bet)
+
+    game.blinds_and_antes()
+
+    # Verify correct order and amounts
+    expected_sequence = [
+        10,  # Ante from player 0
+        10,  # Ante from player 1
+        10,  # Ante from player 2
+        50,  # Small blind from player 1
+        100,  # Big blind from player 2
+    ]
+
+    assert bet_sequence == expected_sequence
+
+
+def test_showdown_with_ties(game, mock_players):
+    """Test pot distribution when multiple players tie for best hand."""
+    game.pot = 900
+
+    # Set up mock hands that tie
+    mock_players[0].hand.evaluate = Mock(return_value="Full House")
+    mock_players[1].hand.evaluate = Mock(return_value="Full House")
+    mock_players[2].hand.evaluate = Mock(return_value="Two Pair")
+
+    # Create a hand ranking system
+    hand_ranks = {
+        mock_players[0].hand: 2,  # High rank
+        mock_players[1].hand: 2,  # Same high rank
+        mock_players[2].hand: 1,  # Lower rank
+    }
+
+    # Define comparison methods using the ranking system
+    def make_comparison_methods(hand):
+        def gt(other):
+            if not isinstance(other, Mock):
+                return True
+            return hand_ranks[hand] > hand_ranks[other]
+
+        def eq(other):
+            if not isinstance(other, Mock):
+                return False
+            return hand_ranks[hand] == hand_ranks[other]
+
+        return gt, eq
+
+    # Set up comparison methods for all hands
+    for player in mock_players:
+        gt, eq = make_comparison_methods(player.hand)
+        player.hand.__gt__ = Mock(side_effect=gt)
+        player.hand.__eq__ = Mock(side_effect=eq)
+        player.folded = False  # Make sure no players are folded
+
+    # Run showdown
+    game.showdown()
+
+    # Verify pot split evenly between tied winners
+    assert mock_players[0].chips == 1450  # Initial 1000 + 450 (half of 900)
+    assert mock_players[1].chips == 1450  # Initial 1000 + 450 (half of 900)
+    assert mock_players[2].chips == 1000  # Unchanged
+
+
+def test_player_elimination_sequence(game, mock_players):
+    """Test proper handling of sequential player eliminations."""
+    # Set up players with different chip amounts
+    mock_players[0].chips = 0
+    mock_players[1].chips = 50
+    mock_players[2].chips = 100
+
+    # First elimination
+    game.remove_bankrupt_players()
+    assert len(game.players) == 2
+    assert mock_players[0] not in game.players
+
+    # Second elimination
+    mock_players[1].chips = 0
+    game.remove_bankrupt_players()
+    assert len(game.players) == 1
+    assert mock_players[1] not in game.players
+
+    # Verify game ends with one player
+    assert not game.remove_bankrupt_players()
+
+
+def test_ante_collection_with_short_stacks(game, mock_players):
+    """Test ante collection when players can't cover the full amount."""
+    game.ante = 20
+    mock_players[0].chips = 15  # Can't cover ante
+    mock_players[1].chips = 20  # Exactly ante amount
+    mock_players[2].chips = 170  # Enough for ante + big blind
+
+    # Set dealer position so player 2 is big blind
+    game.dealer_index = 0  # Makes player 1 small blind, player 2 big blind
+
+    game.blinds_and_antes()
+
+    # Verify correct amounts collected
+    assert mock_players[0].chips == 0  # Paid all 15 (partial ante)
+    assert mock_players[1].chips == 0  # Paid all 20 (full ante)
+    assert mock_players[2].chips == 50  # Paid 20 (ante) + 100 (big blind)
+
+    # Total pot should be:
+    # Player 0: 15 (partial ante)
+    # Player 1: 20 (full ante)
+    # Player 2: 20 (ante) + 100 (big blind)
+    assert game.pot == 155
 
 
 # ... Rest of the tests converted to pytest style ...

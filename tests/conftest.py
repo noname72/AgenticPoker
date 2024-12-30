@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from agents.llm_agent import LLMAgent
 
 
@@ -11,6 +11,13 @@ def setup_logging():
     logging.disable(logging.CRITICAL)
     yield
     logging.disable(logging.NOTSET)
+
+
+@pytest.fixture(autouse=True)
+def mock_openai_key():
+    """Mock OpenAI API key for all tests."""
+    with patch.dict('os.environ', {'OPENAI_API_KEY': 'test-key'}):
+        yield
 
 
 @pytest.fixture

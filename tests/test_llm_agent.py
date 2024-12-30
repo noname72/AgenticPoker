@@ -92,9 +92,9 @@ def test_plan_strategy(mock_llm, agent):
     """Test strategic planning functionality."""
     # Format the response exactly as expected by eval()
     mock_llm.return_value = (
-        '{"approach": "aggressive", '
+        '{"approach": "balanced", '
         '"reasoning": "test reasoning", '
-        '"bet_sizing": "large", '
+        '"bet_sizing": "medium", '
         '"bluff_threshold": 0.0, '
         '"fold_threshold": 0.0}'
     )
@@ -103,8 +103,8 @@ def test_plan_strategy(mock_llm, agent):
     plan = agent.strategy_planner.plan_strategy(game_state, agent.chips)
 
     assert isinstance(plan, dict)
-    assert plan["approach"] == "aggressive"
-    assert plan["bet_sizing"] == "large"
+    assert plan["approach"] == "balanced"
+    assert plan["bet_sizing"] == "medium"
 
 
 def test_reset_state(agent):
