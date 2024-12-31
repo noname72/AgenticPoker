@@ -66,12 +66,11 @@ class ChromaMemoryStore(MemoryStore):
     def __init__(self, collection_name: str):
         # Ensure results directory exists
         results_dir = os.path.join(os.getcwd(), "results")
-        persist_dir = os.path.join(results_dir, "chroma_db")
-        os.makedirs(persist_dir, exist_ok=True)
+        self.persist_dir = os.path.join(results_dir, "chroma_db")
+        os.makedirs(self.persist_dir, exist_ok=True)
 
         # Sanitize collection name and ensure uniqueness
         self.safe_name = "".join(c for c in collection_name if c.isalnum() or c in "_-")
-        self.persist_dir = persist_dir
         self.id_counter = 0
 
         # Initialize client with retries
@@ -82,40 +81,50 @@ class ChromaMemoryStore(MemoryStore):
                 break
             except Exception as e:
                 if attempt == max_retries - 1:
-                    logger.error(
-                        f"Failed to initialize ChromaDB after {max_retries} attempts: {str(e)}"
-                    )
+                    logger.error(f"Failed to initialize ChromaDB after {max_retries} attempts: {str(e)}")
                     raise
                 time.sleep(1)  # Wait before retry
 
     def _initialize_client(self):
         """Initialize or reinitialize the ChromaDB client and collection."""
+        settings = Settings(
+            anonymized_telemetry=False,
+            allow_reset=True,
+            is_persistent=True
+        )
+
         try:
+            # Create persistent client
             self.client = chromadb.PersistentClient(
                 path=self.persist_dir,
-                settings=Settings(
-                    anonymized_telemetry=False, allow_reset=True, is_persistent=True
-                ),
+                settings=settings
             )
 
-            # Get or create collection
             try:
+                # Try to get existing collection
                 self.collection = self.client.get_collection(name=self.safe_name)
                 logger.info(f"Using existing collection: {self.safe_name}")
+                
+                # Get the current highest ID to continue counting
+                try:
+                    results = self.collection.get()
+                    if results and results["ids"]:
+                        max_id = max(int(id.split('_')[1]) for id in results["ids"])
+                        self.id_counter = max_id
+                except Exception as e:
+                    logger.warning(f"Could not determine max ID: {e}")
+                
             except InvalidCollectionException:
+                # Create new collection if it doesn't exist
                 self.collection = self.client.create_collection(
-                    name=self.safe_name, metadata={"hnsw:space": "cosine"}
+                    name=self.safe_name,
+                    metadata={"hnsw:space": "cosine"}
                 )
                 logger.info(f"Created new collection: {self.safe_name}")
 
         except Exception as e:
             logger.error(f"Failed to initialize collection {self.safe_name}: {str(e)}")
-            # Create in-memory fallback
-            self.client = chromadb.Client(Settings(anonymized_telemetry=False))
-            self.collection = self.client.create_collection(
-                name=self.safe_name, metadata={"hnsw:space": "cosine"}
-            )
-            logger.warning("Falling back to in-memory storage")
+            raise
 
     def add_memory(self, text: str, metadata: Dict[str, Any]) -> None:
         """Store a new memory in Chroma.
@@ -210,14 +219,16 @@ class ChromaMemoryStore(MemoryStore):
     def close(self) -> None:
         """Close the Chroma client connection and cleanup resources."""
         try:
-            if hasattr(self, "client") and self.client:
+            if hasattr(self, "collection"):
+                self.collection = None
+            
+            if hasattr(self, "client"):
                 try:
-                    self.client.reset()
+                    # Don't reset the client on close to maintain persistence
+                    self.client = None
                 except Exception as e:
                     if "Python is likely shutting down" not in str(e):
-                        logger.warning(f"Error resetting client: {str(e)}")
-                finally:
-                    self.client = None
+                        logger.warning(f"Error closing client: {str(e)}")
 
             logger.info(f"Closed ChromaDB connection for {self.safe_name}")
         except Exception as e:
