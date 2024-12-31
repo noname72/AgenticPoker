@@ -7,6 +7,7 @@ from .deck import Deck
 from .hand import Hand
 from .player import Player
 from .types import SidePot, SidePotView
+from .pot_manager import PotManager
 
 
 @dataclass
@@ -130,7 +131,8 @@ class AgenticPoker:
             if any(p.chips < 0 for p in self.players):
                 raise ValueError("Players cannot have negative chips")
 
-        self.pot = 0
+        self.pot_manager = PotManager()
+
         self.small_blind = self.config.small_blind
         self.big_blind = self.config.big_blind
         self.dealer_index = 0
@@ -164,7 +166,7 @@ class AgenticPoker:
             for player in self.players:
                 actual_ante = player.place_bet(self.ante)
                 posted_amounts[player] += actual_ante
-                self.pot += actual_ante
+                self.pot_manager.add_to_pot(actual_ante)
 
         # Collect blinds
         sb_index = (self.dealer_index + 1) % len(self.players)
@@ -174,13 +176,13 @@ class AgenticPoker:
         sb_player = self.players[sb_index]
         actual_sb = sb_player.place_bet(self.small_blind)
         posted_amounts[sb_player] += actual_sb
-        self.pot += actual_sb
+        self.pot_manager.add_to_pot(actual_sb)
 
         # Big blind
         bb_player = self.players[bb_index]
         actual_bb = bb_player.place_bet(self.big_blind)
         posted_amounts[bb_player] += actual_bb
-        self.pot += actual_bb
+        self.pot_manager.add_to_pot(actual_bb)
 
     def _log_blind_post(self, blind_type: str, player: "Player", amount: int) -> None:
         """Helper to log blind postings consistently."""
@@ -192,99 +194,12 @@ class AgenticPoker:
         else:
             logging.info(f"{player.name} posts {blind_type} blind of ${amount}{status}")
 
-    def _calculate_side_pots(
-        self, posted_amounts: Dict["Player", int]
-    ) -> List[SidePot]:
-        """
-        Calculate side pots based on posted amounts.
-
-        Args:
-            posted_amounts: Dictionary mapping players to their total posted amounts
-
-        Returns:
-            List of SidePot objects containing pot amounts and eligible players
-        """
-        side_pots = []
-        sorted_players = sorted(posted_amounts.items(), key=lambda x: x[1])
-
-        current_amount = 0
-        for player, amount in sorted_players:
-            if amount > current_amount:
-                eligible = [p for p, a in posted_amounts.items() if a >= amount]
-                pot_size = (amount - current_amount) * len(eligible)
-                if pot_size > 0:
-                    side_pots.append(SidePot(pot_size, eligible))
-                current_amount = amount
-
-        return side_pots
-
-    def _get_side_pots_view(self, side_pots: List[SidePot]) -> List[SidePotView]:
-        """
-        Convert side pots to a view-friendly format for logging/display.
-
-        Args:
-            side_pots: List of SidePot objects
-
-        Returns:
-            List of SidePotView dictionaries with player names instead of objects
-        """
-        return [
-            {
-                "amount": pot.amount,
-                "eligible_players": [p.name for p in pot.eligible_players],
-            }
-            for pot in side_pots
-        ]
-
-    def _log_pot_summary(self, posted_amounts: Dict["Player", int]) -> None:
-        """Log clear summary of pot state including any side pots."""
-        ante_total = sum(min(self.ante, p.chips) for p in self.players if p.chips > 0)
-
-        logging.info(f"\nStarting pot: ${self.pot}")
-        if ante_total > 0:
-            logging.info(f"  Includes ${ante_total} in antes")
-
-        if self.side_pots:
-            logging.info("\nSide pots:")
-            side_pots_view = self._get_side_pots_view(self.side_pots)
-            for i, pot in enumerate(side_pots_view, 1):
-                players_str = ", ".join(pot["eligible_players"])
-                logging.info(f"  Pot {i}: ${pot['amount']} (Eligible: {players_str})")
-
     def handle_side_pots(self) -> List[SidePot]:
         """Calculate side pots when players are all-in."""
-        # Get all players who contributed to the pot
-        active_players = [p for p in self.players if p.bet > 0]
-        if not active_players:
-            return []
-
-        # Sort players by their bet amount
-        sorted_players = sorted(active_players, key=lambda p: p.bet)
-        side_pots = []
-
-        # Track remaining players and their bets
-        remaining_players = sorted_players.copy()
-        remaining_bets = {p: p.bet for p in remaining_players}
-
-        prev_bet = 0
-        for i, player in enumerate(sorted_players):
-            current_bet = player.bet
-            if current_bet > prev_bet:
-                # Calculate contribution for this level
-                contribution = current_bet - prev_bet
-                pot_amount = contribution * len(remaining_players)
-
-                if pot_amount > 0:
-                    # Create side pot with all players who could match this bet
-                    eligible_players = [
-                        p for p in remaining_players if p.bet >= current_bet
-                    ]
-                    side_pots.append(SidePot(pot_amount, eligible_players))
-
-            # Update tracking
-            prev_bet = current_bet
-            remaining_players.remove(player)
-
+        # Example usage:
+        posted_amounts = {p: p.bet for p in self.players if p.bet > 0}
+        side_pots = self.pot_manager.calculate_side_pots(posted_amounts)
+        self.pot_manager.log_side_pots(logging)
         return side_pots
 
     def showdown(self) -> None:
@@ -296,8 +211,8 @@ class AgenticPoker:
         # Single player remaining (everyone else folded)
         if len(active_players) == 1:
             winner = active_players[0]
-            winner.chips += self.pot
-            logging.info(f"\n{winner.name} wins ${self.pot} uncontested!")
+            winner.chips += self.pot_manager.pot
+            logging.info(f"\n{winner.name} wins ${self.pot_manager.pot} uncontested!")
             self._log_chip_summary()
             return
 
@@ -306,8 +221,8 @@ class AgenticPoker:
         winners = [p for p in active_players if p.hand == best_hand.hand]
 
         # Split pot among winners
-        pot_share = self.pot // len(winners)
-        remainder = self.pot % len(winners)
+        pot_share = self.pot_manager.pot // len(winners)
+        remainder = self.pot_manager.pot % len(winners)
 
         # Distribute pot
         for i, winner in enumerate(winners):
@@ -316,8 +231,7 @@ class AgenticPoker:
             logging.info(f"{winner.name} wins ${share} with {winner.hand.evaluate()}")
 
         # Reset pot after distribution
-        self.pot = 0
-        self.side_pots = None
+        self.pot_manager.reset_pot()
 
         # Log final chip movement summary
         self._log_chip_summary()
@@ -391,9 +305,9 @@ class AgenticPoker:
         active_players = [p for p in self.players if not p.folded]
         if len(active_players) == 1:
             winner = active_players[0]
-            winner.chips += self.pot
+            winner.chips += self.pot_manager.pot
             logging.info(
-                f"\n{winner.name} wins ${self.pot} (all others folded {phase})"
+                f"\n{winner.name} wins ${self.pot_manager.pot} (all others folded {phase})"
             )
             self._log_chip_movements(initial_chips)
             self._log_chip_summary()
@@ -403,7 +317,7 @@ class AgenticPoker:
     def _create_game_state(self) -> dict:
         """Create a dictionary containing the current game state."""
         return {
-            "pot": self.pot,
+            "pot": self.pot_manager.pot,
             "players": [
                 {
                     "name": p.name,
@@ -471,7 +385,7 @@ class AgenticPoker:
 
                     if additional_bet > 0:
                         actual_bet = player.place_bet(additional_bet)
-                        self.pot += actual_bet
+                        self.pot_manager.add_to_pot(actual_bet)
 
                         if player.chips == 0:  # Player went all-in
                             all_in_players.append(player)
@@ -512,7 +426,7 @@ class AgenticPoker:
         game_state = self._create_game_state()
 
         # Call betting round with all players
-        result = betting_round(active_players, self.pot, game_state)
+        result = betting_round(active_players, self.pot_manager.pot, game_state)
 
         # Handle return value which could be just pot or (pot, side_pots)
         if isinstance(result, tuple):
@@ -521,7 +435,7 @@ class AgenticPoker:
         else:
             new_pot = result
 
-        self.pot = new_pot  # Update pot with result
+        self.pot_manager.pot = new_pot  # Update pot with result
 
         # Call showdown to determine winner(s)
         self.showdown()
@@ -558,8 +472,7 @@ class AgenticPoker:
         self.dealer_index = (self.dealer_index + 1) % len(self.players)
 
         # Reset round state
-        self.pot = 0
-        self.side_pots = None
+        self.pot_manager.reset_pot()
         self.round_starting_stacks = {p: p.chips for p in self.players}
 
         # Reset player states
@@ -655,6 +568,9 @@ class AgenticPoker:
             if hasattr(player, "hand"):
                 player.hand = None
 
+        # Reset pot in pot_manager as well
+        self.pot_manager.reset_pot()
+
     def _log_side_pots(self) -> None:
         """
         Log the current side pot structure.
@@ -666,7 +582,7 @@ class AgenticPoker:
             return
 
         logging.info("\nSide pots:")
-        side_pots_view = self._get_side_pots_view(self.side_pots)
+        side_pots_view = self.pot_manager.get_side_pots_view()
         for i, pot in enumerate(side_pots_view, 1):
             players_str = ", ".join(pot["eligible_players"])
             logging.info(f"  Pot {i}: ${pot['amount']} (Eligible: {players_str})")
@@ -776,7 +692,7 @@ class AgenticPoker:
         """
         # Create game state for AI decision
         game_state = {
-            "pot": self.pot,
+            "pot": self.pot_manager.pot,
             "current_bet": current_bet,
             "players": [
                 {
