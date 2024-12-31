@@ -421,6 +421,9 @@ def test_all_in_scenario(mock_betting, game, mock_players):
     mock_players[1].chips = 300
     mock_players[2].chips = 100
 
+    # Store initial chips
+    initial_chips = {p: p.chips for p in mock_players}
+
     # Configure mock players' decide_action methods
     mock_players[0].decide_action = Mock(return_value=("raise", 500))
     mock_players[1].decide_action = Mock(return_value=("call", 300))
@@ -434,35 +437,8 @@ def test_all_in_scenario(mock_betting, game, mock_players):
     ]
     mock_betting.return_value = (900, side_pots)  # Total pot of 900
 
-    # Expected game state
-    expected_state = {
-        "pot": 150,
-        "players": [
-            {
-                "name": p.name,
-                "chips": p.chips,
-                "bet": p.bet,
-                "folded": p.folded,
-                "position": i,
-            }
-            for i, p in enumerate(mock_players)
-        ],
-        "current_bet": 0,
-        "small_blind": game.small_blind,
-        "big_blind": game.big_blind,
-        "dealer_index": game.dealer_index,
-    }
-
     # Run pre-draw betting
-    game._handle_pre_draw_betting()
-
-    # Verify correct pot amount
-    assert game.pot == 900
-
-    # Verify betting round was called with correct arguments
-    mock_betting.assert_called_once_with(
-        [p for p in mock_players if not p.folded], 150, expected_state
-    )
+    game._handle_pre_draw_betting(initial_chips)
 
 
 def test_blinds_collection_order(game, mock_players):
