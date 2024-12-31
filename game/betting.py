@@ -120,3 +120,28 @@ def calculate_side_pots(
             logging.debug(f"  Pot {i+1}: ${pot.amount} - Eligible: {[p.name for p in pot.eligible_players]}")
 
     return side_pots
+
+
+def log_action(player: Player, action: str, amount: int = 0, current_bet: int = 0, pot: int = 0) -> None:
+    """Log player actions with clear all-in indicators."""
+    action_str = f"{player.name}'s turn:"
+    if hasattr(player, "hand"):
+        action_str += f"\n  Hand: {player.hand}"
+    
+    action_str += f"\n  Current bet to call: ${current_bet}"
+    action_str += f"\n  Player chips: ${player.chips}"
+    action_str += f"\n  Player current bet: ${player.bet}"
+    action_str += f"\n  Current pot: ${pot}"
+    
+    if action == "fold":
+        action_str += f"\n{player.name} folds"
+    elif action == "call":
+        all_in = amount >= player.chips
+        status = " (all in)" if all_in else ""
+        action_str += f"\n{player.name} calls ${amount}{status}"
+    elif action == "raise":
+        all_in = amount >= player.chips
+        status = " (all in)" if all_in else ""
+        action_str += f"\n{player.name} raises to ${amount}{status}"
+        
+    logging.info(action_str)

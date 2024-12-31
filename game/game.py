@@ -249,33 +249,29 @@ class AgenticPoker:
                 logging.info(f"  Pot {i}: ${pot['amount']} (Eligible: {players_str})")
 
     def handle_side_pots(self) -> List[SidePot]:
-        """
-        Calculate and manage side pots for all-in situations.
-
-        Handles cases where players are all-in with different amounts,
-        ensuring fair pot distribution.
-
-        Returns:
-            List[SidePot]: Side pots with their amounts and eligible players
-        """
+        """Calculate side pots when players are all-in."""
         # Get only players who contributed to the pot
         active_players = [p for p in self.players if p.bet > 0]
         if not active_players:
-            return [SidePot(self.pot, self.players)]
+            return []
 
-        # Calculate posted amounts for each player
-        posted_amounts = {player: player.bet for player in active_players}
-        side_pots = self._calculate_side_pots(posted_amounts)
-
-        # Handle any remaining chips from antes or odd amounts
-        total_allocated = sum(pot.amount for pot in side_pots)
-        remainder = self.pot - total_allocated
-        if remainder > 0 and side_pots:
-            # Add remainder to first pot
-            first_pot = side_pots[0]
-            side_pots[0] = SidePot(
-                first_pot.amount + remainder, first_pot.eligible_players
-            )
+        # Sort players by their total bet amount
+        sorted_players = sorted(active_players, key=lambda p: p.bet)
+        side_pots = []
+        
+        prev_bet = 0
+        for i, player in enumerate(sorted_players):
+            current_bet = player.bet
+            if current_bet > prev_bet:
+                # Calculate pot amount and eligible players
+                pot_contribution = current_bet - prev_bet
+                eligible_players = sorted_players[i:]
+                pot_amount = pot_contribution * len(eligible_players)
+                
+                if pot_amount > 0:
+                    side_pots.append(SidePot(pot_amount, eligible_players))
+                    
+            prev_bet = current_bet
 
         return side_pots
 
@@ -412,127 +408,56 @@ class AgenticPoker:
             "dealer_index": self.dealer_index,
         }
 
-    def _handle_pre_draw_betting(self) -> Tuple[bool, Dict[Player, int]]:
+    def _handle_pre_draw_betting(self, initial_chips: Dict[Player, int]) -> bool:
         """Handle the pre-draw betting round."""
-        logging.info("\n--- Pre-Draw Betting ---")
-        initial_chips = {p: p.chips for p in self.players}
+        logging.info("\n--- Pre-Draw Betting ---\n")
         
-        # Get active players and their positions relative to dealer
-        active_players = [p for p in self.players if not p.folded]
-        
-        # Track number of raises this round
-        raise_count = 0
+        # Track all-in players and side pots
+        all_in_players = []
         current_bet = self.big_blind
-        last_raiser = None
         
-        # Reset all player bets at the start of the round
-        for player in self.players:
-            player.bet = 0
-        
-        # Start with player after big blind
-        start_idx = (self.dealer_index + 3) % len(self.players)
-        current_idx = start_idx
-        
-        # Create game state dictionary
-        def create_game_state():
-            return {
-                "pot": self.pot,
-                "current_bet": current_bet,
-                "players": [
-                    {
-                        "name": p.name,
-                        "chips": p.chips,
-                        "bet": p.bet,
-                        "folded": p.folded,
-                        "position": i,
-                    }
-                    for i, p in enumerate(self.players)
-                ],
-                "small_blind": self.small_blind,
-                "big_blind": self.big_blind,
-                "dealer_index": self.dealer_index,
-                "raise_count": raise_count,
-                "max_raises": self.config.max_raises_per_round
-            }
-        
-        # Continue until betting is complete
-        while True:
-            current_player = self.players[current_idx]
-            
-            # Skip folded players
-            if current_player.folded:
-                current_idx = (current_idx + 1) % len(self.players)
+        # Get players still in hand, in order after big blind
+        bb_pos = (self.dealer_index + 2) % len(self.players)
+        active_players = [
+            self.players[(bb_pos + i) % len(self.players)]
+            for i in range(len(self.players))
+            if not self.players[(bb_pos + i) % len(self.players)].folded
+        ]
+
+        # Each player gets one action
+        for player in active_players:
+            if player.chips == 0:  # Skip players who are already all-in
                 continue
             
-            # Skip players who are all-in
-            if current_player.chips == 0:
-                current_idx = (current_idx + 1) % len(self.players)
+            # Get and validate player action
+            action = self._get_player_action(player, current_bet)
+            
+            # Handle the action
+            if action[0] == "fold":
+                player.folded = True
                 continue
             
-            # Check if betting is complete
-            if (current_player == last_raiser or 
-                len([p for p in active_players if not p.folded and p.chips > 0]) <= 1 or
-                all(p.chips == 0 or p.bet == current_bet for p in active_players if not p.folded)):
-                break
-            
-            # Get player action with proper game state
-            game_state = create_game_state()
-            action = current_player.decide_action(game_state, raise_count >= self.config.max_raises_per_round)
-            
-            # Handle action
-            if action.startswith("raise"):
-                # If no amount specified, raise by minimum (current bet)
-                if len(action.split()) > 1:
-                    raise_amount = int(action.split()[1])
-                else:
-                    raise_amount = current_bet * 2  # Standard min-raise
-                    
-                # Validate raise amount
-                max_raise = current_bet * self.config.max_raise_multiplier
-                if raise_amount > max_raise:
-                    raise_amount = max_raise
-                if raise_amount <= current_bet:
-                    raise_amount = current_bet * 2
-                
-                # Calculate the additional amount needed to raise
-                to_call = current_bet - current_player.bet
-                raise_delta = raise_amount - current_bet
-                total_bet = to_call + raise_delta
-                
-                actual_bet = current_player.place_bet(total_bet)
-                current_bet = actual_bet + current_player.bet
-                last_raiser = current_player
-                raise_count += 1
+            elif action[0] in ("call", "raise"):
+                # Calculate actual bet amount (limited by player's chips)
+                bet_amount = min(action[1], player.chips)
+                actual_bet = player.place_bet(bet_amount)
                 self.pot += actual_bet
                 
-            elif action == "call":
-                call_amount = current_bet - current_player.bet
-                if call_amount < 0:
-                    logging.warning(f"Invalid call amount {call_amount}, skipping action")
-                    current_idx = (current_idx + 1) % len(self.players)
-                    continue
-                actual_bet = current_player.place_bet(call_amount)
-                self.pot += actual_bet
+                if player.chips == 0:  # Player went all-in
+                    all_in_players.append(player)
+                    # Calculate side pots immediately when someone goes all-in
+                    self.side_pots = self.handle_side_pots()
+                    self._log_side_pots()
                 
-            else:  # fold
-                current_player.folded = True
-                active_players.remove(current_player)
-            
-            # Log the action
-            logging.info(f"{current_player.name} {action}")
-            logging.info(f"  Current bet: ${current_bet}")
-            logging.info(f"  Player bet: ${current_player.bet}")
-            logging.info(f"  Chips remaining: ${current_player.chips}")
-            logging.info(f"  Pot: ${self.pot}")
-            
-            # Move to next player
-            current_idx = (current_idx + 1) % len(self.players)
-            
-            # Check if only one player remains
-            if len([p for p in self.players if not p.folded]) == 1:
-                break
-        
-        return True, initial_chips
+                if action[0] == "raise":
+                    current_bet = bet_amount
+                    # Re-enable action for players who still have chips
+                    for p in active_players:
+                        if p != player and p.chips > 0 and not p.folded:
+                            p.has_acted = False
+
+        # Return False if everyone folded except one player
+        return len([p for p in self.players if not p.folded]) > 1
 
     def _handle_post_draw_betting(self, initial_chips: Dict[Player, int]) -> None:
         """Handle the post-draw betting round and winner determination."""
@@ -813,10 +738,13 @@ class AgenticPoker:
             for player in self.players:
                 logging.info(f"  {player.name}: ${player.chips}")
 
+            # Store initial chips before starting round
+            initial_chips = {p: p.chips for p in self.players}
+            
             self.start_round()
 
-            # Handle betting rounds
-            should_continue, initial_chips = self._handle_pre_draw_betting()
+            # Handle betting rounds with initial chips
+            should_continue = self._handle_pre_draw_betting(initial_chips)
             if not should_continue:
                 self.round_count += 1
                 self._reset_round()
@@ -882,3 +810,62 @@ class AgenticPoker:
             logging.info(f"  {player.name}: ${player.chips}")
             
         # ... rest of play_round implementation ...
+
+    def _get_player_action(self, player: Player, current_bet: int) -> Tuple[str, int]:
+        """
+        Get and validate a player's action.
+        
+        Args:
+            player: The player whose action to get
+            current_bet: Current bet amount to call
+            
+        Returns:
+            Tuple[str, int]: Action type and amount tuple (e.g., ("raise", 200))
+        """
+        # Create game state for AI decision
+        game_state = {
+            "pot": self.pot,
+            "current_bet": current_bet,
+            "players": [
+                {
+                    "name": p.name,
+                    "chips": p.chips,
+                    "bet": p.bet,
+                    "folded": p.folded,
+                    "position": i,
+                }
+                for i, p in enumerate(self.players)
+            ],
+        }
+        
+        # Get player's action
+        if hasattr(player, "decide_action"):
+            action = player.decide_action(game_state)
+            
+            # Parse action string
+            if isinstance(action, tuple):
+                action_type, amount = action
+            elif action.startswith("raise"):
+                try:
+                    action_type = "raise"
+                    amount = int(action.split()[1])
+                except (IndexError, ValueError):
+                    action_type = "call"
+                    amount = current_bet
+            else:
+                action_type = action
+                amount = current_bet if action == "call" else 0
+                
+            # Validate raise amount
+            if action_type == "raise":
+                min_raise = current_bet * 2
+                max_raise = current_bet * self.config.max_raise_multiplier
+                if amount < min_raise:
+                    amount = min_raise
+                elif amount > max_raise:
+                    amount = max_raise
+                    
+            return action_type, amount
+        else:
+            # Default to call for non-AI players
+            return "call", current_bet
