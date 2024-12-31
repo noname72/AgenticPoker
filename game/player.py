@@ -45,8 +45,19 @@ class Player:
     def place_bet(self, amount: int) -> int:
         """
         Place a bet, ensuring it doesn't exceed available chips.
-        Returns the actual amount bet.
+
+        Args:
+            amount (int): Amount to bet
+
+        Returns:
+            int: Actual amount bet (may be less than requested if limited by chips)
+
+        Raises:
+            ValueError: If amount is negative
         """
+        if amount < 0:
+            raise ValueError("Cannot place negative bet")
+
         amount = min(amount, self.chips)  # Can't bet more than you have
         self.chips -= amount
         self.bet += amount

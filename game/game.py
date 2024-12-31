@@ -476,89 +476,30 @@ class AgenticPoker:
             logging.info(f"{i}. {player.name}: ${player.chips}{status}")
 
     def _initialize_round(self) -> None:
-        """Initialize the basic round state."""
-        self.round_number += 1
-        self.pot = 0
-        self.dealer_index = self.dealer_index % len(self.players)
-        self.round_starting_stacks = {player: player.chips for player in self.players}
+        """Initialize the state for a new round."""
+        # Rotate dealer button first
+        self.dealer_index = (self.dealer_index + 1) % len(self.players)
 
-    def _deal_cards(self) -> None:
-        """Reset the deck and deal new hands to all players."""
-        self.deck = Deck()
-        self.deck.shuffle()
+        # Reset round state
+        self.pot = 0
+        self.side_pots = None
+        self.round_starting_stacks = {p: p.chips for p in self.players}
+
+        # Reset player states
         for player in self.players:
             player.bet = 0
             player.folded = False
-            player.hand = Hand()
-            player.hand.add_cards(self.deck.deal(5))
 
-    def _log_round_info(self) -> None:
-        """
-        Log the current round state including stacks and positions.
-
-        Side Effects:
-            - Logs round number
-            - Logs each player's stack and short stack status
-            - Logs dealer and blind positions
-        """
-        logging.info(f"\n{'='*50}")
-        logging.info(f"Round {self.round_number}")
-        logging.info(f"{'='*50}")
-
-        logging.info("\nStarting stacks (before antes/blinds):")
-        for player in self.players:
-            chips_str = f"${self.round_starting_stacks[player]}"
-            if self.round_starting_stacks[player] < self.big_blind:
-                chips_str += " (short stack)"
-            logging.info(f"  {player.name}: {chips_str}")
-
-        sb_index = (self.dealer_index + 1) % len(self.players)
-        bb_index = (self.dealer_index + 2) % len(self.players)
-
-        logging.info(f"\nDealer: {self.players[self.dealer_index].name}")
-        logging.info(f"Small Blind: {self.players[sb_index].name}")
-        logging.info(f"Big Blind: {self.players[bb_index].name}")
-        logging.info("\n")
-
-    def start_game(self) -> None:
-        """Execute the main game loop until a winner is determined or max rounds reached."""
-        eliminated_players = []
-
-        while len(self.players) > 1:
-            self._handle_eliminated_players(eliminated_players)
-
-            # Check end conditions
-            if len([p for p in self.players if p.chips > 0]) <= 1:
-                break
-            if self.max_rounds and self.round_count >= self.max_rounds:
-                logging.info(f"\nGame ended after {self.max_rounds} rounds!")
-                break
-
-            # Start new round
-            self.players = [p for p in self.players if p.chips > 0]
-            self.start_round()
-            self.blinds_and_antes()
-
-            # Handle betting rounds
-            should_continue, initial_chips = self._handle_pre_draw_betting()
-            if not should_continue:
-                self.round_count += 1
-                self._reset_round()
-                continue
-
-            self.draw_phase()
-            self._handle_post_draw_betting(initial_chips)
-
-            self.round_count += 1
-            self._reset_round()
-
-        self._log_game_summary(eliminated_players)
+        # Deal cards
+        self._deal_cards()
 
     def start_round(self) -> None:
-        """Start a new round of poker by initializing game state and dealing cards."""
+        """Start a new round of poker."""
         self._initialize_round()
         self._log_round_info()
-        self._deal_cards()
+
+        # Collect blinds and antes after initialization
+        self.blinds_and_antes()
 
         # Handle AI player pre-round messages
         for player in self.players:
@@ -627,16 +568,13 @@ class AgenticPoker:
             )
 
     def _reset_round(self) -> None:
-        """
-        Reset game state between rounds.
-
-        Side Effects:
-            - Resets pot to 0
-            - Resets player bets and folded status
-        """
-        self.pot = 0
+        """Reset the state after a round is complete."""
+        # Clear hands and bets
         for player in self.players:
-            player.reset_for_new_round()
+            player.bet = 0
+            player.folded = False
+            if hasattr(player, "hand"):
+                player.hand = None
 
     def _log_side_pots(self) -> None:
         """
@@ -653,3 +591,74 @@ class AgenticPoker:
         for i, pot in enumerate(side_pots_view, 1):
             players_str = ", ".join(pot["eligible_players"])
             logging.info(f"  Pot {i}: ${pot['amount']} (Eligible: {players_str})")
+
+    def start_game(self) -> None:
+        """Execute the main game loop until a winner is determined or max rounds reached."""
+        eliminated_players = []
+
+        while len(self.players) > 1:
+            self._handle_eliminated_players(eliminated_players)
+
+            # Check end conditions
+            if len([p for p in self.players if p.chips > 0]) <= 1:
+                break
+            if self.max_rounds and self.round_count >= self.max_rounds:
+                logging.info(f"\nGame ended after {self.max_rounds} rounds!")
+                break
+
+            # Start new round
+            self.players = [p for p in self.players if p.chips > 0]
+            self.start_round()
+
+            # Handle betting rounds
+            should_continue, initial_chips = self._handle_pre_draw_betting()
+            if not should_continue:
+                self.round_count += 1
+                self._reset_round()
+                continue
+
+            self.draw_phase()
+            self._handle_post_draw_betting(initial_chips)
+
+            self.round_count += 1
+            self._reset_round()
+
+        self._log_game_summary(eliminated_players)
+
+    def _deal_cards(self) -> None:
+        """Reset the deck and deal new hands to all players."""
+        self.deck = Deck()
+        self.deck.shuffle()
+        for player in self.players:
+            player.bet = 0
+            player.folded = False
+            player.hand = Hand()
+            player.hand.add_cards(self.deck.deal(5))
+
+    def _log_round_info(self) -> None:
+        """
+        Log the current round state including stacks and positions.
+
+        Side Effects:
+            - Logs round number
+            - Logs each player's stack and short stack status
+            - Logs dealer and blind positions
+        """
+        logging.info(f"\n{'='*50}")
+        logging.info(f"Round {self.round_number}")
+        logging.info(f"{'='*50}")
+
+        logging.info("\nStarting stacks (before antes/blinds):")
+        for player in self.players:
+            chips_str = f"${self.round_starting_stacks[player]}"
+            if self.round_starting_stacks[player] < self.big_blind:
+                chips_str += " (short stack)"
+            logging.info(f"  {player.name}: {chips_str}")
+
+        sb_index = (self.dealer_index + 1) % len(self.players)
+        bb_index = (self.dealer_index + 2) % len(self.players)
+
+        logging.info(f"\nDealer: {self.players[self.dealer_index].name}")
+        logging.info(f"Small Blind: {self.players[sb_index].name}")
+        logging.info(f"Big Blind: {self.players[bb_index].name}")
+        logging.info("\n")
