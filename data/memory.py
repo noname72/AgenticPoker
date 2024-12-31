@@ -144,37 +144,50 @@ class ChromaMemoryStore(MemoryStore):
             logger.error(f"Failed to add memory: {str(e)}")
 
     def get_relevant_memories(self, query: str, k: int = 3) -> List[Dict[str, Any]]:
-        """Query Chroma for relevant memories.
-
-        Args:
-            query: The search query text
-            k: Maximum number of memories to return (default: 3)
-
-        Returns:
-            List of dictionaries containing:
-                - text: The memory content
-                - metadata: Associated metadata dictionary
-
-        Note:
-            Returns an empty list if the collection is invalid or query fails.
-        """
+        """Retrieve k most relevant memories for a given query."""
         try:
-            results = self.collection.query(query_texts=[query], n_results=k)
+            # Convert query to string representation
+            if isinstance(query, dict):
+                # Create a more detailed game state string
+                players_info = []
+                for p in query.get('players', []):
+                    players_info.append(
+                        f"{p['name']}(${p['chips']}, bet:${p.get('bet', 0)})"
+                    )
+                
+                query_str = (
+                    f"Game state - "
+                    f"pot: ${query.get('pot', 0)}, "
+                    f"current bet: ${query.get('current_bet', 0)}, "
+                    f"players: [{', '.join(players_info)}]"
+                )
+            else:
+                query_str = str(query)
 
+            # Query the collection
+            results = self.collection.query(
+                query_texts=[query_str],
+                n_results=k
+            )
+
+            # Process results
             memories = []
             if results and results["metadatas"]:
                 for doc, metadata in zip(
                     results["documents"][0], results["metadatas"][0]
                 ):
-                    memories.append({"text": doc, "metadata": metadata})
+                    memories.append({
+                        "text": doc,
+                        "metadata": metadata
+                    })
             return memories
+
         except InvalidCollectionException:
             logger.warning("Collection lost, reinitializing...")
             self._initialize_client()
-            # Return empty list after reinitialization since old memories are lost
             return []
         except Exception as e:
-            logger.error(f"Failed to query memories: {str(e)}")
+            logger.error(f"Memory query failed: {str(e)}")
             return []
 
     def clear(self) -> None:

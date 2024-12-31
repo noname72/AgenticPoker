@@ -321,47 +321,42 @@ class LLMAgent(BaseAgent):
         )
 
     def decide_action(
-        self, game_state: str, opponent_message: Optional[str] = None
+        self, game_state: Dict[str, Any], opponent_message: Optional[str] = None
     ) -> str:
-        """Uses strategy-aware prompting to make decisions."""
+        """Make a decision based on current game state and strategy."""
         try:
-            # Use strategy planner if enabled
+            # Format game state for decision making
+            formatted_state = self._format_game_state(game_state)
+            
             if self.use_planning:
-                self.logger.info(f"[{self.name}] Using strategy planner for decision")
-                # Get plan and execute action
-                plan = self.strategy_planner.plan_strategy(game_state, self.chips)
-                action = self.strategy_planner.execute_action(game_state)
-                self.logger.info(
-                    f"[{self.name}] Strategy plan: {plan['approach']} -> Action: {action}"
-                )
-                return action
-
-            self.logger.info(f"[{self.name}] Using basic decision making")
-            # Fallback to basic decision making if planning disabled
-            relevant_memories = self.memory_store.get_relevant_memories(
-                query=game_state,
-                k=2,
-            )
-
-            # Format memories for prompt
-            memory_context = ""
-            if relevant_memories:
-                memory_context = "\nRecent relevant experiences:\n" + "\n".join(
-                    [f"- {mem['text']}" for mem in relevant_memories]
-                )
-
-            prompt = self._get_decision_prompt(game_state + memory_context)
-            response = self._query_llm(prompt)
-
-            if "DECISION:" not in response:
-                raise ValueError("No decision found in response")
-
-            action = response.split("DECISION:")[1].strip().split()[0]
-            return self._normalize_action(action)
-
+                self.logger.info("[%s] Using strategy planner for decision", self.name)
+                return self._get_strategic_action(formatted_state)
+            else:
+                self.logger.info("[%s] Using basic decision making", self.name)
+                return self._get_basic_action(formatted_state)
+                
         except Exception as e:
             self.logger.error(f"Decision error: {str(e)}")
-            return "call"  # Safe fallback
+            return "fold"  # Safe default action
+
+    def _format_game_state(self, game_state: Dict[str, Any]) -> str:
+        """Format game state dictionary into a string representation."""
+        try:
+            players_info = []
+            for p in game_state.get('players', []):
+                players_info.append(
+                    f"{p['name']}(${p['chips']}, bet:${p.get('bet', 0)})"
+                )
+            
+            return (
+                f"Game state - "
+                f"pot: ${game_state.get('pot', 0)}, "
+                f"current bet: ${game_state.get('current_bet', 0)}, "
+                f"players: [{', '.join(players_info)}]"
+            )
+        except Exception as e:
+            self.logger.error(f"Error formatting game state: {str(e)}")
+            return str(game_state)  # Fallback to basic string conversion
 
     def _extract_bet_amount(self, game_state: str) -> Optional[int]:
         """Extract current bet amount from game state."""
@@ -1483,3 +1478,114 @@ class LLMAgent(BaseAgent):
         except Exception as e:
             logger.error(f"Error parsing discard positions: {e}")
             return []
+
+    def _get_basic_action(self, game_state: str) -> str:
+        """Make a basic decision without complex planning."""
+        try:
+            # Get relevant memories for context
+            memories = self.memory_store.get_relevant_memories(game_state, k=2)
+            
+            # Format prompt with game state and memories
+            prompt = self._format_decision_prompt(game_state, memories)
+            
+            # Query LLM for decision
+            response = self._query_llm(prompt)
+            
+            # Parse and validate response
+            action = self._parse_action(response)
+            
+            # Store decision in memory
+            self._store_decision_memory(game_state, action)
+            
+            return action
+            
+        except Exception as e:
+            self.logger.error(f"Basic decision error: {str(e)}")
+            return "fold"  # Safe default
+
+    def _get_strategic_action(self, game_state: str) -> str:
+        """Get action using strategic planning."""
+        try:
+            # Get or create strategic plan
+            plan = self.strategy_planner.plan_strategy(game_state, self.chips)
+            
+            # Execute plan to get concrete action
+            action = self.strategy_planner.execute_action(game_state)
+            
+            self.logger.info(
+                f"[{self.name}] Strategy plan: {plan['approach']} -> Action: {action}"
+            )
+            return action
+            
+        except Exception as e:
+            self.logger.error(f"Strategic action error: {str(e)}")
+            return "call"  # Safe default
+
+    def _format_decision_prompt(self, game_state: str, memories: List[Dict[str, Any]]) -> str:
+        """Format prompt for basic decision making."""
+        # Format memories for context
+        memory_context = ""
+        if memories:
+            memory_context = "\nRecent relevant experiences:\n" + "\n".join(
+                [f"- {mem['text']}" for mem in memories]
+            )
+
+        # Get opponent patterns if modeling is enabled
+        opponent_context = ""
+        if self.use_opponent_modeling and hasattr(self, "opponent_models"):
+            patterns = []
+            for opp, model in self.opponent_models.items():
+                if "style" in model:
+                    patterns.append(f"{opp}: {model['style']}")
+            if patterns:
+                opponent_context = "\nOpponent patterns:\n" + "\n".join(patterns)
+
+        return f"""You are a {self.strategy_style} poker player.
+Current game state:
+{game_state}
+{memory_context}
+{opponent_context}
+
+Decide your action (fold/call/raise) based on:
+1. Your strategy style ({self.strategy_style})
+2. Current game state
+3. Historical context
+4. Opponent patterns
+
+Respond with DECISION: followed by your action.
+Example: "DECISION: call"
+"""
+
+    def _store_decision_memory(self, game_state: str, action: str) -> None:
+        """Store decision in memory for future reference."""
+        self.memory_store.add_memory(
+            text=f"Made decision to {action} in state: {game_state}",
+            metadata={
+                "type": "decision",
+                "action": action,
+                "timestamp": time.time(),
+                "strategy_style": self.strategy_style
+            }
+        )
+
+    def _parse_action(self, response: str) -> str:
+        """Parse and validate action from LLM response."""
+        try:
+            # Look for DECISION: line
+            if "DECISION:" not in response:
+                self.logger.warning("No DECISION: found in response")
+                return "call"
+            
+            action = response.split("DECISION:")[1].strip().lower()
+            
+            # Validate action
+            valid_actions = ["fold", "call", "raise"]
+            if action not in valid_actions:
+                self.logger.warning(f"Invalid action: {action}")
+                return "call"
+            
+            return action
+            
+        except Exception as e:
+            self.logger.error(f"Error parsing action: {str(e)}")
+            return "call"  # Safe default
