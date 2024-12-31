@@ -538,19 +538,106 @@ class AgenticPoker:
         """Handle the post-draw betting round and winner determination."""
         logging.info("\n--- Post-Draw Betting ---")
 
-        # Create game state for AI decisions
-        game_state = self._create_game_state()
+        # Skip betting if all but one player is all-in
+        active_players_with_chips = [p for p in self.players if not p.folded and p.chips > 0]
+        if len(active_players_with_chips) <= 1:
+            logging.info("Only one player has chips remaining")
+            # Don't return here - continue to showdown
+            # return  <- Remove this line
 
-        # Call betting round and update pot
-        result = betting_round(self.players, self.pot, game_state)
-        if isinstance(result, tuple):
-            new_pot, new_side_pots = result
-            self.pot = new_pot
-            self.side_pots = new_side_pots
-        else:
-            self.pot = result
-            self.side_pots = None
+        # Reset all player bets for the new betting round
+        for player in self.players:
+            player.bet = 0
 
+        # Start with player after dealer
+        current_idx = (self.dealer_index + 1) % len(self.players)
+        current_bet = 0
+        last_raiser = None
+        raise_count = 0
+
+        # Continue until betting is complete
+        while True:
+            current_player = self.players[current_idx]
+            
+            # Skip folded players or those who are all-in
+            if current_player.folded or current_player.chips == 0:
+                current_idx = (current_idx + 1) % len(self.players)
+                continue
+            
+            # Check if betting is complete
+            if (current_player == last_raiser or 
+                len(active_players_with_chips) <= 1 or
+                all(p.chips == 0 or p.bet == current_bet for p in self.players if not p.folded)):
+                break
+
+            # Get player action
+            game_state = {
+                "pot": self.pot,
+                "current_bet": current_bet,
+                "players": [
+                    {
+                        "name": p.name,
+                        "chips": p.chips,
+                        "bet": p.bet,
+                        "folded": p.folded,
+                        "position": i,
+                    }
+                    for i, p in enumerate(self.players)
+                ],
+                "raise_count": raise_count,
+                "max_raises": self.config.max_raises_per_round
+            }
+            
+            action = current_player.decide_action(game_state, raise_count >= self.config.max_raises_per_round)
+
+            # Handle action
+            if action.startswith("raise"):
+                if len(action.split()) > 1:
+                    raise_amount = int(action.split()[1])
+                else:
+                    raise_amount = current_bet * 2  # Standard min-raise
+
+                # Validate raise amount
+                max_raise = current_bet * self.config.max_raise_multiplier
+                if raise_amount > max_raise:
+                    raise_amount = max_raise
+                if raise_amount <= current_bet:
+                    raise_amount = current_bet * 2
+
+                # Calculate and place bet
+                to_call = current_bet - current_player.bet
+                raise_delta = raise_amount - current_bet
+                total_bet = to_call + raise_delta
+                
+                actual_bet = current_player.place_bet(total_bet)
+                current_bet = actual_bet + current_player.bet
+                last_raiser = current_player
+                raise_count += 1
+                self.pot += actual_bet
+
+            elif action == "call":
+                call_amount = current_bet - current_player.bet
+                actual_bet = current_player.place_bet(call_amount)
+                self.pot += actual_bet
+
+            else:  # fold
+                current_player.folded = True
+                active_players_with_chips.remove(current_player)
+
+            # Log the action
+            logging.info(f"\n{current_player.name}'s turn:")
+            logging.info(f"  Action: {action}")
+            logging.info(f"  Chips remaining: ${current_player.chips}")
+            logging.info(f"  Current pot: ${self.pot}")
+            
+            # Move to next player
+            current_idx = (current_idx + 1) % len(self.players)
+
+            # Check if only one player remains
+            if len([p for p in self.players if not p.folded]) == 1:
+                break
+
+        # Always proceed to showdown or single winner determination
         if not self._handle_single_remaining_player(initial_chips, "post-draw"):
             self.showdown()
 
