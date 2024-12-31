@@ -1051,4 +1051,15 @@ def test_deck_reshuffling(game, mock_players):
     ), f"Expected {expected_dealt} cards dealt, found {total_dealt}"
 
 
+def test_chip_consistency(game, mock_players):
+    """Test that total chips remain constant throughout the game."""
+    initial_total = sum(p.chips for p in mock_players)
+    
+    # Run several betting rounds
+    game.play_round()
+    
+    current_total = sum(p.chips for p in mock_players) + game.pot
+    assert initial_total == current_total, "Total chips in play changed"
+
+
 # ... Rest of the tests converted to pytest style ...

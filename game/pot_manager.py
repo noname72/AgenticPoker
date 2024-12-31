@@ -1,4 +1,7 @@
 from typing import Dict, List, Optional
+import logging
+
+from exceptions import InvalidGameStateError
 
 from .player import Player
 from .types import SidePot, SidePotView
@@ -53,47 +56,68 @@ class PotManager:
         self.pot = 0
         self.side_pots = None
 
-    def calculate_side_pots(self, posted_amounts: Dict[Player, int]) -> List[SidePot]:
+    def calculate_side_pots(self, active_players: List[Player], all_in_players: List[Player]) -> List[SidePot]:
         """
-        Calculate side pots based on player bets.
-
-        Creates side pots when players have gone all-in with different amounts.
-        Each side pot tracks its amount and eligible players.
-
+        Calculate side pots when one or more players is all-in.
+        
         Args:
-            posted_amounts: Dictionary mapping players to their total bet amounts
-
+            active_players: List of players still in the hand
+            all_in_players: List of players who have gone all-in
+        
         Returns:
-            List of SidePot objects, each containing a pot amount and list of
-            eligible players
-
-        Side Effects:
-            - Updates self.side_pots with the calculated side pots
-
-        Example:
-            >>> posted_amounts = {
-            ...     player_a: 100,  # all-in
-            ...     player_b: 200,  # all-in
-            ...     player_c: 300   # active
-            ... }
-            >>> side_pots = pot_manager.calculate_side_pots(posted_amounts)
-            # Returns: [
-            #   SidePot(300, [player_a, player_b, player_c]),
-            #   SidePot(300, [player_b, player_c]),
-            #   SidePot(300, [player_c])
-            # ]
+            List of SidePot objects, each containing amount and eligible players
+            
+        Raises:
+            InvalidGameStateError: If chip totals don't match before and after calculation
         """
+        # Validate inputs
+        if not active_players:
+            return []
+        
+        # Track total chips in play before calculation
+        total_chips_before = sum(p.chips for p in active_players) + sum(p.bet for p in active_players)
+        
+        # Create dictionary of all bets
+        posted_amounts = {p: p.bet for p in active_players if p.bet > 0}
+        
+        # Calculate side pots
         side_pots = []
-        sorted_players = sorted(posted_amounts.items(), key=lambda x: x[1])
         current_amount = 0
+        
+        # Sort players by their bet amounts
+        sorted_players = sorted(posted_amounts.items(), key=lambda x: x[1])
+        
         for player, amount in sorted_players:
             if amount > current_amount:
-                eligible = [p for p, a in posted_amounts.items() if a >= amount]
+                # Find all players who bet this much or more
+                eligible = [p for p, bet in posted_amounts.items() if bet >= amount]
+                
+                # Calculate pot size for this level
                 pot_size = (amount - current_amount) * len(eligible)
+                
                 if pot_size > 0:
                     side_pots.append(SidePot(pot_size, eligible))
+                
                 current_amount = amount
-        self.side_pots = side_pots
+        
+        # Validate total chips haven't changed
+        total_chips_after = (
+            sum(p.chips for p in active_players) + 
+            sum(pot.amount for pot in side_pots)
+        )
+        
+        if total_chips_before != total_chips_after:
+            raise InvalidGameStateError(
+                f"Chip total mismatch in side pot calculation: {total_chips_before} vs {total_chips_after}"
+            )
+        
+        # Log side pots for debugging
+        if side_pots:
+            logging.info("\nCalculated side pots:")
+            for i, pot in enumerate(side_pots, 1):
+                players_str = ", ".join(p.name for p in pot.eligible_players)
+                logging.info(f"  Pot {i}: ${pot.amount} (Eligible: {players_str})")
+        
         return side_pots
 
     def get_side_pots_view(self) -> List[SidePotView]:
