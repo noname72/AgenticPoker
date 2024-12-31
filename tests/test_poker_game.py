@@ -240,23 +240,43 @@ def test_game_end_conditions(game, mock_players):
         game._log_game_summary.assert_called_once()
 
 
-@patch("game.game.betting_round")
-def test_full_betting_round(mock_betting, game, mock_players):
-    """Test a complete betting round with raises and calls."""
+@patch("game.game.AgenticPoker._get_player_action")
+def test_full_betting_round(mock_get_action, game, mock_players):
+    """Test a complete betting round with multiple players."""
     # Set up initial state
-    game.pot = 150
-    game.players = mock_players
-
-    # Configure mock players' decide_action methods to return just the action
+    game.pot = 0
+    game.dealer_index = 0
+    
+    # Configure mock players
     for player in mock_players:
-        player.decide_action = Mock(return_value="call")
-
-    # Mock betting round to return just the pot amount
-    mock_betting.return_value = 750  # Just return the pot amount
-
-    # Expected game state
+        def make_reset_bet(p):
+            def reset_bet():
+                p.bet = 0
+            return reset_bet
+            
+        player.has_acted = False
+        player.current_bet = 0
+        player.bet = 0  # Reset bets
+        player.folded = False
+        player.reset_bet = Mock(side_effect=make_reset_bet(player))
+    
+    # Store initial chip counts BEFORE blinds
+    initial_chips = {p: p.chips for p in mock_players}
+    
+    # Collect blinds and antes
+    game.blinds_and_antes()
+    blinds_pot = game.pot  # Store pot after blinds collection
+    
+    # Mock player actions to simulate betting
+    mock_get_action.side_effect = [
+        ("call", game.big_blind),  # First player calls big blind (100)
+        ("raise", game.big_blind * 2),  # Second player raises to 200
+        ("call", game.big_blind * 2),  # Third player calls 200
+    ]
+    
+    # Expected game state for betting round
     expected_state = {
-        "pot": 150,
+        "pot": blinds_pot,
         "players": [
             {
                 "name": p.name,
@@ -272,29 +292,80 @@ def test_full_betting_round(mock_betting, game, mock_players):
         "big_blind": game.big_blind,
         "dealer_index": game.dealer_index,
     }
-
-    # Run pre-draw betting
-    game._handle_pre_draw_betting()
-
-    # Verify pot increased correctly
-    assert game.pot == 750
-
-    # Verify betting round was called with correct arguments
-    mock_betting.assert_called_once_with(
-        [p for p in mock_players if not p.folded], 150, expected_state
-    )
+    
+    # Handle pre-draw betting
+    game._handle_pre_draw_betting(initial_chips)
+    
+    # Verify betting actions were called correctly
+    assert mock_get_action.call_count == 3  # Should be called once for each player
+    
+    # Calculate expected amounts:
+    # Blinds/antes:
+    # - Small blind: 50
+    # - Big blind: 100
+    # - Antes: 10 * 3 = 30
+    # Total blinds/antes = 180
+    expected_blinds = game.small_blind + game.big_blind + (game.ante * 3)
+    
+    # Total bets should include blinds since they're part of player.bet:
+    # - Small blind: 50
+    # - Big blind: 100
+    # - Antes: 30
+    # - First player calls: 100
+    # - Second player raises: 200
+    # - Third player calls: 200
+    # Total bets = 680
+    expected_total_bets = expected_blinds + (game.big_blind + (game.big_blind * 2) + (game.big_blind * 2))
+    
+    # Total pot should match total bets
+    assert game.pot == expected_total_bets, f"Expected pot {expected_total_bets}, got {game.pot}"
+    
+    # Verify chip movements
+    for player in game.players:
+        assert player.chips <= initial_chips[player]
+        
+    # Verify total bets match expected total (including blinds/antes)
+    total_bets = sum(p.bet for p in mock_players)
+    assert total_bets == expected_total_bets, f"Expected total bets {expected_total_bets}, got {total_bets}"
 
 
 @patch("game.game.betting_round")
-def test_full_betting_round_with_side_pots(mock_betting, game, mock_players):
+@patch("game.game.AgenticPoker._get_player_action")
+def test_full_betting_round_with_side_pots(mock_get_action, mock_betting, game, mock_players):
     """Test betting round that creates side pots."""
     # Set up initial state
     game.pot = 150
     game.players = mock_players
 
-    # Mock betting round to return pot amount and side pots
-    side_pots = [(300, [mock_players[0], mock_players[1]])]
-    mock_betting.return_value = (750, side_pots)
+    # Set up players with different chip amounts to force side pots
+    mock_players[0].chips = 300  # Can only bet 300 total
+    mock_players[1].chips = 500  # Can bet more
+    mock_players[2].chips = 200  # Can only bet 200 total
+
+    # Store initial chip counts
+    initial_chips = {p: p.chips for p in mock_players}
+
+    # Mock player actions to simulate betting
+    mock_get_action.side_effect = [
+        ("raise", 300),  # First player goes all-in with 300
+        ("raise", 400), # Second player raises to 400
+        ("call", 150),  # Third player calls with remaining 150
+    ]
+
+    # Create side pots that match the betting pattern
+    side_pots = [
+        (450, [mock_players[0], mock_players[1], mock_players[2]]),  # Main pot (150 x 3)
+        (300, [mock_players[0], mock_players[1]]),  # Side pot 1 (150 x 2)
+        (100, [mock_players[1]]),  # Side pot 2 (remaining 100)
+    ]
+    
+    # Total pot should be initial 150 + all bets
+    # Player 0: 300
+    # Player 1: 400
+    # Player 2: 150
+    # Total bets = 850
+    total_pot = 850  # Initial 150 + 700 in bets
+    mock_betting.return_value = (total_pot, side_pots)
 
     # Expected game state
     expected_state = {
@@ -316,14 +387,27 @@ def test_full_betting_round_with_side_pots(mock_betting, game, mock_players):
     }
 
     # Run pre-draw betting
-    game._handle_pre_draw_betting()
+    game._handle_pre_draw_betting(initial_chips)
 
     # Verify pot and side pots
-    assert game.pot == 750
+    assert game.pot == total_pot, f"Expected pot {total_pot}, got {game.pot}"
     assert game.side_pots == side_pots
 
     # Verify betting round was called with correct arguments
     mock_betting.assert_called_once_with(mock_players, 150, expected_state)
+
+    # Verify player actions were called the expected number of times
+    assert mock_get_action.call_count == 3
+
+    # Verify final chip counts
+    assert mock_players[0].chips == 0  # All-in with 300
+    assert mock_players[1].chips == 100  # Started with 500, bet 400
+    assert mock_players[2].chips == 50  # Started with 200, bet 150
+
+    # Verify total bets
+    total_bets = sum(p.bet for p in mock_players)
+    assert total_bets == 700  # 300 + 400 + 150
+    assert game.pot == total_bets + 150  # Total bets plus initial pot
 
 
 @patch("game.game.betting_round")

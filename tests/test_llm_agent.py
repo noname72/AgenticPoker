@@ -58,7 +58,7 @@ def test_decide_action(mock_llm, agent):
 
 def test_perceive(agent):
     """Test perception storage and retrieval."""
-    game_state = "pot: $100"
+    game_state = {"pot": 100}
     message = "I'm bluffing"
 
     perception = agent.perceive(game_state, message)
@@ -77,14 +77,30 @@ def test_interpret_message(mock_llm, agent):
     assert interpretation in ["trust", "ignore", "counter-bluff"]
 
 
-def test_update_strategy(agent):
+@patch("agents.llm_agent.LLMAgent._query_llm")
+def test_update_strategy(mock_query, agent):
     """Test strategy adaptation based on game outcome."""
+    # Mock the LLM response
+    mock_query.return_value = """
+    {
+        "strategy_style": "AGGRESSIVE",
+        "reasoning": "Opponent shows high aggression, need to adapt"
+    }
+    """
+    
     initial_style = agent.strategy_style
-
+    
+    # Test strategy update
     agent.update_strategy({"chips": 100, "opponent_aggression": 0.8})
+    
+    # Strategy should be updated based on mock response
+    assert agent.strategy_style == StrategyStyle.AGGRESSIVE
+    assert agent.strategy_style == initial_style  # Since mock returns same style
 
-    # Strategy might or might not change based on LLM response
-    assert hasattr(agent, "strategy_style")
+    # Test error handling
+    mock_query.return_value = "invalid json"
+    agent.update_strategy({"chips": 100, "opponent_aggression": 0.8})
+    assert agent.strategy_style == initial_style  # Should maintain current strategy if update fails
 
 
 @patch("agents.llm_agent.LLMAgent._query_llm")
