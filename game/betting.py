@@ -1,6 +1,8 @@
 import logging
 from typing import List, Optional, Tuple, Union
 
+from exceptions import InvalidGameStateError
+
 from .player import Player
 from .types import SidePot
 
@@ -87,6 +89,7 @@ def betting_round(
                 last_raiser,
                 active_players,
                 all_in_players,
+                game_state,
             )
             
             # Handle raise
@@ -193,6 +196,26 @@ def _get_action_and_amount(
     return action, amount
 
 
+def validate_bet_to_call(current_bet: int, player_bet: int) -> int:
+    """
+    Ensure bet to call amount is correct.
+    
+    Args:
+        current_bet: Current bet amount on the table
+        player_bet: Player's current bet amount
+        
+    Returns:
+        int: Amount player needs to call
+        
+    Raises:
+        InvalidGameStateError: If bet to call would be negative
+    """
+    bet_to_call = current_bet - player_bet
+    if bet_to_call < 0:
+        raise InvalidGameStateError(f"Invalid bet to call: {bet_to_call}")
+    return bet_to_call
+
+
 def _process_player_action(
     player: Player,
     action: str,
@@ -202,37 +225,78 @@ def _process_player_action(
     last_raiser: Optional[Player],
     active_players: List[Player],
     all_in_players: List[Player],
+    game_state: Optional[dict] = None,
 ) -> Tuple[int, int, Optional[Player]]:
-    """
-    Handle the player's action (fold, call, raise).
-    Returns (pot, current_bet, new_last_raiser)
-    """
+    """Handle the player's action (fold, call, raise)."""
     new_last_raiser = None
+
+    # Get max raise settings from game state
+    max_raise_multiplier = game_state.get('max_raise_multiplier', 3) if game_state else 3
+    max_raises_per_round = game_state.get('max_raises_per_round', 4) if game_state else 4
+    raise_count = game_state.get('raise_count', 0) if game_state else 0
+
+    # Calculate how much player needs to call
+    to_call = validate_bet_to_call(current_bet, player.bet)
+
+    # Log initial state
+    logging.info(f"\n{player.name}'s turn:")
+    logging.info(f"  Hand: {player.hand.show() if hasattr(player, 'hand') else 'Unknown'}")
+    logging.info(f"  Current bet to call: ${to_call}")
+    logging.info(f"  Player chips: ${player.chips}")
+    logging.info(f"  Player current bet: ${player.bet}")
+    logging.info(f"  Current pot: ${pot}")
 
     if action == "fold":
         player.folded = True
+        logging.info(f"{player.name} folds")
     
-    elif action in ("call", "raise"):
-        to_call = max(current_bet - player.bet, 0)
-        
-        if action == "call":
-            bet_amount = min(to_call, player.chips)
-        else:  # raise
-            bet_amount = min(amount, player.chips)
-            if bet_amount > current_bet:
-                current_bet = bet_amount
-                new_last_raiser = player
-            else:
-                bet_amount = min(to_call, player.chips)
-        
+    elif action == "call":
+        bet_amount = min(to_call, player.chips)
         actual_bet = player.place_bet(bet_amount)
         pot += actual_bet
         
-        if player.chips == 0:
-            all_in_players.append(player)
-    
-    # Remove folded players from active list
-    active_players[:] = [p for p in active_players if not p.folded]
+        status = " (all in)" if player.chips == 0 else ""
+        logging.info(f"{player.name} calls ${bet_amount}{status}")
+        
+    elif action == "raise":
+        # Validate raise against limits
+        max_raise = current_bet * max_raise_multiplier
+        if raise_count >= max_raises_per_round:
+            # Convert to call if max raises reached
+            bet_amount = min(to_call, player.chips)
+            actual_bet = player.place_bet(bet_amount)
+            pot += actual_bet
+            logging.info(f"{player.name} calls ${bet_amount} (max raises reached)")
+        else:
+            # Limit raise amount
+            capped_amount = min(amount, max_raise)
+            if capped_amount > current_bet:
+                bet_amount = min(capped_amount, player.chips)
+                actual_bet = player.place_bet(bet_amount)
+                pot += actual_bet
+                current_bet = bet_amount
+                new_last_raiser = player
+                
+                status = " (all in)" if player.chips == 0 else ""
+                if capped_amount < amount:
+                    logging.info(f"{player.name} raises to ${bet_amount}{status} (capped at {max_raise_multiplier}x)")
+                else:
+                    logging.info(f"{player.name} raises to ${bet_amount}{status}")
+            else:
+                # Convert to call if raise amount isn't valid
+                bet_amount = min(to_call, player.chips)
+                actual_bet = player.place_bet(bet_amount)
+                pot += actual_bet
+                logging.info(f"{player.name} calls ${bet_amount} (invalid raise converted to call)")
+
+    # Check for all-in
+    if player.chips == 0 and not player.folded:
+        all_in_players.append(player)
+        logging.info(f"{player.name} is all in!")
+
+    # Log updated state
+    logging.info(f"  Pot after action: ${pot}")
+    logging.info(f"  {player.name}'s remaining chips: ${player.chips}")
     
     return pot, current_bet, new_last_raiser
 
