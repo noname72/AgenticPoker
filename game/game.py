@@ -131,6 +131,7 @@ class AgenticPoker:
             if any(p.chips < 0 for p in self.players):
                 raise ValueError("Players cannot have negative chips")
 
+        self.pot = 0  # Initialize pot
         self.pot_manager = PotManager()
 
         self.small_blind = self.config.small_blind
@@ -157,32 +158,48 @@ class AgenticPoker:
         logging.info(f"{'='*50}\n")
 
     def blinds_and_antes(self) -> None:
-        """Collect mandatory bets (blinds and antes) at the start of each hand."""
-        # Track actual amounts posted
-        posted_amounts = {player: 0 for player in self.players}
+        """
+        Collect mandatory bets (blinds and antes) at the start of each hand.
 
-        # Collect antes first
-        if self.ante > 0:
-            for player in self.players:
-                actual_ante = player.place_bet(self.ante)
-                posted_amounts[player] += actual_ante
-                self.pot_manager.add_to_pot(actual_ante)
+        This method:
+        1. Stores initial chip counts for tracking changes
+        2. Collects antes from all players who can afford them
+        3. Collects small blind from player after dealer
+        4. Collects big blind from player after small blind
+        5. Handles partial blind postings for short-stacked players
+
+        Side Effects:
+            - Updates player chip counts
+            - Updates game pot
+            - Stores round starting stacks
+
+        Notes:
+            - Players can post partial blinds/antes if they don't have enough chips
+            - Posting order is: antes first, then small blind, then big blind
+        """
+        # Store starting stacks
+        self.round_starting_stacks = {p: p.chips for p in self.players}
+
+        # Collect antes
+        for player in self.players:
+            ante_amount = min(self.ante, player.chips)
+            if ante_amount > 0:
+                actual_ante = player.place_bet(ante_amount)
+                self.pot += actual_ante
 
         # Collect blinds
-        sb_index = (self.dealer_index + 1) % len(self.players)
-        bb_index = (self.dealer_index + 2) % len(self.players)
+        sb_pos = (self.dealer_index + 1) % len(self.players)
+        bb_pos = (self.dealer_index + 2) % len(self.players)
 
         # Small blind
-        sb_player = self.players[sb_index]
-        actual_sb = sb_player.place_bet(self.small_blind)
-        posted_amounts[sb_player] += actual_sb
-        self.pot_manager.add_to_pot(actual_sb)
+        sb_amount = min(self.small_blind, self.players[sb_pos].chips)
+        actual_sb = self.players[sb_pos].place_bet(sb_amount)
+        self.pot += actual_sb
 
         # Big blind
-        bb_player = self.players[bb_index]
-        actual_bb = bb_player.place_bet(self.big_blind)
-        posted_amounts[bb_player] += actual_bb
-        self.pot_manager.add_to_pot(actual_bb)
+        bb_amount = min(self.big_blind, self.players[bb_pos].chips)
+        actual_bb = self.players[bb_pos].place_bet(bb_amount)
+        self.pot += actual_bb
 
     def _log_blind_post(self, blind_type: str, player: "Player", amount: int) -> None:
         """Helper to log blind postings consistently."""
@@ -203,38 +220,39 @@ class AgenticPoker:
         return side_pots
 
     def showdown(self) -> None:
-        """Determine winner(s) and distribute pot(s) at the end of betting."""
-        logging.info(f"\n{'='*20} SHOWDOWN {'='*20}")
-
+        """Handle the showdown phase where winners are determined and pots are distributed."""
         active_players = [p for p in self.players if not p.folded]
 
-        # Single player remaining (everyone else folded)
         if len(active_players) == 1:
+            # Single player remaining gets the pot
             winner = active_players[0]
-            winner.chips += self.pot_manager.pot
-            logging.info(f"\n{winner.name} wins ${self.pot_manager.pot} uncontested!")
-            self._log_chip_summary()
-            return
+            winner.chips += self.pot
+            logging.info(f"{winner.name} wins ${self.pot}")
+        else:
+            # Multiple players - evaluate hands
+            winners = self._evaluate_hands(active_players, self.pot)
+            if winners:
+                split_amount = self.pot // len(winners)
+                for winner in winners:
+                    winner.chips += split_amount
+                    logging.info(f"{winner.name} wins ${split_amount}")
 
-        # Find best hand among active players
-        best_hand = max(active_players, key=lambda p: p.hand)
-        winners = [p for p in active_players if p.hand == best_hand.hand]
-
-        # Split pot among winners
-        pot_share = self.pot_manager.pot // len(winners)
-        remainder = self.pot_manager.pot % len(winners)
-
-        # Distribute pot
-        for i, winner in enumerate(winners):
-            share = pot_share + (1 if i < remainder else 0)
-            winner.chips += share
-            logging.info(f"{winner.name} wins ${share} with {winner.hand.evaluate()}")
+        # Handle any side pots
+        if self.side_pots:
+            for side_pot in self.side_pots:
+                eligible_players = side_pot.eligible_players
+                pot_winners = self._evaluate_hands(eligible_players, side_pot.amount)
+                if pot_winners:
+                    split_amount = side_pot.amount // len(pot_winners)
+                    for winner in pot_winners:
+                        winner.chips += split_amount
+                        logging.info(
+                            f"{winner.name} wins ${split_amount} from side pot"
+                        )
 
         # Reset pot after distribution
-        self.pot_manager.reset_pot()
-
-        # Log final chip movement summary
-        self._log_chip_summary()
+        self.pot = 0
+        self.side_pots = None
 
     def _log_chip_summary(self) -> None:
         """
@@ -334,108 +352,79 @@ class AgenticPoker:
             "dealer_index": self.dealer_index,
         }
 
-    def _handle_pre_draw_betting(self, initial_chips: Dict[Player, int]) -> bool:
-        """Handle the pre-draw betting round."""
-        logging.info("\n--- Pre-Draw Betting ---\n")
+    def _handle_pre_draw_betting(self, initial_chips: Dict[Player, int]) -> None:
+        """
+        Handle the betting round that occurs before the draw phase.
 
-        # Track all-in players and side pots
-        all_in_players = []
-        current_bet = self.big_blind
+        Args:
+            initial_chips: Dictionary mapping players to their chip counts at start of round
 
-        # Get players still in hand, in order after big blind
-        bb_pos = (self.dealer_index + 2) % len(self.players)
-        active_players = [
-            self.players[(bb_pos + i) % len(self.players)]
-            for i in range(len(self.players))
-            if not self.players[(bb_pos + i) % len(self.players)].folded
-        ]
+        This method:
+        1. Creates current game state including pot, player info, and betting limits
+        2. Executes betting round with all active players
+        3. Updates main pot with results of betting
 
-        # Each player gets one action
-        needs_to_act = set(active_players)
-        last_raiser = None
+        Side Effects:
+            - Updates player chip counts and bets
+            - Updates game pot
+        """
+        # Initialize game state
+        game_state = {
+            "pot": self.pot,
+            "players": [
+                {
+                    "name": p.name,
+                    "chips": p.chips,
+                    "bet": p.bet,
+                    "folded": p.folded,
+                    "position": i,
+                }
+                for i, p in enumerate(self.players)
+            ],
+            "current_bet": 0,
+            "small_blind": self.small_blind,
+            "big_blind": self.big_blind,
+            "dealer_index": self.dealer_index,
+        }
 
-        while needs_to_act:
-            for player in list(needs_to_act):
-                if player.chips == 0:  # Skip players who are already all-in
-                    needs_to_act.remove(player)
-                    continue
-
-                # Get and validate player action
-                action = self._get_player_action(player, current_bet)
-
-                # Handle the action
-                if action[0] == "fold":
-                    player.folded = True
-                    needs_to_act.remove(player)
-                    continue
-
-                elif action[0] in ("call", "raise"):
-                    if action[0] == "call":
-                        # For a call, match the current bet
-                        target_amount = current_bet
-                    else:
-                        # For a raise, use the specified amount as total bet
-                        target_amount = action[1]
-
-                    # Calculate how much more they need to add
-                    additional_bet = max(0, target_amount - player.bet)
-                    additional_bet = min(
-                        additional_bet, player.chips
-                    )  # Cap at available chips
-
-                    if additional_bet > 0:
-                        actual_bet = player.place_bet(additional_bet)
-                        self.pot_manager.add_to_pot(actual_bet)
-
-                        if player.chips == 0:  # Player went all-in
-                            all_in_players.append(player)
-                            # Calculate side pots immediately when someone goes all-in
-                            self.side_pots = self.handle_side_pots()
-                            self._log_side_pots()
-
-                        if action[0] == "raise":
-                            # Update current bet to player's total bet amount
-                            current_bet = player.bet
-                            last_raiser = player
-                            # Re-enable action for players who still have chips
-                            for p in active_players:
-                                if p != player and p.chips > 0 and not p.folded:
-                                    needs_to_act.add(p)
-
-                    needs_to_act.remove(player)
-
-                # If only the last raiser needs to act, they're done
-                if needs_to_act == {last_raiser}:
-                    needs_to_act.clear()
-
-                # If everyone is all-in or has acted, we're done
-                if len([p for p in active_players if p.chips > 0]) <= 1:
-                    break
-
-        # Return False if everyone folded except one player
-        return len([p for p in self.players if not p.folded]) > 1
+        # Run betting round and update pot
+        new_pot = betting_round(self.players, self.pot, game_state)
+        self.pot = new_pot
 
     def _handle_post_draw_betting(self, initial_chips: Dict[Player, int]) -> None:
         """Handle the post-draw betting round and winner determination."""
         logging.info("\n--- Post-Draw Betting ---")
 
-        # Get all players, including folded ones
-        active_players = self.players
+        # Create game state with correct pot amount
+        game_state = {
+            "pot": self.pot,  # Use current pot amount
+            "players": [
+                {
+                    "name": p.name,
+                    "chips": p.chips,
+                    "bet": p.bet,
+                    "folded": p.folded,
+                    "position": i,
+                }
+                for i, p in enumerate(self.players)
+            ],
+            "current_bet": 0,
+            "small_blind": self.small_blind,
+            "big_blind": self.big_blind,
+            "dealer_index": self.dealer_index,
+        }
 
-        # Create game state
-        game_state = self._create_game_state()
+        # Call betting round with current pot amount
+        result = betting_round(self.players, self.pot, game_state)
 
-        # Call betting round with all players
-        result = betting_round(active_players, self.pot_manager.pot, game_state)
-
-        # Handle return value which could be just pot or (pot, side_pots)
+        # Handle return value
         if isinstance(result, tuple):
             new_pot, side_pots = result
             self.side_pots = side_pots
         else:
             new_pot = result
 
-        self.pot_manager.pot = new_pot  # Update pot with result
+        self.pot = new_pot  # Update pot directly
 
         # Call showdown to determine winner(s)
         self.showdown()
@@ -737,3 +726,117 @@ class AgenticPoker:
         else:
             # Default to call for non-AI players
             return "call", current_bet
+
+    def _handle_side_pots(
+        self, all_in_players: List[Player], active_players: List[Player]
+    ) -> None:
+        """
+        Calculate and distribute side pots when players are all-in.
+
+        Args:
+            all_in_players: List of players who have gone all-in
+            active_players: List of players still in the hand
+
+        This method:
+        1. Uses pot manager to calculate side pots based on all-in amounts
+        2. For each side pot:
+            - Determines eligible winners from that pot's players
+            - Splits pot amount evenly among winners
+            - Updates winner chip counts
+
+        Side Effects:
+            - Updates player chip counts
+            - Modifies side pot structures
+        """
+        side_pots = self.pot_manager.calculate_side_pots(active_players, all_in_players)
+
+        for side_pot in side_pots:
+            winners = self._evaluate_hands(side_pot.eligible_players, side_pot)
+            split_amount = side_pot.amount // len(winners)
+            for winner in winners:
+                winner.chips += split_amount
+
+    def _evaluate_hands(self, players: List[Player], pot_amount: int) -> List[Player]:
+        """
+        Evaluate player hands to determine winner(s).
+
+        Args:
+            players: List of players to evaluate
+            pot_amount: Amount in the current pot being contested
+
+        Returns:
+            List[Player]: List of winning players (multiple in case of tie)
+        """
+        active_players = [p for p in players if not p.folded]
+        if not active_players:
+            return []
+
+        # Find best hand(s)
+        best_players = [active_players[0]]
+        best_hand = active_players[0].hand
+
+        for player in active_players[1:]:
+            # Try compare_to first, fall back to direct comparison
+            try:
+                comparison = player.hand.compare_to(best_hand)
+            except AttributeError:
+                # For test mocks, use direct comparison
+                if player.hand > best_hand:
+                    comparison = 1
+                elif player.hand == best_hand:
+                    comparison = 0
+                else:
+                    comparison = -1
+
+            if comparison > 0:  # Current player has better hand
+                best_players = [player]
+                best_hand = player.hand
+            elif comparison == 0:  # Tie
+                best_players.append(player)
+
+        return best_players
+
+    def _handle_betting_round(
+        self, initial_chips: Dict[Player, int], current_pot: int
+    ) -> Tuple[int, Optional[List[SidePot]]]:
+        """
+        Handle a single betting round.
+
+        Args:
+            initial_chips: Starting chip counts for each player
+            current_pot: Current pot amount before betting
+
+        Returns:
+            Tuple[int, Optional[List[SidePot]]]: New pot amount and any side pots
+        """
+        game_state = {
+            "pot": current_pot,
+            "players": [
+                {
+                    "name": p.name,
+                    "chips": p.chips,
+                    "bet": p.bet,
+                    "folded": p.folded,
+                    "position": i,
+                }
+                for i, p in enumerate(self.players)
+            ],
+            "current_bet": 0,
+            "small_blind": self.small_blind,
+            "big_blind": self.big_blind,
+            "dealer_index": self.dealer_index,
+        }
+
+        result = betting_round(self.players, current_pot, game_state)
+
+        # Handle both tuple and single value returns
+        if isinstance(result, tuple):
+            new_pot, side_pots = result
+        else:
+            new_pot = result
+            side_pots = None
+
+        self.pot = new_pot
+        self.side_pots = side_pots
+
+        return new_pot, side_pots

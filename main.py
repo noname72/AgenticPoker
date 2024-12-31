@@ -89,6 +89,8 @@ game = AgenticPoker(
     ),
 )
 
+# Initialize pot
+game.pot = 0
 
 def main():
     # Clear previous game data BEFORE creating agents
