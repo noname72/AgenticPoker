@@ -21,6 +21,8 @@ class GameConfig:
         ante: Mandatory bet required from all players
         max_rounds: Maximum number of rounds to play (None for unlimited)
         session_id: Unique identifier for the game session
+        max_raise_multiplier: Maximum raise as multiplier of current bet (e.g., 3 means max raise is 3x current bet)
+        max_raises_per_round: Maximum number of raises allowed per betting round
     """
 
     starting_chips: int = 1000
@@ -29,6 +31,8 @@ class GameConfig:
     ante: int = 0
     max_rounds: Optional[int] = None
     session_id: Optional[str] = None
+    max_raise_multiplier: int = 3
+    max_raises_per_round: int = 4
 
     def __post_init__(self):
         """Validate configuration parameters."""
@@ -38,6 +42,10 @@ class GameConfig:
             raise ValueError("Blinds must be positive")
         if self.ante < 0:
             raise ValueError("Ante cannot be negative")
+        if self.max_raise_multiplier <= 0:
+            raise ValueError("Max raise multiplier must be positive")
+        if self.max_raises_per_round <= 0:
+            raise ValueError("Max raises per round must be positive")
 
 
 class AgenticPoker:
@@ -408,25 +416,122 @@ class AgenticPoker:
         """Handle the pre-draw betting round."""
         logging.info("\n--- Pre-Draw Betting ---")
         initial_chips = {p: p.chips for p in self.players}
-
-        # Get active players
+        
+        # Get active players and their positions relative to dealer
         active_players = [p for p in self.players if not p.folded]
-
-        # Create game state for AI decisions
-        game_state = self._create_game_state()
-
-        # Call betting round and update pot
-        result = betting_round(active_players, self.pot, game_state)
-        if isinstance(result, tuple):
-            new_pot, new_side_pots = result
-            self.pot = new_pot
-            self.side_pots = new_side_pots
-        else:
-            self.pot = result
-
-        if self._handle_single_remaining_player(initial_chips, "pre-draw"):
-            return False, initial_chips
-
+        
+        # Track number of raises this round
+        raise_count = 0
+        current_bet = self.big_blind
+        last_raiser = None
+        
+        # Reset all player bets at the start of the round
+        for player in self.players:
+            player.bet = 0
+        
+        # Start with player after big blind
+        start_idx = (self.dealer_index + 3) % len(self.players)
+        current_idx = start_idx
+        
+        # Create game state dictionary
+        def create_game_state():
+            return {
+                "pot": self.pot,
+                "current_bet": current_bet,
+                "players": [
+                    {
+                        "name": p.name,
+                        "chips": p.chips,
+                        "bet": p.bet,
+                        "folded": p.folded,
+                        "position": i,
+                    }
+                    for i, p in enumerate(self.players)
+                ],
+                "small_blind": self.small_blind,
+                "big_blind": self.big_blind,
+                "dealer_index": self.dealer_index,
+                "raise_count": raise_count,
+                "max_raises": self.config.max_raises_per_round
+            }
+        
+        # Continue until betting is complete
+        while True:
+            current_player = self.players[current_idx]
+            
+            # Skip folded players
+            if current_player.folded:
+                current_idx = (current_idx + 1) % len(self.players)
+                continue
+            
+            # Skip players who are all-in
+            if current_player.chips == 0:
+                current_idx = (current_idx + 1) % len(self.players)
+                continue
+            
+            # Check if betting is complete
+            if (current_player == last_raiser or 
+                len([p for p in active_players if not p.folded and p.chips > 0]) <= 1 or
+                all(p.chips == 0 or p.bet == current_bet for p in active_players if not p.folded)):
+                break
+            
+            # Get player action with proper game state
+            game_state = create_game_state()
+            action = current_player.decide_action(game_state, raise_count >= self.config.max_raises_per_round)
+            
+            # Handle action
+            if action.startswith("raise"):
+                # If no amount specified, raise by minimum (current bet)
+                if len(action.split()) > 1:
+                    raise_amount = int(action.split()[1])
+                else:
+                    raise_amount = current_bet * 2  # Standard min-raise
+                    
+                # Validate raise amount
+                max_raise = current_bet * self.config.max_raise_multiplier
+                if raise_amount > max_raise:
+                    raise_amount = max_raise
+                if raise_amount <= current_bet:
+                    raise_amount = current_bet * 2
+                
+                # Calculate the additional amount needed to raise
+                to_call = current_bet - current_player.bet
+                raise_delta = raise_amount - current_bet
+                total_bet = to_call + raise_delta
+                
+                actual_bet = current_player.place_bet(total_bet)
+                current_bet = actual_bet + current_player.bet
+                last_raiser = current_player
+                raise_count += 1
+                self.pot += actual_bet
+                
+            elif action == "call":
+                call_amount = current_bet - current_player.bet
+                if call_amount < 0:
+                    logging.warning(f"Invalid call amount {call_amount}, skipping action")
+                    current_idx = (current_idx + 1) % len(self.players)
+                    continue
+                actual_bet = current_player.place_bet(call_amount)
+                self.pot += actual_bet
+                
+            else:  # fold
+                current_player.folded = True
+                active_players.remove(current_player)
+            
+            # Log the action
+            logging.info(f"{current_player.name} {action}")
+            logging.info(f"  Current bet: ${current_bet}")
+            logging.info(f"  Player bet: ${current_player.bet}")
+            logging.info(f"  Chips remaining: ${current_player.chips}")
+            logging.info(f"  Pot: ${self.pot}")
+            
+            # Move to next player
+            current_idx = (current_idx + 1) % len(self.players)
+            
+            # Check if only one player remains
+            if len([p for p in self.players if not p.folded]) == 1:
+                break
+        
         return True, initial_chips
 
     def _handle_post_draw_betting(self, initial_chips: Dict[Player, int]) -> None:

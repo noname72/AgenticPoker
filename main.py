@@ -82,6 +82,10 @@ game = AgenticPoker(
         big_blind=100,
         ante=10,
         session_id=session_id,
+        # Add max raise limit to prevent excessive raising
+        max_raise_multiplier=3,  # Maximum raise can be 3x the current bet
+        # Add betting round limits
+        max_raises_per_round=4,  # Limit number of raises per betting round
     ),
 )
 

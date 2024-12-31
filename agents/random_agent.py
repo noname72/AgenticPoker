@@ -1,53 +1,65 @@
+import logging
 import random
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from game.player import Player
 
 
 class RandomAgent(Player):
-    """A poker agent that makes completely random decisions.
+    """A poker player that makes random decisions."""
 
-    This agent serves as a control/baseline to compare against LLM-powered agents.
-    It makes all decisions randomly without any strategy or reasoning.
-    """
-
-    def __init__(self, name: str, chips: int = 1000) -> None:
+    def __init__(self, name: str, chips: int = 1000):
+        """Initialize the random agent."""
         super().__init__(name, chips)
-        self.action_weights = {
-            "fold": 0.2,  # 20% chance to fold
-            "call": 0.5,  # 50% chance to call
-            "raise": 0.3,  # 30% chance to raise
-        }
+        self.logger = logging.getLogger(__name__)
 
     def decide_action(
-        self, game_state: Dict[str, Any], opponent_message: Optional[str] = None
+        self, 
+        game_state: Dict,
+        max_raises_reached: bool = False
     ) -> str:
-        """Make a random decision."""
+        """Make a random decision to fold, call, or raise."""
         try:
-            # Extract current bet from game state
             current_bet = game_state.get('current_bet', 0)
+            call_amount = current_bet - self.bet
             
-            # List of possible actions based on current chips
-            possible_actions = ['fold']
-            
-            # Can only call if we have enough chips
-            if self.chips >= current_bet:
-                possible_actions.append('call')
+            if call_amount > self.chips:
+                # Can't afford the call, must fold
+                return "fold"
                 
-                # Can only raise if we have more than the current bet
-                if self.chips > current_bet:
-                    # Random raise amount between current bet and max possible
-                    max_raise = min(self.chips, current_bet * 3)  # Limit raise to 3x
-                    if max_raise > current_bet:
-                        raise_amount = random.randint(current_bet, max_raise)
-                        possible_actions.append(f'raise {raise_amount}')
-
-            # Choose random action from possible actions
-            return random.choice(possible_actions)
-
+            # Randomly choose action with weights
+            actions = []
+            weights = []
+            
+            # Always allow fold
+            actions.append("fold")
+            weights.append(0.2)  # 20% chance to fold
+            
+            # Allow call if we have chips
+            if self.chips >= call_amount:
+                actions.append("call")
+                weights.append(0.5)  # 50% chance to call
+            
+            # Allow raise if we have chips and max raises not reached
+            if not max_raises_reached and self.chips > call_amount * 2:
+                actions.append("raise")
+                weights.append(0.3)  # 30% chance to raise
+            
+            action = random.choices(actions, weights=weights)[0]
+            
+            if action == "raise":
+                # Random raise between min raise and max available
+                min_raise = call_amount * 2
+                max_raise = min(self.chips, call_amount * 4)
+                raise_amount = random.randint(min_raise, max_raise)
+                return f"raise {raise_amount}"
+                
+            return action
+            
         except Exception as e:
             self.logger.error(f"Random decision error: {str(e)}")
-            return "fold"  # Safe default
+            # Default to calling if possible, otherwise fold
+            return "call" if self.chips >= call_amount else "fold"
 
     def get_message(self, game_state: str) -> str:
         """Return empty string as random agent doesn't communicate."""
