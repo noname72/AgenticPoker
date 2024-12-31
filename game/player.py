@@ -32,10 +32,16 @@ class Player:
             name (str): The player's display name
             chips (int, optional): Starting amount of chips. Defaults to 1000.
 
-        Side Effects:
-            - Creates a new empty Hand instance
-            - Initializes player state (bet=0, folded=False)
+        Raises:
+            ValueError: If name is empty or chips is negative
         """
+        if not name or name.isspace():
+            raise ValueError("Player name cannot be empty or whitespace")
+        if not isinstance(chips, int):
+            raise ValueError("Chips must be an integer value")
+        if chips < 0:
+            raise ValueError("Cannot initialize player with negative chips")
+
         self.name = name
         self.chips = chips
         self.bet = 0

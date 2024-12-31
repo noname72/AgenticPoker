@@ -68,7 +68,7 @@ def evaluate_hand(cards: List[Card]) -> Tuple[int, List[int], str]:
     }
 
     # Convert all ranks to numeric values using the values dictionary
-    ranks = [values[str(card.rank)] for card in cards]
+    ranks = [values[str(card.rank).upper()] for card in cards]
     suits = [card.suit for card in cards]
 
     # Count occurrences of each rank
