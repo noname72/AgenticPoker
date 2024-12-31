@@ -12,12 +12,9 @@ def evaluate_hand(cards: List[Card]) -> Tuple[int, List[int], str]:
 
     Returns:
         Tuple[int, List[int], str]: A tuple containing:
-            - int: Hand rank from 1-10 (1 being best)
+            - int: Hand rank from 1-10 (1 being best, 10 being worst)
             - List[int]: Tiebreaker values in descending order of importance
             - str: Human readable description of the hand
-
-    Raises:
-        ValueError: If the hand doesn't contain exactly 5 cards
 
     Hand Rankings (from best to worst):
         1. Royal Flush     - A, K, Q, J, 10 of the same suit
@@ -30,6 +27,12 @@ def evaluate_hand(cards: List[Card]) -> Tuple[int, List[int], str]:
         8. Two Pair       - Two different pairs
         9. One Pair       - One pair of matching cards
         10. High Card     - Highest card when no other hand is made
+
+    Note: This implementation uses a reversed ranking system where lower numbers
+    indicate better hands (1 is best, 10 is worst).
+
+    Raises:
+        ValueError: If the hand doesn't contain exactly 5 cards
 
     Example:
         >>> hand = [Card('A', '♠'), Card('K', '♠'), Card('Q', '♠'), Card('J', '♠'), Card('10', '♠')]

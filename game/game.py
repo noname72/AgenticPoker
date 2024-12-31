@@ -787,8 +787,10 @@ class AgenticPoker:
     def start_game(self) -> None:
         """Execute the main game loop until a winner is determined or max rounds reached."""
         eliminated_players = []
+        self.round_number = 0  # Initialize round counter
 
         while len(self.players) > 1:
+            self.round_number += 1  # Increment round number at start of each iteration
             self._handle_eliminated_players(eliminated_players)
 
             # Check end conditions
@@ -800,6 +802,17 @@ class AgenticPoker:
 
             # Start new round
             self.players = [p for p in self.players if p.chips > 0]
+            
+            # Log round header
+            logging.info(f"\n{'='*50}")
+            logging.info(f"Round {self.round_number}")
+            logging.info(f"{'='*50}\n")
+            
+            # Log starting stacks
+            logging.info("Starting stacks (before antes/blinds):")
+            for player in self.players:
+                logging.info(f"  {player.name}: ${player.chips}")
+
             self.start_round()
 
             # Handle betting rounds
@@ -854,3 +867,18 @@ class AgenticPoker:
         logging.info(f"Small Blind: {self.players[sb_index].name}")
         logging.info(f"Big Blind: {self.players[bb_index].name}")
         logging.info("\n")
+
+    def play_round(self) -> None:
+        """Play a single round of poker."""
+        self.round_number += 1  # Increment round number at start of each round
+        
+        logging.info(f"\n{'='*50}")
+        logging.info(f"Round {self.round_number}")
+        logging.info(f"{'='*50}\n")
+        
+        # Log starting stacks
+        logging.info("Starting stacks (before antes/blinds):")
+        for player in self.players:
+            logging.info(f"  {player.name}: ${player.chips}")
+            
+        # ... rest of play_round implementation ...
