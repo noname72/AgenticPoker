@@ -321,12 +321,22 @@ class LLMAgent(BaseAgent):
         )
 
     def decide_action(
-        self, game_state: Dict[str, Any], opponent_message: Optional[str] = None
+        self, 
+        game_state: Dict[str, Any], 
+        opponent_message: Optional[str] = None
     ) -> str:
-        """Make a decision based on current game state and strategy."""
+        """Make a decision based on game state and memory."""
         try:
             # Format game state for decision making
             formatted_state = self._format_game_state(game_state)
+            
+            # Try to get memories, but continue if it fails
+            memories = []
+            try:
+                query = self._create_memory_query(game_state)
+                memories = self.get_relevant_memories(query)
+            except Exception as e:
+                self.logger.warning(f"Memory retrieval failed: {str(e)}")
             
             if self.use_planning:
                 self.logger.info("[%s] Using strategy planner for decision", self.name)
@@ -1586,3 +1596,69 @@ Example: "DECISION: call"
         except Exception as e:
             self.logger.error(f"Error parsing action: {str(e)}\nResponse: {response[:100]}...")
             return "call"  # Safe default
+
+    def get_relevant_memories(self, query: str) -> List[Dict[str, Any]]:
+        """Get relevant memories for decision making.
+        
+        Args:
+            query: Query string to search memories
+            
+        Returns:
+            List[Dict[str, Any]]: List of relevant memories, may be empty
+        """
+        try:
+            # First check how many memories we have available
+            all_memories = self.memory_store.get_relevant_memories(query, k=1)
+            
+            # If we have memories, try getting more
+            if all_memories:
+                try:
+                    # Try getting 2 memories, but will get 1 if that's all that exists
+                    memories = self.memory_store.get_relevant_memories(query, k=2)
+                    return memories
+                except Exception:
+                    # Fall back to the single memory we know exists
+                    return all_memories
+            
+            return []  # No memories found
+            
+        except Exception as e:
+            self.logger.debug(f"Memory retrieval failed: {str(e)}")
+            return []  # Return empty list on error
+
+    def _create_memory_query(self, game_state: Dict[str, Any]) -> str:
+        """Create a query string from game state for memory retrieval.
+        
+        Args:
+            game_state: Dictionary containing current game state
+            
+        Returns:
+            str: Formatted query string for memory retrieval
+        """
+        try:
+            # Extract key information from game state
+            current_bet = game_state.get("current_bet", 0)
+            pot = game_state.get("pot", 0)
+            
+            # Get player information
+            players_info = []
+            for p in game_state.get('players', []):
+                players_info.append(
+                    f"{p['name']}(${p['chips']}, bet:${p.get('bet', 0)})"
+                )
+            
+            # Create query combining key game state elements
+            query = (
+                f"Game situation with pot ${pot}, current bet ${current_bet}, "
+                f"players: {', '.join(players_info)}"
+            )
+            
+            # Add position context if available
+            if "position" in game_state:
+                query += f", position: {game_state['position']}"
+            
+            return query
+            
+        except Exception as e:
+            self.logger.error(f"Error creating memory query: {str(e)}")
+            return str(game_state)  # Fallback to basic string conversion

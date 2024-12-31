@@ -99,6 +99,9 @@ class AgenticPoker:
         config: Optional[GameConfig] = None,
     ) -> None:
         """Initialize a new poker game with specified players and configuration."""
+        # Initialize logger first
+        self.logger = logging.getLogger(__name__)
+
         if not players:
             raise ValueError("Must provide at least 2 players")
 
@@ -613,8 +616,17 @@ class AgenticPoker:
     def start_round(self) -> None:
         """Start a new round of poker."""
         self._initialize_round()
-        self._log_round_info()
-
+        
+        # Log round start only once
+        logging.info("\n" + "=" * 50)
+        logging.info(f"Round {self.round_number}")
+        logging.info("=" * 50 + "\n")
+        
+        # Log starting stacks
+        logging.info("Starting stacks (before antes/blinds):")
+        for player in self.players:
+            logging.info(f"  {player.name}: ${player.chips}")
+        
         # Collect blinds and antes after initialization
         self.blinds_and_antes()
 
@@ -728,20 +740,10 @@ class AgenticPoker:
             # Start new round
             self.players = [p for p in self.players if p.chips > 0]
             
-            # Log round header
-            logging.info(f"\n{'='*50}")
-            logging.info(f"Round {self.round_number}")
-            logging.info(f"{'='*50}\n")
-            
-            # Log starting stacks
-            logging.info("Starting stacks (before antes/blinds):")
-            for player in self.players:
-                logging.info(f"  {player.name}: ${player.chips}")
-
             # Store initial chips before starting round
             initial_chips = {p: p.chips for p in self.players}
             
-            self.start_round()
+            self.start_round()  # This will handle all round logging
 
             # Handle betting rounds with initial chips
             should_continue = self._handle_pre_draw_betting(initial_chips)

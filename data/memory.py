@@ -152,51 +152,43 @@ class ChromaMemoryStore(MemoryStore):
         except Exception as e:
             logger.error(f"Failed to add memory: {str(e)}")
 
-    def get_relevant_memories(self, query: str, k: int = 3) -> List[Dict[str, Any]]:
-        """Retrieve k most relevant memories for a given query."""
+    def get_relevant_memories(self, query: str, k: int = 2) -> List[Dict[str, Any]]:
+        """Get relevant memories based on query.
+        
+        Args:
+            query: Search query string
+            k: Maximum number of memories to return (default: 2)
+            
+        Returns:
+            List[Dict[str, Any]]: List of relevant memories
+        """
         try:
-            # Convert query to string representation
-            if isinstance(query, dict):
-                # Create a more detailed game state string
-                players_info = []
-                for p in query.get('players', []):
-                    players_info.append(
-                        f"{p['name']}(${p['chips']}, bet:${p.get('bet', 0)})"
-                    )
-                
-                query_str = (
-                    f"Game state - "
-                    f"pot: ${query.get('pot', 0)}, "
-                    f"current bet: ${query.get('current_bet', 0)}, "
-                    f"players: [{', '.join(players_info)}]"
-                )
-            else:
-                query_str = str(query)
-
-            # Query the collection
+            # Get total count of memories
+            total_memories = len(self.collection.get()['ids'])
+            
+            # Adjust k if it exceeds available memories
+            k = min(k, total_memories)
+            
+            if k == 0:
+                return []
+            
+            # Query with adjusted k
             results = self.collection.query(
-                query_texts=[query_str],
+                query_texts=[query],
                 n_results=k
             )
-
-            # Process results
+            
             memories = []
-            if results and results["metadatas"]:
-                for doc, metadata in zip(
-                    results["documents"][0], results["metadatas"][0]
-                ):
-                    memories.append({
-                        "text": doc,
-                        "metadata": metadata
-                    })
+            for i in range(len(results['ids'][0])):
+                memories.append({
+                    'text': results['documents'][0][i],
+                    'metadata': results['metadatas'][0][i]
+                })
+            
             return memories
-
-        except InvalidCollectionException:
-            logger.warning("Collection lost, reinitializing...")
-            self._initialize_client()
-            return []
+            
         except Exception as e:
-            logger.error(f"Memory query failed: {str(e)}")
+            logger.error(f"Error retrieving memories: {str(e)}")
             return []
 
     def clear(self) -> None:
