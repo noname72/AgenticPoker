@@ -805,55 +805,34 @@ class LLMAgent(BaseAgent):
                 return "call"
             return "I need to think about my next move."
 
-    def _query_llm(self, prompt: str) -> str:
-        """Query LLM with retry mechanism and error handling.
-
-        Makes repeated attempts to get a response from the language model,
-        implementing exponential backoff and comprehensive error handling.
-
+    def _query_llm(self, prompt: str, max_retries: int = 3) -> str:
+        """Query LLM with retry logic and better error handling.
+        
         Args:
-            prompt (str): The prompt to send to the language model
-
+            prompt: Formatted prompt string
+            max_retries: Maximum number of retry attempts
+            
         Returns:
-            str: Response from the language model
-
+            str: LLM response text
+            
         Raises:
-            LLMError: If all retry attempts fail or other unrecoverable error occurs
-
-        Note:
-            - Uses self.max_retries (default: 3) for number of attempts
-            - Uses self.retry_delay (default: 1.0) for delay between retries
-            - Implements exponential backoff between retries
-            - Logs all attempts and errors for debugging
+            LLMError: If all retries fail
         """
-        last_error = None
-
-        for attempt in range(self.max_retries):
+        for attempt in range(max_retries):
             try:
-                self.logger.info(
-                    "[LLM Query] Attempt %d for %s", attempt + 1, self.name
+                response = self.client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.7,
+                    max_tokens=150  # Limit response length
                 )
-                self.logger.debug("[LLM Query] Prompt: %s", prompt)
+                return response.choices[0].message.content
 
-                result = self._query_gpt(prompt)
-                self.logger.info("[LLM Query] Response: %s", result)
-                return result
-
-            except OpenAIError as e:
-                last_error = e
-                self.logger.error(
-                    "[LLM Query] OpenAI error on attempt %d: %s",
-                    attempt + 1,
-                    str(e),
-                )
-                if attempt < self.max_retries - 1:
-                    time.sleep(self.retry_delay)
-                    continue
-
-        self.logger.error(
-            "[LLM Query] All %d attempts failed for %s", self.max_retries, self.name
-        )
-        raise LLMError(f"Failed after {self.max_retries} attempts") from last_error
+            except Exception as e:
+                self.logger.warning(f"LLM query attempt {attempt + 1} failed: {str(e)}")
+                if attempt == max_retries - 1:
+                    raise LLMError(f"All {max_retries} LLM query attempts failed") from e
+                time.sleep(1)  # Wait before retry
 
     def update_strategy(self, game_outcome: Dict[str, Any]) -> None:
         """Update agent's strategy based on game outcomes and performance.
@@ -1482,8 +1461,16 @@ class LLMAgent(BaseAgent):
     def _get_basic_action(self, game_state: str) -> str:
         """Make a basic decision without complex planning."""
         try:
-            # Get relevant memories for context
-            memories = self.memory_store.get_relevant_memories(game_state, k=2)
+            # Get relevant memories for context, handle case with few memories
+            try:
+                memories = self.memory_store.get_relevant_memories(game_state, k=2)
+            except Exception as e:
+                self.logger.debug(f"Memory retrieval adjusted: {str(e)}")
+                # Try with k=1 if k=2 fails, or empty list as fallback
+                try:
+                    memories = self.memory_store.get_relevant_memories(game_state, k=1)
+                except:
+                    memories = []
             
             # Format prompt with game state and memories
             prompt = self._format_decision_prompt(game_state, memories)
@@ -1569,23 +1556,33 @@ Example: "DECISION: call"
         )
 
     def _parse_action(self, response: str) -> str:
-        """Parse and validate action from LLM response."""
+        """Parse and validate action from LLM response.
+        
+        Args:
+            response: Raw response string from LLM
+            
+        Returns:
+            str: Normalized action ('fold', 'call', or 'raise')
+        """
         try:
-            # Look for DECISION: line
+            # Look for DECISION: line with more flexible parsing
             if "DECISION:" not in response:
-                self.logger.warning("No DECISION: found in response")
+                self.logger.warning(f"No DECISION: found in response: {response[:100]}...")
                 return "call"
             
-            action = response.split("DECISION:")[1].strip().lower()
+            # Extract everything after DECISION: and before next newline
+            decision_line = [line for line in response.split('\n') 
+                            if 'DECISION:' in line][0]
+            action = decision_line.split('DECISION:')[1].strip().split()[0].lower()
             
             # Validate action
-            valid_actions = ["fold", "call", "raise"]
+            valid_actions = ["fold", "call", "raise"] 
             if action not in valid_actions:
-                self.logger.warning(f"Invalid action: {action}")
+                self.logger.warning(f"Invalid action '{action}' in response: {response[:100]}...")
                 return "call"
             
             return action
             
         except Exception as e:
-            self.logger.error(f"Error parsing action: {str(e)}")
+            self.logger.error(f"Error parsing action: {str(e)}\nResponse: {response[:100]}...")
             return "call"  # Safe default
