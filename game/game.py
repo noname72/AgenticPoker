@@ -6,8 +6,8 @@ from .betting import betting_round
 from .deck import Deck
 from .hand import Hand
 from .player import Player
-from .types import SidePot, SidePotView
 from .pot_manager import PotManager
+from .types import SidePot
 
 
 @dataclass

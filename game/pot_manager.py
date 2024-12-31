@@ -99,21 +99,6 @@ class PotManager:
     def get_side_pots_view(self) -> List[SidePotView]:
         """
         Get a display-friendly view of the current side pots.
-
-        Converts the internal side pot representation to a format suitable for
-        display or logging, replacing Player objects with player names.
-
-        Returns:
-            List of dictionaries, each containing:
-                - amount (int): The amount in this side pot
-                - eligible_players (List[str]): Names of players eligible for this pot
-
-        Example:
-            >>> pot_manager.get_side_pots_view()
-            [
-                {"amount": 300, "eligible_players": ["Alice", "Bob", "Charlie"]},
-                {"amount": 200, "eligible_players": ["Bob", "Charlie"]}
-            ]
         """
         if not self.side_pots:
             return []
@@ -128,20 +113,6 @@ class PotManager:
     def log_side_pots(self, logger) -> None:
         """
         Log the current side pot state.
-
-        Formats and logs the current side pot structure using the provided logger.
-        Each side pot's amount and eligible players are logged separately.
-
-        Args:
-            logger: Logger instance to use for output (typically the logging module)
-
-        Side Effects:
-            - Writes side pot information to the log
-
-        Example log output:
-            Side pots:
-              Pot 1: $300 (Eligible: Alice, Bob, Charlie)
-              Pot 2: $200 (Eligible: Bob, Charlie)
         """
         if not self.side_pots:
             return
