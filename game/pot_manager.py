@@ -71,28 +71,20 @@ class PotManager:
     def calculate_side_pots(
         self, active_players: List[Player], all_in_players: List[Player]
     ) -> List[SidePot]:
-        """
-        Calculate side pots when one or more players is all-in.
-
-        Args:
-            active_players: List of players still in the hand
-            all_in_players: List of players who have gone all-in, sorted by bet amount
-
-        Returns:
-            List of SidePot objects, each containing amount and eligible players
-
-        Raises:
-            InvalidGameStateError: If chip totals don't match before and after calculation
-        """
+        """Calculate side pots when one or more players is all-in."""
         # Validate inputs
         if not active_players:
             return []
 
-        # Track total chips in play before calculation
+        # Track total chips in play before calculation (including folded players)
         total_chips_before = sum(p.chips + p.bet for p in active_players)
 
-        # Create dictionary of all bets, filtering out zero bets
-        posted_amounts = {p: p.bet for p in active_players if p.bet > 0}
+        # Create dictionary of all bets, including folded players' bets
+        posted_amounts = {
+            p: p.bet
+            for p in active_players
+            if p.bet > 0  # Include folded players' bets
+        }
         if not posted_amounts:
             return []
 
@@ -100,21 +92,48 @@ class PotManager:
         side_pots = []
         current_amount = 0
 
-        # Sort players by their bet amounts, handling duplicates
-        sorted_players = sorted(
-            set((p, bet) for p, bet in posted_amounts.items()), key=lambda x: x[1]
-        )
+        # Sort players by their bet amounts
+        sorted_players = sorted(posted_amounts.items(), key=lambda x: x[1])
+
+        # Track processed amounts to avoid double counting
+        processed_amounts = {}
 
         for player, amount in sorted_players:
             if amount > current_amount:
-                # Find all players who bet this much or more
-                eligible = [p for p, bet in posted_amounts.items() if bet >= amount]
+                # Find all eligible players (not folded and bet >= amount)
+                eligible = [
+                    p
+                    for p, bet in posted_amounts.items()
+                    if bet >= amount and not p.folded
+                ]
+
+                # Calculate contribution from each player for this level
+                contribution = amount - current_amount
+
+                # Calculate number of contributors at this level
+                contributors = sum(
+                    1 for bet in posted_amounts.values() if bet >= amount
+                )
 
                 # Calculate pot size for this level
-                pot_size = (amount - current_amount) * len(eligible)
+                pot_size = contribution * contributors
 
-                if pot_size > 0:
-                    side_pots.append(SidePot(pot_size, eligible))
+                # Only create a new side pot if it would have a positive amount
+                # and hasn't been processed at this level
+                if pot_size > 0 and amount not in processed_amounts:
+                    # Check if we can combine with the previous pot
+                    if side_pots and set(side_pots[-1].eligible_players) == set(
+                        eligible
+                    ):
+                        # Create new pot with combined amount
+                        combined_pot = SidePot(
+                            amount=side_pots[-1].amount + pot_size,
+                            eligible_players=eligible,
+                        )
+                        side_pots[-1] = combined_pot
+                    else:
+                        side_pots.append(SidePot(pot_size, eligible))
+                    processed_amounts[amount] = pot_size
 
                 current_amount = amount
 
@@ -124,25 +143,9 @@ class PotManager:
         )
 
         if total_chips_before != total_chips_after:
-            logging.error(
-                f"Chip mismatch - Before: {total_chips_before}, After: {total_chips_after}"
-            )
-            logging.error(
-                f"Active players: {[(p.name, p.chips, p.bet) for p in active_players]}"
-            )
-            logging.error(
-                f"Side pots: {[(pot.amount, [p.name for p in pot.eligible_players]) for pot in side_pots]}"
-            )
             raise InvalidGameStateError(
                 f"Chip total mismatch in side pot calculation: {total_chips_before} vs {total_chips_after}"
             )
-
-        # Log side pots for debugging
-        if side_pots:
-            logging.info("\nCalculated side pots:")
-            for i, pot in enumerate(side_pots, 1):
-                players_str = ", ".join(p.name for p in pot.eligible_players)
-                logging.info(f"  Pot {i}: ${pot.amount} (Eligible: {players_str})")
 
         return side_pots
 
