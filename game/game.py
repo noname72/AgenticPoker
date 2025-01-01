@@ -11,6 +11,7 @@ from .player import Player
 from .pot_manager import PotManager
 from .types import SidePot
 from . import betting
+from . import post_draw
 
 
 @dataclass
@@ -340,22 +341,20 @@ class AgenticPoker:
     def _handle_post_draw_betting(self, initial_chips: Dict[Player, int]) -> None:
         """Handle post-draw betting round."""
         game_state = self._create_game_state()
-        result = betting.betting_round(
-            self.players, self.pot, game_state
-        )
         
-        # Handle both return types
-        if isinstance(result, tuple):
-            new_pot, side_pots = result
-        else:
-            new_pot = result
-            side_pots = None
+        # Use new post_draw module
+        new_pot, side_pots = post_draw.handle_post_draw_betting(
+            self.players,
+            self.pot,
+            game_state,
+            self.pot_manager
+        )
         
         self.pot = new_pot
         self.side_pots = side_pots
 
-        # Call showdown to determine winner(s)
-        self.showdown()
+        # Handle showdown using new module
+        post_draw.handle_showdown(self.players, self.pot, initial_chips)
 
     def _log_chip_movements(self, initial_chips: Dict[Player, int]) -> None:
         """Log the chip movements for each player from their initial amounts."""
