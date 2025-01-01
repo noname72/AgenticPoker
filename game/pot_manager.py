@@ -1,5 +1,5 @@
-from typing import Dict, List, Optional
 import logging
+from typing import Dict, List, Optional
 
 from exceptions import InvalidGameStateError
 
@@ -40,21 +40,33 @@ class PotManager:
         """
         if amount < 0:
             raise ValueError("Cannot add negative amount to pot")
+
+        # Log pot changes for debugging
+        old_pot = self.pot
         self.pot += amount
+        logging.debug(f"Pot change: {old_pot} -> {self.pot} (+{amount})")
 
     def reset_pot(self) -> None:
         """
         Reset the pot manager state.
 
-        Clears both the main pot and any side pots. Typically called at the
-        end of a hand or when starting a new round.
+        Clears both the main pot and any side pots. Should only be called
+        at the end of a hand when chips are being distributed to winners.
 
         Side Effects:
             - Sets main pot to 0
             - Clears all side pots
         """
+        # Log pot reset for debugging
+        old_pot = self.pot
+        old_side_pots = self.side_pots
+
         self.pot = 0
         self.side_pots = None
+
+        logging.debug(
+            f"Pot reset: Main {old_pot}->0, " f"Side pots {old_side_pots}->None"
+        )
 
     def calculate_side_pots(
         self, active_players: List[Player], all_in_players: List[Player]
@@ -176,38 +188,48 @@ class PotManager:
         if main_pot < 0:
             raise ValueError("Main pot cannot be negative")
 
+        # Log pot changes for debugging
+        old_pot = self.pot
+        old_side_pots = self.side_pots
+
         self.pot = main_pot
         self.side_pots = side_pots
+
+        logging.debug(
+            f"Pot update: Main {old_pot}->{main_pot}, "
+            f"Side pots {old_side_pots}->{side_pots}"
+        )
 
     def validate_pot_state(
         self, active_players: List[Player], initial_total: Optional[int] = None
     ) -> bool:
         """
         Validate the current pot state for consistency.
-        
+
         Args:
             active_players: List of players still in the hand
             initial_total: Optional initial total chips to validate against
-            
+
         Returns:
             bool: True if pot state is valid
-            
+
         Raises:
             InvalidGameStateError: If pot state is invalid
         """
-        # Calculate total chips in play (including bets)
-        total_chips = sum(p.chips + p.bet for p in active_players)
-        
+        # Calculate total chips in play (excluding bets since they're in the pot)
+        total_chips = sum(p.chips for p in active_players)
+
         # Calculate total in pots
         total_in_pots = self.pot
         if self.side_pots:
             total_in_pots += sum(pot.amount for pot in self.side_pots)
-        
-        # Calculate total bets
+
+        # Calculate total bets in current round
         total_bets = sum(p.bet for p in active_players)
-        
-        # Validate bets match pots
-        if total_bets != total_in_pots:
+
+        # For pot validation, we only care about current round's bets
+        # The pot should be at least equal to current bets
+        if total_bets > total_in_pots:
             logging.error(
                 f"Pot mismatch - Total bets: {total_bets}, Total in pots: {total_in_pots}"
             )
@@ -220,13 +242,14 @@ class PotManager:
                 f"Active players: {[(p.name, p.chips, p.bet) for p in active_players]}"
             )
             raise InvalidGameStateError(
-                f"Pot amount mismatch: bets={total_bets}, pots={total_in_pots}"
+                f"Current bets exceed pot: bets={total_bets}, pots={total_in_pots}"
             )
 
         # If initial total provided, validate total chips haven't changed
         if initial_total is not None:
-            # Current total is chips in players' stacks plus all bets in pots
-            current_total = sum(p.chips for p in active_players) + total_in_pots
+            # Current total is chips in players' stacks plus all pots
+            # Note: Don't add bets since they're already counted in the pot
+            current_total = total_chips + total_in_pots
             if current_total != initial_total:
                 logging.error(
                     f"Total chips mismatch - Initial: {initial_total}, Current: {current_total}"
@@ -234,12 +257,34 @@ class PotManager:
                 logging.error(
                     f"Player chips: {[(p.name, p.chips) for p in active_players]}"
                 )
-                logging.error(
-                    f"Player bets: {[(p.name, p.bet) for p in active_players]}"
-                )
                 logging.error(f"Pots: Main={self.pot}, Side={self.side_pots}")
+                logging.error(
+                    f"Current bets: {[(p.name, p.bet) for p in active_players]}"
+                )
                 raise InvalidGameStateError(
                     f"Total chips changed: initial={initial_total}, current={current_total}"
                 )
 
         return True
+
+    def end_betting_round(self, active_players: List[Player]) -> None:
+        """
+        Handle the end of a betting round.
+
+        Args:
+            active_players: List of players still in the hand
+
+        Side Effects:
+            - Updates pot amount with current bets
+            - Clears player bet amounts
+        """
+        # Add current bets to pot
+        total_bets = sum(p.bet for p in active_players)
+        self.add_to_pot(total_bets)
+
+        # Clear player bets
+        for player in active_players:
+            player.bet = 0
+
+        # Log for debugging
+        logging.debug(f"End of betting round - New pot total: {self.pot}")

@@ -183,7 +183,7 @@ class AgenticPoker:
 
         # Set the current bet to the big blind amount
         self.current_bet = self.big_blind
-        
+
         # Update pot through pot manager
         self.pot_manager.add_to_pot(collected)
         self.pot = self.pot_manager.pot
@@ -213,7 +213,9 @@ class AgenticPoker:
         """
         initial_chips = {p: p.chips for p in self.players}
         post_draw.handle_showdown(
-            players=self.players, pot=self.pot, initial_chips=initial_chips
+            players=self.players,
+            initial_chips=initial_chips,
+            pot_manager=self.pot_manager,
         )
 
     def _log_chip_summary(self) -> None:
@@ -610,3 +612,42 @@ class AgenticPoker:
                 best_players.append(player)
 
         return best_players
+
+    def _handle_betting_round(self, round_name: str) -> bool:
+        """
+        Handle a complete betting round.
+
+        Args:
+            round_name: Name of the betting round for logging
+
+        Returns:
+            bool: True if game should continue, False if round is over
+        """
+        # Store initial total for validation
+        initial_total = sum(p.chips + p.bet for p in self.players)
+
+        # Get active players
+        active_players = [p for p in self.players if not p.folded]
+
+        # Run betting round
+        result = betting.handle_betting_round(
+            players=active_players,
+            pot=self.pot_manager.pot,
+            game_state={"current_bet": self.current_bet},
+        )
+
+        # Unpack result
+        new_pot, side_pots, should_continue = result
+
+        # Update pot manager with new values
+        if side_pots:
+            self.pot_manager.set_pots(new_pot, side_pots)
+        else:
+            self.pot_manager.add_to_pot(
+                new_pot - self.pot_manager.pot
+            )  # Add only the difference
+
+        # Validate pot state
+        self.pot_manager.validate_pot_state(active_players, initial_total)
+
+        return should_continue

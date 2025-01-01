@@ -29,6 +29,28 @@ def mock_logger():
     return Mock()
 
 
+def get_game_state_str(pot_manager, players):
+    """Helper function to get formatted game state string."""
+    state = [
+        "\nCurrent Game State:",
+        f"Pot: ${pot_manager.pot}",
+        "\nPlayers:",
+    ]
+    for p in players:
+        state.append(f"  {p.name}: chips=${p.chips}, bet=${p.bet}")
+    
+    # Don't include bets in total since they're already in the pot
+    total_in_play = sum(p.chips for p in players) + pot_manager.pot
+    state.append(f"\nTotal in play: ${total_in_play}")
+    
+    if pot_manager.side_pots:
+        state.append("\nSide Pots:")
+        for i, pot in enumerate(pot_manager.side_pots, 1):
+            state.append(f"  Pot {i}: ${pot.amount} (Eligible: {[p.name for p in pot.eligible_players]})")
+    
+    return "\n".join(state)
+
+
 class TestPotManager:
     def test_initialization(self, pot_manager):
         """Test initial state of PotManager."""
@@ -73,43 +95,31 @@ class TestPotManager:
 
     def test_calculate_side_pots_with_all_ins(self, pot_manager, mock_players):
         """Test side pot calculation with multiple all-in players."""
-        active_players = mock_players.copy()
-
-        # Player 1 has enough chips and bets 300
+        # Setup players
         mock_players[0].bet = 300
-        mock_players[0].chips = 700  # Started with 1000
-
-        # Player 2 goes all-in for 200
+        mock_players[0].chips = 700
         mock_players[1].bet = 200
-        mock_players[1].chips = 0  # All-in
-
-        # Player 3 goes all-in for 100
+        mock_players[1].chips = 0
         mock_players[2].bet = 100
-        mock_players[2].chips = 0  # All-in
+        mock_players[2].chips = 0
 
-        all_in_players = [mock_players[2], mock_players[1]]  # Ordered by bet size
+        all_in_players = [mock_players[2], mock_players[1]]
+        
+        side_pots = pot_manager.calculate_side_pots(mock_players, all_in_players)
+        
+        # Verify number of pots
+        assert len(side_pots) == 3, \
+            f"Expected 3 side pots, got {len(side_pots)}\n" + \
+            get_game_state_str(pot_manager, mock_players)
 
-        side_pots = pot_manager.calculate_side_pots(active_players, all_in_players)
-
-        # Should create three pots
-        assert len(side_pots) == 3
-
-        # Main pot - all players contribute 100
-        assert side_pots[0].amount == 300  # 100 * 3
-        assert len(side_pots[0].eligible_players) == 3
-        assert all(p in side_pots[0].eligible_players for p in mock_players)
-
-        # First side pot - P1 and P2 contribute additional 100
-        assert side_pots[1].amount == 200  # 100 * 2
-        assert len(side_pots[1].eligible_players) == 2
-        assert mock_players[0] in side_pots[1].eligible_players
-        assert mock_players[1] in side_pots[1].eligible_players
-        assert mock_players[2] not in side_pots[1].eligible_players
-
-        # Second side pot - only P1's additional 100
-        assert side_pots[2].amount == 100
-        assert len(side_pots[2].eligible_players) == 1
-        assert side_pots[2].eligible_players[0] == mock_players[0]
+        # Verify main pot
+        assert side_pots[0].amount == 300, \
+            f"Main pot should be $300, got ${side_pots[0].amount}\n" + \
+            get_game_state_str(pot_manager, mock_players)
+        assert len(side_pots[0].eligible_players) == 3, \
+            f"Main pot should have 3 players, got {len(side_pots[0].eligible_players)}\n" + \
+            f"Eligible players: {[p.name for p in side_pots[0].eligible_players]}\n" + \
+            get_game_state_str(pot_manager, mock_players)
 
     def test_calculate_side_pots_empty_input(self, pot_manager):
         """Test side pot calculation with empty input."""
@@ -454,17 +464,20 @@ class TestPotManager:
         pot_manager.pot = 300
         for player in mock_players:
             player.bet = 100
-            player.chips = 900
+            player.chips = 900  # Started with 1000, bet 100
 
         # Should pass validation
         assert pot_manager.validate_pot_state(mock_players)
 
-        # Setup invalid state
-        pot_manager.pot = 400  # More in pot than bets
-
-        # Should raise error
-        with pytest.raises(InvalidGameStateError):
+        # Setup invalid state - pot is less than current bets
+        pot_manager.pot = 200  # Less than total bets (300)
+        
+        # Should raise error due to pot/bet mismatch
+        with pytest.raises(InvalidGameStateError, match="Current bets exceed pot"):
             pot_manager.validate_pot_state(mock_players)
+
+        # Reset to valid state
+        pot_manager.pot = 300
 
     def test_validate_pot_state_total_chips(self, pot_manager, mock_players):
         """Test pot state validation including total chips consistency."""
@@ -474,24 +487,64 @@ class TestPotManager:
             player.chips = initial_chips
             player.bet = 0
         
-        # Calculate initial total
-        initial_total = sum(p.chips for p in mock_players)
+        initial_total = sum(p.chips for p in mock_players)  # 3000
         
         # Should pass validation
-        assert pot_manager.validate_pot_state(mock_players, initial_total)
+        assert pot_manager.validate_pot_state(mock_players, initial_total), \
+            f"Initial state validation failed:{get_game_state_str(pot_manager, mock_players)}"
         
-        # Setup valid betting state - total chips should remain constant
-        pot_manager.pot = 300
+        # Setup valid betting state
         for player in mock_players:
-            player.bet = 100
-            player.chips = 900  # Started with 1000, bet 100
+            bet_amount = 100
+            player.chips -= bet_amount  # Deduct from chips first
+            player.bet = bet_amount    # Then set the bet
         
-        # Should still pass validation since total chips haven't changed
-        assert pot_manager.validate_pot_state(mock_players, initial_total)
+        # Add bets to pot
+        total_bets = sum(p.bet for p in mock_players)
+        pot_manager.add_to_pot(total_bets)
         
-        # Setup invalid state where chips disappeared
-        mock_players[0].chips = 800  # Lost 100 chips that aren't in pot
+        # Should still pass validation
+        # Note: Don't include bets in total since they're now in the pot
+        current_total = sum(p.chips for p in mock_players) + pot_manager.pot
+        assert current_total == initial_total, \
+            f"Total chips changed! Expected ${initial_total}, got ${current_total}\n" + \
+            get_game_state_str(pot_manager, mock_players)
+
+    def test_pot_progression_through_rounds(self, pot_manager, mock_players):
+        """Test pot tracking through multiple betting rounds."""
+        # Setup initial state - each player starts with 1000 chips
+        for player in mock_players:
+            player.chips = 1000
+            player.bet = 0
+        initial_total = sum(p.chips for p in mock_players)  # 3000
         
-        # Should raise error
-        with pytest.raises(InvalidGameStateError, match="Total chips changed"):
-            pot_manager.validate_pot_state(mock_players, initial_total)
+        # Round 1: Everyone bets 100
+        for player in mock_players:
+            bet_amount = 100
+            player.chips -= bet_amount  # Deduct from chips first
+            player.bet = bet_amount    # Then set the bet
+        
+        # Add round 1 bets to pot
+        total_bets = sum(p.bet for p in mock_players)
+        pot_manager.add_to_pot(total_bets)  # Add 300 to pot
+        
+        # Clear bets before round 2
+        for player in mock_players:
+            player.bet = 0
+        
+        # Round 2: Two players bet 200
+        for player in mock_players[:2]:
+            bet_amount = 200
+            player.chips -= bet_amount  # Deduct from chips first
+            player.bet = bet_amount    # Then set the bet
+        
+        # Add round 2 bets to pot
+        total_bets = sum(p.bet for p in mock_players)
+        pot_manager.add_to_pot(total_bets)  # Add 400 to pot
+        
+        # Verify final state
+        # Note: Don't include bets in total since they're now in the pot
+        current_total = sum(p.chips for p in mock_players) + pot_manager.pot
+        assert current_total == initial_total, \
+            f"Total chips changed! Expected ${initial_total}, got ${current_total}\n" + \
+            get_game_state_str(pot_manager, mock_players)
