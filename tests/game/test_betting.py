@@ -166,6 +166,18 @@ def test_complex_all_in_scenario():
 
     pot, side_pots = betting_round(players, 0)
 
+    print("\nComplex all-in scenario:")
+    print(f"Player 1 bet: {players[0].bet} (chips: {players[0].chips})")
+    print(f"Player 2 bet: {players[1].bet} (chips: {players[1].chips})")
+    print(f"Player 3 bet: {players[2].bet} (chips: {players[2].chips})")
+    print(f"Player 4 bet: {players[3].bet} (chips: {players[3].chips})")
+    print(f"Total pot: {pot}")
+    print("Side pots:")
+    for i, sp in enumerate(side_pots):
+        print(
+            f"  Pot {i+1}: ${sp.amount} - Eligible: {[p.name for p in sp.eligible_players]}"
+        )
+
     assert pot == 325  # Total of all bets
     assert len(side_pots) == 3
 
@@ -269,6 +281,17 @@ def test_side_pots_all_players_all_in():
     players[1].decide_action = lambda x: ("call", 100)  # Will only bet 50
 
     pot, side_pots = betting_round(players, 0)
+
+    print("\nAll players all-in scenario:")
+    print(f"Player 1 bet: {players[0].bet} (chips: {players[0].chips})")
+    print(f"Player 2 bet: {players[1].bet} (chips: {players[1].chips})")
+    print(f"Player 3 bet: {players[2].bet} (chips: {players[2].chips})")
+    print(f"Total pot: {pot}")
+    print("Side pots:")
+    for i, sp in enumerate(side_pots):
+        print(
+            f"  Pot {i+1}: ${sp.amount} - Eligible: {[p.name for p in sp.eligible_players]}"
+        )
 
     assert pot == 175  # Total of all bets (25 + 50 + 100)
     assert len(side_pots) == 3
