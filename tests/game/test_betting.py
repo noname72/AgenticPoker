@@ -1,5 +1,10 @@
 import pytest
-from game.betting import betting_round, calculate_side_pots
+from game.betting import (
+    betting_round,
+    calculate_side_pots,
+    collect_blinds_and_antes,
+    handle_betting_round,
+)
 from game.player import Player
 from game.types import SidePot
 
@@ -443,3 +448,149 @@ def test_betting_round_raise_all_in():
     assert len(side_pots) == 1
     assert side_pots[0].amount == 120
     assert len(side_pots[0].eligible_players) == 3
+
+
+def test_collect_blinds_and_antes():
+    """Test collecting blinds and antes from players."""
+    players = [
+        Player("Player 1", 1000),
+        Player("Player 2", 1000),
+        Player("Player 3", 1000),
+    ]
+
+    total = collect_blinds_and_antes(
+        players=players, dealer_index=0, small_blind=10, big_blind=20, ante=5
+    )
+
+    # Expected total: 3 antes (5 each) + small blind (10) + big blind (20)
+    assert total == 45
+
+    # Check player chip counts
+    assert players[0].chips == 995  # Paid ante only
+    assert players[1].chips == 985  # Paid ante + small blind
+    assert players[2].chips == 975  # Paid ante + big blind
+
+
+def test_collect_blinds_and_antes_short_stack():
+    """Test collecting blinds and antes when players are short stacked."""
+    players = [
+        Player("Player 1", 100),
+        Player("Player 2", 5),   # Can only post partial small blind
+        Player("Player 3", 15),  # Can only post partial big blind
+    ]
+    
+    total = collect_blinds_and_antes(
+        players=players, 
+        dealer_index=0, 
+        small_blind=10, 
+        big_blind=20, 
+        ante=5
+    )
+    
+    # Recalculate expected total:
+    # Player 1: 5 (ante)
+    # Player 2: 5 (all-in for partial small blind)
+    # Player 3: 15 (all-in for partial big blind)
+    assert total == 25  # 5 (ante) + 5 (partial SB) + 15 (partial BB)
+    assert players[1].chips == 0  # All-in from small blind
+    assert players[2].chips == 0  # All-in from big blind
+
+
+def test_handle_betting_round_pre_draw():
+    """Test handling a complete pre-draw betting round."""
+    players = [
+        Player("Player 1", 1000),
+        Player("Player 2", 1000),
+        Player("Player 3", 1000),
+    ]
+
+    # Mock player decisions
+    for player in players:
+        player.decide_action = lambda x: ("call", 20)
+
+    game_state = {
+        "pot": 0,
+        "current_bet": 20,
+        "small_blind": 10,
+        "big_blind": 20,
+        "dealer_index": 0,
+    }
+
+    new_pot, side_pots = handle_betting_round(
+        players=players, pot=0, dealer_index=0, game_state=game_state, phase="pre-draw"
+    )
+
+    assert new_pot == 60  # All players called 20
+    assert side_pots is None  # No side pots created
+    assert all(p.bet == 20 for p in players)
+
+
+def test_handle_betting_round_all_in():
+    """Test handling a betting round with an all-in situation."""
+    players = [
+        Player("Player 1", 100),
+        Player("Player 2", 50),  # Will go all-in
+        Player("Player 3", 100),
+    ]
+
+    # Set up betting sequence
+    players[0].decide_action = lambda x: ("raise", 75)
+    players[1].decide_action = lambda x: ("call", 75)  # Will only bet 50
+    players[2].decide_action = lambda x: ("call", 75)
+
+    game_state = {
+        "pot": 0,
+        "current_bet": 0,
+        "small_blind": 10,
+        "big_blind": 20,
+        "dealer_index": 0,
+    }
+
+    new_pot, side_pots = handle_betting_round(
+        players=players, pot=0, dealer_index=0, game_state=game_state, phase="post-draw"
+    )
+
+    assert new_pot == 200  # Total bets: 75 + 50 + 75
+    assert len(side_pots) == 2
+
+    # First side pot (all players contribute 50)
+    assert side_pots[0].amount == 150
+    assert len(side_pots[0].eligible_players) == 3
+
+    # Second side pot (remaining players contribute 25 each)
+    assert side_pots[1].amount == 50
+    assert len(side_pots[1].eligible_players) == 2
+    assert players[1] not in side_pots[1].eligible_players
+
+
+def test_handle_betting_round_everyone_folds():
+    """Test handling a betting round where everyone folds except one player."""
+    players = [
+        Player("Player 1", 100),
+        Player("Player 2", 100),
+        Player("Player 3", 100),
+    ]
+    
+    # Everyone folds to Player 1's bet
+    players[0].decide_action = lambda x: ("raise", 30)  # Changed from 50 to match actual bet
+    players[1].decide_action = lambda x: ("fold", 0)
+    players[2].decide_action = lambda x: ("fold", 0)
+    
+    game_state = {
+        "current_bet": 0,
+        "small_blind": 10,
+        "big_blind": 20,
+        "dealer_index": 0
+    }
+    
+    new_pot, side_pots = handle_betting_round(
+        players=players,
+        pot=0,
+        dealer_index=0,
+        game_state=game_state
+    )
+    
+    assert new_pot == 30  # Only Player 1's bet
+    assert side_pots is None
+    assert all(p.folded for p in players[1:])
+    assert not players[0].folded

@@ -432,3 +432,102 @@ def log_action(
         action_str += f"\n{player.name} raises to ${amount}{status}"
 
     logging.info(action_str)
+
+
+def collect_blinds_and_antes(
+    players: List[Player],
+    dealer_index: int,
+    small_blind: int = 10,
+    big_blind: int = 20,
+    ante: int = 0,
+) -> int:
+    """
+    Collect mandatory bets (blinds and antes) at the start of each hand.
+
+    Args:
+        players: List of active players
+        dealer_index: Position of the dealer button
+        small_blind: Small blind amount (default: 10)
+        big_blind: Big blind amount (default: 20)
+        ante: Ante amount (default: 0)
+
+    Returns:
+        int: Total amount collected
+    """
+    total_collected = 0
+
+    # Collect antes
+    for player in players:
+        ante_amount = min(ante, player.chips)
+        if ante_amount > 0:
+            actual_ante = player.place_bet(ante_amount)
+            total_collected += actual_ante
+            if actual_ante < ante:
+                logging.info(
+                    f"{player.name} posts partial ante of ${actual_ante} (all in)"
+                )
+            else:
+                logging.info(f"{player.name} posts ante of ${actual_ante}")
+
+    # Collect blinds
+    sb_pos = (dealer_index + 1) % len(players)
+    bb_pos = (dealer_index + 2) % len(players)
+
+    # Small blind
+    sb_amount = min(small_blind, players[sb_pos].chips)
+    actual_sb = players[sb_pos].place_bet(sb_amount)
+    total_collected += actual_sb
+    _log_blind_post("small", players[sb_pos], actual_sb, small_blind)
+
+    # Big blind
+    bb_amount = min(big_blind, players[bb_pos].chips)
+    actual_bb = players[bb_pos].place_bet(bb_amount)
+    total_collected += actual_bb
+    _log_blind_post("big", players[bb_pos], actual_bb, big_blind)
+
+    return total_collected
+
+
+def _log_blind_post(
+    blind_type: str, player: Player, amount: int, expected_amount: int
+) -> None:
+    """Helper to log blind postings consistently."""
+    status = " (all in)" if player.chips == 0 else ""
+    if amount < expected_amount:
+        logging.info(
+            f"{player.name} posts partial {blind_type} blind of ${amount}{status}"
+        )
+    else:
+        logging.info(f"{player.name} posts {blind_type} blind of ${amount}{status}")
+
+
+def handle_betting_round(
+    players: List[Player],
+    pot: int,
+    dealer_index: int,
+    game_state: dict,
+    phase: str = "pre-draw",
+) -> Tuple[int, Optional[List[SidePot]]]:
+    """
+    Handle a complete betting round.
+
+    Args:
+        players: List of active players
+        pot: Current pot amount
+        dealer_index: Position of dealer button
+        game_state: Current game state
+        phase: Betting phase ('pre-draw' or 'post-draw')
+
+    Returns:
+        Tuple[int, Optional[List[SidePot]]]: New pot amount and side pots if any
+    """
+    logging.info(f"\n--- {phase.title()} Betting ---")
+
+    result = betting_round(players, pot, game_state)
+
+    if isinstance(result, tuple):
+        new_pot, side_pots = result
+    else:
+        new_pot, side_pots = result, None
+
+    return new_pot, side_pots
