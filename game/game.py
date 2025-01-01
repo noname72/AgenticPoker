@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Union
 
 
 from .deck import Deck
@@ -76,6 +76,7 @@ class AgenticPoker:
         side_pots (Optional[List[SidePot]]): List of side pots in the game.
         round_starting_stacks (Dict[Player, int]): Dictionary of starting chip counts for each round.
         config (GameConfig): Configuration parameters for the game.
+        current_bet (int): Current bet amount in the game.
     """
 
     # Class attributes defined before __init__
@@ -93,6 +94,7 @@ class AgenticPoker:
     session_id: Optional[str]
     round_starting_stacks: Dict[Player, int]
     config: GameConfig
+    current_bet: int
 
     def __init__(
         self,
@@ -136,6 +138,7 @@ class AgenticPoker:
                 raise ValueError("Players cannot have negative chips")
 
         self.pot = 0  # Initialize pot
+        self.current_bet = 0  # Add this line to initialize current_bet
         self.pot_manager = PotManager()
 
         self.small_blind = self.config.small_blind
@@ -204,9 +207,7 @@ class AgenticPoker:
         """
         initial_chips = {p: p.chips for p in self.players}
         post_draw.handle_showdown(
-            players=self.players,
-            pot=self.pot,
-            initial_chips=initial_chips
+            players=self.players, pot=self.pot, initial_chips=initial_chips
         )
 
     def _log_chip_summary(self) -> None:
@@ -307,42 +308,66 @@ class AgenticPoker:
             "dealer_index": self.dealer_index,
         }
 
-    def _handle_pre_draw_betting(self, initial_chips: Dict[Player, int]) -> bool:
-        """Handle pre-draw betting round."""
-        game_state = self._create_game_state()
-        
+    def _handle_pre_draw_betting(self, initial_chips):
+        """Handle the pre-draw betting round.
+
+        Args:
+            initial_chips: Dictionary of starting chip counts
+
+        Returns:
+            bool: Whether the game should continue
+        """
+        # Create game state dictionary
+        game_state = {
+            "current_bet": self.current_bet,
+            "pot": self.pot,
+            "small_blind": self.small_blind,
+            "big_blind": self.big_blind,
+            "dealer_index": self.dealer_index,
+            "max_raise_multiplier": self.config.max_raise_multiplier,
+            "max_raises_per_round": self.config.max_raises_per_round,
+            "players": [
+                {
+                    "name": p.name,
+                    "chips": p.chips,
+                    "bet": p.bet,
+                    "folded": p.folded,
+                    "position": i,
+                }
+                for i, p in enumerate(self.players)
+            ],
+        }
+
         # Use pre_draw module for betting round
-        new_pot, side_pots = pre_draw.handle_pre_draw_betting(
+        betting_result = pre_draw.handle_pre_draw_betting(
             players=self.players,
-            pot=self.pot_manager.pot,
+            pot=self.pot,
             dealer_index=self.dealer_index,
             game_state=game_state,
-            pot_manager=self.pot_manager
+            pot_manager=self.pot_manager,
         )
-        
+
+        # Unpack the values we need from the result
+        new_pot, side_pots, should_continue = betting_result
+
         # Update game state
         self.pot = new_pot
-        if side_pots:
-            self.side_pots = side_pots
-        
-        # Check if only one player remains
-        if self._handle_single_remaining_player(initial_chips, "pre-draw"):
-            return False
-        
-        return True
+        self.side_pots = side_pots
+
+        return should_continue
 
     def _handle_post_draw_betting(self, initial_chips: Dict[Player, int]) -> None:
         """Handle post-draw betting round and showdown."""
         game_state = self._create_game_state()
-        
+
         # Use post_draw module for betting round
         new_pot, side_pots = post_draw.handle_post_draw_betting(
             players=self.players,
             pot=self.pot_manager.pot,
             game_state=game_state,
-            pot_manager=self.pot_manager
+            pot_manager=self.pot_manager,
         )
-        
+
         # Update game state
         self.pot = new_pot
         if side_pots:
@@ -350,9 +375,7 @@ class AgenticPoker:
 
         # Handle showdown using post_draw module
         post_draw.handle_showdown(
-            players=self.players,
-            pot=self.pot,
-            initial_chips=initial_chips
+            players=self.players, pot=self.pot, initial_chips=initial_chips
         )
 
     def _log_chip_movements(self, initial_chips: Dict[Player, int]) -> None:
@@ -416,10 +439,7 @@ class AgenticPoker:
 
     def draw_phase(self) -> None:
         """Handle the draw phase where players can discard and draw new cards."""
-        draw_phase.handle_draw_phase(
-            players=self.players,
-            deck=self.deck
-        )
+        draw_phase.handle_draw_phase(players=self.players, deck=self.deck)
 
     def _reset_round(self) -> None:
         """Reset the state after a round is complete."""
