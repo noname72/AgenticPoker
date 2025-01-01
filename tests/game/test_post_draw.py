@@ -83,9 +83,9 @@ def test_handle_showdown_single_winner(mock_players, caplog):
     mock_players[2].folded = True
     initial_chips = {p: p.chips for p in mock_players}
 
-    # Create mock pot manager
+    # Create mock pot manager with pot property
     mock_pot_manager = MagicMock()
-    mock_pot_manager.get_pots.return_value = (300, [])  # main_pot=300, no side pots
+    mock_pot_manager.pot = 300  # Set the pot property directly
 
     handle_showdown(
         players=mock_players, initial_chips=initial_chips, pot_manager=mock_pot_manager
@@ -100,9 +100,12 @@ def test_handle_showdown_multiple_winners(mock_players, caplog):
     caplog.set_level(logging.INFO)
     initial_chips = {p: 1000 for p in mock_players}
 
-    # Create mock pot manager
+    # Create mock pot manager with pot property
     mock_pot_manager = MagicMock()
-    mock_pot_manager.get_pots.return_value = (300, [])  # main_pot=300, no side pots
+    mock_pot_manager.pot = 300  # Set the pot property directly
+    mock_pot_manager.calculate_side_pots.return_value = [
+        SidePot(amount=300, eligible_players=mock_players)
+    ]
 
     # Mock hands to create a tie
     with patch("game.post_draw._evaluate_hands") as mock_evaluate:
@@ -128,7 +131,10 @@ def test_handle_showdown_odd_chips(mock_players, caplog):
 
     # Create mock pot manager with odd pot amount
     mock_pot_manager = MagicMock()
-    mock_pot_manager.get_pots.return_value = (301, [])  # main_pot=301, no side pots
+    mock_pot_manager.pot = 301  # Set odd pot amount
+    mock_pot_manager.calculate_side_pots.return_value = [
+        SidePot(amount=301, eligible_players=mock_players)
+    ]
 
     # Mock hands to create a tie
     with patch("game.post_draw._evaluate_hands") as mock_evaluate:
@@ -153,11 +159,11 @@ def test_handle_showdown_with_side_pots(mock_players, caplog):
 
     # Create mock pot manager with main pot and side pot
     mock_pot_manager = MagicMock()
-    mock_side_pot = SidePot(amount=100, eligible_players=mock_players[1:])
-    mock_pot_manager.get_pots.return_value = (
-        200,
-        [mock_side_pot],
-    )  # main_pot=200, one side pot
+    mock_pot_manager.pot = 300  # Total pot
+    mock_pot_manager.calculate_side_pots.return_value = [
+        SidePot(amount=200, eligible_players=mock_players),  # Main pot
+        SidePot(amount=100, eligible_players=mock_players[1:])  # Side pot
+    ]
 
     # Mock hands evaluation
     with patch("game.post_draw._evaluate_hands") as mock_evaluate:
@@ -178,7 +184,7 @@ def test_handle_showdown_with_side_pots(mock_players, caplog):
         assert mock_players[1].chips == 1100  # Initial 1000 + side pot 100
         assert mock_players[2].chips == 1000  # Unchanged
         assert "wins $200" in caplog.text
-        assert "wins $100 from side pot" in caplog.text
+        assert "wins $100" in caplog.text
 
 
 def test_evaluate_hands_single_winner():
@@ -241,21 +247,3 @@ def test_log_chip_movements(mock_players, caplog):
     assert "Player0: $1000 → $1200 (+200)" in caplog.text
     assert "Player1: $1000 → $800 (-200)" in caplog.text
     assert "Player2" not in caplog.text  # No change, shouldn't be logged
-
-
-def test_handle_showdown_odd_chips(mock_players, caplog):
-    """Test showdown with odd number of chips to split."""
-    caplog.set_level(logging.INFO)
-    initial_chips = {p: 1000 for p in mock_players}
-    pot = 301  # Odd number
-
-    # Mock hands to create a tie
-    with patch("game.post_draw._evaluate_hands") as mock_evaluate:
-        mock_evaluate.return_value = mock_players[:2]  # First two players tie
-
-        handle_showdown(mock_players, pot, initial_chips)
-
-        # First player should get 151, second player 150
-        assert mock_players[0].chips == 1151
-        assert mock_players[1].chips == 1150
-        assert mock_players[2].chips == 1000
