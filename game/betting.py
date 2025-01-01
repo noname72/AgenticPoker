@@ -434,100 +434,132 @@ def log_action(
     logging.info(action_str)
 
 
-def collect_blinds_and_antes(
-    players: List[Player],
-    dealer_index: int,
-    small_blind: int = 10,
-    big_blind: int = 20,
-    ante: int = 0,
-) -> int:
-    """
-    Collect mandatory bets (blinds and antes) at the start of each hand.
-
-    Args:
-        players: List of active players
-        dealer_index: Position of the dealer button
-        small_blind: Small blind amount (default: 10)
-        big_blind: Big blind amount (default: 20)
-        ante: Ante amount (default: 0)
-
-    Returns:
-        int: Total amount collected
-    """
-    total_collected = 0
-
-    # Collect antes
-    for player in players:
-        ante_amount = min(ante, player.chips)
-        if ante_amount > 0:
-            actual_ante = player.place_bet(ante_amount)
-            total_collected += actual_ante
-            if actual_ante < ante:
-                logging.info(
-                    f"{player.name} posts partial ante of ${actual_ante} (all in)"
-                )
-            else:
-                logging.info(f"{player.name} posts ante of ${actual_ante}")
-
+def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante):
+    """Collect blinds and antes from players."""
+    collected = 0
+    num_players = len(players)
+    
+    # Collect antes first
+    if ante > 0:
+        for player in players:
+            ante_amount = min(ante, player.chips)
+            player.chips -= ante_amount
+            collected += ante_amount
+            
     # Collect blinds
-    sb_pos = (dealer_index + 1) % len(players)
-    bb_pos = (dealer_index + 2) % len(players)
-
+    sb_index = (dealer_index + 1) % num_players
+    bb_index = (dealer_index + 2) % num_players
+    
     # Small blind
-    sb_amount = min(small_blind, players[sb_pos].chips)
-    actual_sb = players[sb_pos].place_bet(sb_amount)
-    total_collected += actual_sb
-    _log_blind_post("small", players[sb_pos], actual_sb, small_blind)
-
+    sb_player = players[sb_index]
+    sb_amount = min(small_blind, sb_player.chips)
+    sb_player.chips -= sb_amount
+    collected += sb_amount
+    sb_player.bet = sb_amount
+    
     # Big blind
-    bb_amount = min(big_blind, players[bb_pos].chips)
-    actual_bb = players[bb_pos].place_bet(bb_amount)
-    total_collected += actual_bb
-    _log_blind_post("big", players[bb_pos], actual_bb, big_blind)
-
-    return total_collected
-
-
-def _log_blind_post(
-    blind_type: str, player: Player, amount: int, expected_amount: int
-) -> None:
-    """Helper to log blind postings consistently."""
-    status = " (all in)" if player.chips == 0 else ""
-    if amount < expected_amount:
-        logging.info(
-            f"{player.name} posts partial {blind_type} blind of ${amount}{status}"
-        )
-    else:
-        logging.info(f"{player.name} posts {blind_type} blind of ${amount}{status}")
+    bb_player = players[bb_index]
+    bb_amount = min(big_blind, bb_player.chips)
+    bb_player.chips -= bb_amount
+    collected += bb_amount
+    bb_player.bet = bb_amount
+    
+    return collected
 
 
 def handle_betting_round(
-    players: List[Player],
+    players: List[Player], 
+    current_bet: int, 
     pot: int,
-    dealer_index: int,
-    game_state: dict,
-    phase: str = "pre-draw",
-) -> Tuple[int, Optional[List[SidePot]]]:
-    """
-    Handle a complete betting round.
-
+    dealer_index: Optional[int] = None,
+    game_state: Optional[dict] = None,
+) -> Tuple[int, Optional[List[SidePot]], bool]:
+    """Handle a betting round.
+    
     Args:
         players: List of active players
+        current_bet: Current bet amount to call
         pot: Current pot amount
-        dealer_index: Position of dealer button
-        game_state: Current game state
-        phase: Betting phase ('pre-draw' or 'post-draw')
-
+        dealer_index: Optional position of the dealer
+        game_state: Optional game state dictionary
+        
     Returns:
-        Tuple[int, Optional[List[SidePot]]]: New pot amount and side pots if any
+        Tuple[int, Optional[List[SidePot]], bool]: Returns:
+            - new pot amount
+            - list of side pots (if any)
+            - boolean indicating if game should continue
     """
-    logging.info(f"\n--- {phase.title()} Betting ---")
-
-    result = betting_round(players, pot, game_state)
-
-    if isinstance(result, tuple):
-        new_pot, side_pots = result
+    active_players = [p for p in players if not p.folded]
+    all_in_players: List[Player] = []
+    side_pots: Optional[List[SidePot]] = None
+    
+    # Start with player after dealer/big blind
+    if dealer_index is not None:
+        start_index = (dealer_index + 3) % len(players)  # Start after big blind
     else:
-        new_pot, side_pots = result, None
-
-    return new_pot, side_pots
+        start_index = 0
+        
+    current_player_index = start_index
+    
+    while True:
+        player = players[current_player_index]
+        
+        if not player.folded and player.chips > 0:
+            # Get and process player action
+            action, amount = _get_action_and_amount(player, current_bet, game_state)
+            
+            if action == "fold":
+                player.fold()
+            else:
+                # Handle call or raise
+                call_amount = current_bet - player.bet
+                if call_amount > 0:
+                    if call_amount >= player.chips:
+                        # All-in call
+                        all_in_amount = player.chips
+                        player.bet += all_in_amount
+                        pot += all_in_amount
+                        player.chips = 0
+                        all_in_players.append(player)
+                    else:
+                        # Normal call
+                        player.bet += call_amount
+                        pot += call_amount
+                        player.chips -= call_amount
+                        
+                if action == "raise" and amount > current_bet:
+                    raise_amount = amount - current_bet
+                    if raise_amount >= player.chips:
+                        # All-in raise
+                        all_in_amount = player.chips
+                        player.bet += all_in_amount
+                        pot += all_in_amount
+                        player.chips = 0
+                        all_in_players.append(player)
+                        current_bet = player.bet
+                    else:
+                        # Normal raise
+                        player.chips -= raise_amount
+                        player.bet += raise_amount
+                        pot += raise_amount
+                        current_bet = amount
+            
+            # Log the action
+            log_action(player, action, amount, current_bet, pot)
+        
+        # Move to next player
+        current_player_index = (current_player_index + 1) % len(players)
+        
+        # Check if round is complete
+        if current_player_index == start_index:
+            break
+            
+    # Calculate side pots if needed
+    if all_in_players:
+        side_pots = calculate_side_pots(active_players, all_in_players)
+        
+    # Determine if game should continue
+    active_count = sum(1 for p in players if not p.folded)
+    should_continue = active_count > 1
+    
+    return pot, side_pots, should_continue

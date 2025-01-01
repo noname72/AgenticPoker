@@ -11,59 +11,29 @@ def handle_pre_draw_betting(
     players: List[Player],
     pot: int,
     dealer_index: int,
-    game_state: dict,
-    pot_manager: PotManager,
+    game_state: Optional[dict] = None,
 ) -> Tuple[int, Optional[List[SidePot]], bool]:
-    """
-    Handle the pre-draw betting round.
-
+    """Handle the pre-draw betting round.
+    
     Args:
         players: List of active players
         pot: Current pot amount
-        dealer_index: Position of dealer button
-        game_state: Current game state dictionary
-        pot_manager: PotManager instance for handling pot updates
-
+        dealer_index: Position of the dealer
+        game_state: Optional game state dictionary
+        
     Returns:
         Tuple containing:
-        - new pot amount (int)
-        - list of side pots if any (Optional[List[SidePot]])
-        - whether to continue to draw phase (bool)
+        - new pot amount
+        - list of side pots (if any)
+        - boolean indicating if game should continue
     """
-    logging.info("\n--- Pre-Draw Betting ---")
-
-    # Use betting module to handle betting round
-    new_pot, side_pots = betting.handle_betting_round(
+    return betting.handle_betting_round(
         players=players,
+        current_bet=game_state.get("current_bet", 0) if game_state else 0,
         pot=pot,
         dealer_index=dealer_index,
         game_state=game_state,
-        phase="pre-draw",
     )
-
-    # Update the pot manager with new values
-    pot_manager.pot = new_pot  # Use direct pot assignment instead of update_main_pot
-    if side_pots:
-        pot_manager.side_pots = side_pots  # Use direct side_pots assignment
-
-    # Check if only one player remains
-    active_players = [p for p in players if not p.folded]
-    should_continue = len(active_players) > 1
-
-    # If only one player remains, award them the pot (main + side pots)
-    if not should_continue:
-        winner = active_players[0]
-        total_payout = new_pot + sum(side_pot.amount for side_pot in (side_pots or []))
-        winner.chips += total_payout
-        logging.info(
-            f"\n{winner.name} wins ${total_payout} (all others folded pre-draw)"
-        )
-        new_pot = 0  # Reset the main pot since it's been awarded
-
-    # Log chip movements after betting round
-    _log_chip_movements(players, game_state)
-
-    return new_pot, side_pots, should_continue
 
 
 def _log_chip_movements(players: List[Player], game_state: dict) -> None:

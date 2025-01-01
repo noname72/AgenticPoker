@@ -8,35 +8,32 @@ from .types import SidePot
 
 
 def handle_post_draw_betting(
-    players: List[Player], pot: int, game_state: dict, pot_manager: "PotManager"
-) -> Tuple[int, Optional[List[SidePot]]]:
-    """
-    Handle the post-draw betting round.
-
+    players: List[Player],
+    pot: int,
+    dealer_index: int,
+    game_state: Optional[dict] = None,
+) -> Tuple[int, Optional[List[SidePot]], bool]:
+    """Handle the post-draw betting round.
+    
     Args:
         players: List of active players
         pot: Current pot amount
-        game_state: Current game state dictionary
-        pot_manager: PotManager instance handling pot calculations
-
+        dealer_index: Position of the dealer
+        game_state: Optional game state dictionary
+        
     Returns:
         Tuple containing:
-        - Updated pot amount
-        - List of side pots (if any) or None
+        - new pot amount
+        - list of side pots (if any)
+        - boolean indicating if game should continue
     """
-    result = betting.betting_round(players, pot, game_state)
-
-    # Handle both return types
-    if isinstance(result, tuple):
-        new_pot, side_pots = result
-    else:
-        new_pot = result
-        side_pots = None
-
-    # Update the pot manager with the new pot and side pots
-    pot_manager.set_pots(new_pot, side_pots)
-
-    return new_pot, side_pots
+    return betting.handle_betting_round(
+        players=players,
+        current_bet=game_state.get("current_bet", 0) if game_state else 0,
+        pot=pot,
+        dealer_index=dealer_index,
+        game_state=game_state,
+    )
 
 
 def handle_showdown(

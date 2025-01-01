@@ -24,6 +24,7 @@ class GameConfig:
         session_id: Unique identifier for the game session
         max_raise_multiplier: Maximum raise as multiplier of current bet (e.g., 3 means max raise is 3x current bet)
         max_raises_per_round: Maximum number of raises allowed per betting round
+        min_bet: Minimum bet amount (defaults to big blind amount)
     """
 
     starting_chips: int = 1000
@@ -34,6 +35,7 @@ class GameConfig:
     session_id: Optional[str] = None
     max_raise_multiplier: int = 3
     max_raises_per_round: int = 4
+    min_bet: Optional[int] = None
 
     def __post_init__(self):
         """Validate configuration parameters."""
@@ -47,6 +49,11 @@ class GameConfig:
             raise ValueError("Max raise multiplier must be positive")
         if self.max_raises_per_round <= 0:
             raise ValueError("Max raises per round must be positive")
+        # Set min_bet to big blind if not specified
+        if self.min_bet is None:
+            self.min_bet = self.big_blind
+        elif self.min_bet < self.big_blind:
+            raise ValueError("Minimum bet cannot be less than big blind")
 
 
 class AgenticPoker:
@@ -174,6 +181,9 @@ class AgenticPoker:
             ante=self.ante,
         )
 
+        # Set the current bet to the big blind amount
+        self.current_bet = self.big_blind
+        
         # Update pot through pot manager
         self.pot_manager.add_to_pot(collected)
         self.pot = self.pot_manager.pot
@@ -304,43 +314,16 @@ class AgenticPoker:
             "dealer_index": self.dealer_index,
         }
 
-    def _handle_pre_draw_betting(self, initial_chips):
-        """Handle the pre-draw betting round.
-
-        Args:
-            initial_chips: Dictionary of starting chip counts
-
-        Returns:
-            bool: Whether the game should continue
-        """
-        # Create game state dictionary
-        game_state = {
-            "current_bet": self.current_bet,
-            "pot": self.pot,
-            "small_blind": self.small_blind,
-            "big_blind": self.big_blind,
-            "dealer_index": self.dealer_index,
-            "max_raise_multiplier": self.config.max_raise_multiplier,
-            "max_raises_per_round": self.config.max_raises_per_round,
-            "players": [
-                {
-                    "name": p.name,
-                    "chips": p.chips,
-                    "bet": p.bet,
-                    "folded": p.folded,
-                    "position": i,
-                }
-                for i, p in enumerate(self.players)
-            ],
-        }
+    def _handle_pre_draw_betting(self, initial_chips: Dict[Player, int]) -> bool:
+        """Handle pre-draw betting round."""
+        game_state = self._create_game_state()
 
         # Use pre_draw module for betting round
         betting_result = pre_draw.handle_pre_draw_betting(
             players=self.players,
-            pot=self.pot,
+            pot=self.pot_manager.pot,
             dealer_index=self.dealer_index,
             game_state=game_state,
-            pot_manager=self.pot_manager,
         )
 
         # Unpack the values we need from the result
@@ -357,11 +340,11 @@ class AgenticPoker:
         game_state = self._create_game_state()
 
         # Use post_draw module for betting round
-        new_pot, side_pots = post_draw.handle_post_draw_betting(
+        new_pot, side_pots, should_continue = post_draw.handle_post_draw_betting(
             players=self.players,
             pot=self.pot_manager.pot,
+            dealer_index=self.dealer_index,
             game_state=game_state,
-            pot_manager=self.pot_manager,
         )
 
         # Update game state
