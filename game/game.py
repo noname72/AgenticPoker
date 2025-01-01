@@ -371,7 +371,9 @@ class AgenticPoker:
 
         # Handle showdown using post_draw module
         post_draw.handle_showdown(
-            players=self.players, pot=self.pot, initial_chips=initial_chips
+            players=self.players,
+            initial_chips=initial_chips,
+            pot_manager=self.pot_manager
         )
 
     def _log_chip_movements(self, initial_chips: Dict[Player, int]) -> None:

@@ -144,3 +144,21 @@ class PotManager:
         for i, pot in enumerate(self.get_side_pots_view(), 1):
             players_str = ", ".join(pot["eligible_players"])
             logger.info(f"  Pot {i}: ${pot['amount']} (Eligible: {players_str})")
+
+    def set_pots(self, main_pot: int, side_pots: Optional[List[SidePot]] = None) -> None:
+        """
+        Set the main pot and side pots directly.
+
+        Args:
+            main_pot: Amount for the main pot
+            side_pots: Optional list of side pots to set
+
+        Side Effects:
+            - Updates the main pot amount
+            - Updates the side pots list
+        """
+        if main_pot < 0:
+            raise ValueError("Main pot cannot be negative")
+        
+        self.pot = main_pot
+        self.side_pots = side_pots
