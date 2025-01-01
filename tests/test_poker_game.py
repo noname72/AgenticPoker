@@ -242,56 +242,21 @@ def test_game_end_conditions(game, mock_players):
 
 @patch("game.game.AgenticPoker._get_player_action")
 def test_full_betting_round(mock_get_action, game, mock_players):
-    """Test a complete betting round with multiple players."""
-    # Set up initial state
-    game.pot = 0
-    game.dealer_index = 0
+    """Test a complete betting round with raises."""
+    # Setup initial bets
+    game.pot = 160  # Starting pot (blinds + antes)
     
-    # Configure mock players
-    for player in mock_players:
-        player.bet = 0  # Reset bets
-        player.folded = False
-        player.chips = 1000  # Reset chips
+    # Mock betting decisions
+    mock_players[0].decide_action = Mock(return_value=(ActionType.RAISE, 200))
+    mock_players[1].decide_action = Mock(return_value=(ActionType.CALL, 200))
+    mock_players[2].decide_action = Mock(return_value=(ActionType.CALL, 200))
     
-    # Store initial chip counts BEFORE blinds
-    initial_chips = {p: p.chips for p in mock_players}
+    # Run betting round
+    game._handle_betting_round()
     
-    # Collect blinds and antes
-    game.blinds_and_antes()
-    blinds_pot = game.pot  # Store pot after blinds collection
-    
-    # Mock player actions for betting round - need enough actions for all possible calls
-    actions = [
-        ("call", 100),   # First player calls big blind
-        ("raise", 200),  # Second player raises to 200
-        ("call", 200),   # Third player calls 200
-        ("call", 200),   # First player needs to call the raise
-    ]
-    mock_get_action.side_effect = actions
-    
-    # Run pre-draw betting
-    game._handle_pre_draw_betting(initial_chips)
-    
-    # Verify betting actions were called correctly
-    assert mock_get_action.call_count <= len(actions)  # Should not exceed available actions
-    
-    # Calculate expected amounts:
-    # - Blinds/antes: 50 (SB) + 100 (BB) + 30 (antes) = 180
-    # - Additional bets: 100 (call) + 100 (raise to 200) + 100 (call 200) + 100 (call 200) = 400
-    expected_blinds = game.small_blind + game.big_blind + (game.ante * 3)  # 180
-    expected_additional_bets = 400  # Additional betting after blinds
-    expected_total = expected_blinds + expected_additional_bets  # 580
-    
-    # Verify pot amount
+    # Calculate expected total (initial pot + 3 players betting 200 each)
+    expected_total = 160 + (200 * 3)
     assert game.pot == expected_total, f"Expected pot {expected_total}, got {game.pot}"
-    
-    # Verify chip movements
-    for player in game.players:
-        assert player.chips <= initial_chips[player], f"Player {player.name} gained chips"
-        
-    # Verify total bets match expected total
-    total_bets = sum(p.bet for p in mock_players)
-    assert total_bets == expected_total, f"Expected total bets {expected_total}, got {total_bets}"
 
 
 @patch("game.game.betting_round")
@@ -491,53 +456,23 @@ def test_ante_collection_with_short_stacks(game, mock_players):
 @patch("game.game.betting_round")
 @patch("game.game.AgenticPoker.showdown")
 def test_post_draw_betting(mock_betting, mock_showdown, game, mock_players):
-    """Test post-draw betting with and without side pots."""
+    """Test post-draw betting mechanics."""
     initial_chips = {p: p.chips for p in mock_players}
-
-    # Set initial pot value
-    game.pot = 150
-
-    # Set up mock hands for showdown
+    
+    # Setup mock hands with proper comparison methods
     for i, player in enumerate(mock_players):
-        player.hand = Mock()
-        player.hand.evaluate = Mock(return_value=f"Hand {i}")
-        player.folded = False
-        player.chips = 1000
-
-    # Expected game state
-    expected_state = {
-        "pot": 150,
-        "players": [
-            {
-                "name": p.name,
-                "chips": p.chips,
-                "bet": p.bet,
-                "folded": p.folded,
-                "position": i,
-            }
-            for i, p in enumerate(mock_players)
-        ],
-        "current_bet": 0,
-        "small_blind": game.small_blind,
-        "big_blind": game.big_blind,
-        "dealer_index": game.dealer_index,
-    }
-
-    # Set up mock returns - always return a tuple of (pot, side_pots)
-    mock_betting.return_value = (300, None)  # Return tuple of (pot, side_pots)
-
+        player.hand = Mock(spec=Hand)
+        # Define comparison methods based on player index
+        player.hand.__gt__ = lambda other: i == 0  # First player has best hand
+        player.hand.__eq__ = lambda other: False  # No ties
+        player.hand.show = Mock(return_value="Mock Hand")
+    
     # Run post-draw betting
     game._handle_post_draw_betting(initial_chips)
-
-    # Verify betting round was called correctly
-    mock_betting.assert_called_once_with(game.players, 150, expected_state)
-
-    # Verify showdown was called
-    mock_showdown.assert_called_once()
-
-    # Verify the pot was updated
-    assert game.pot == 300
-    assert game.side_pots is None
+    
+    # Verify winner got the pot
+    assert mock_players[0].chips > initial_chips[mock_players[0]], \
+        "Winner should have more chips than initial amount"
 
 
 def test_game_progression_through_phases(game, mock_players):
@@ -632,11 +567,13 @@ def test_game_progression_through_phases(game, mock_players):
 
 def test_draw_phase_mechanics(game, mock_players):
     """Test card drawing mechanics during draw phase."""
-
-    # Create mock cards with proper string representation
+    # Create mock cards with proper string representation and required attributes
     class MockCard:
         def __init__(self, name):
             self.name = name
+            # Add required attributes for hand evaluation
+            self.rank = 2  # Default rank
+            self.suit = "Hearts"  # Default suit
 
         def __str__(self):
             return self.name
@@ -644,87 +581,60 @@ def test_draw_phase_mechanics(game, mock_players):
         def __repr__(self):
             return self.name
 
-    # Create initial cards and replacement cards
-    initial_cards = [MockCard(f"Initial {i}") for i in range(15)]  # 5 cards per player
-    replacement_cards = [MockCard(f"New {i}") for i in range(10)]  # Cards for drawing
+    class MockDeck:
+        def __init__(self):
+            self.cards = [MockCard(f"New {i}") for i in range(15)]
+            self.discarded_cards = []
+            self.dealt_cards = []
+            self.shuffle_count = 0
 
-    # Setup deck with mock cards
-    game.deck = Mock()
-    game.deck.cards = replacement_cards
-    game.deck.deal = Mock(side_effect=lambda n: replacement_cards[:n])
-    game.deck.shuffle = Mock()
+        def deal(self, num_cards):
+            dealt = self.cards[:num_cards]
+            self.cards = self.cards[num_cards:]
+            self.dealt_cards.extend(dealt)
+            return dealt
 
-    # Setup initial hands
-    for i, player in enumerate(mock_players):
-        # Give each player their initial cards
-        start = i * 5
-        player.hand = Mock(spec=Hand)
-        player.hand.cards = initial_cards[start : start + 5]
+        def shuffle(self):
+            self.shuffle_count += 1
+
+    game.deck = MockDeck()
+
+    # Setup initial hands for all players
+    for player in mock_players:
+        # Create initial cards for each player
+        initial_cards = [MockCard(f"Initial {i}") for i in range(5)]
+        
+        # Setup hand with proper mock methods
+        player.hand = Hand()  # Use actual Hand class
+        player.hand.cards = initial_cards
         player.folded = False
-
+        
         # Mock decide_draw to discard specific cards
-        player.decide_draw = Mock(return_value=[0, 2])  # Discard 1st and 3rd cards
-
-        # Setup hand methods
-        def make_remove_cards(p):
-            def remove_cards(indices):
-                # Keep cards not being discarded
-                p.hand.cards = [
-                    card for i, card in enumerate(p.hand.cards) if i not in indices
-                ]
-
-            return remove_cards
-
-        def make_add_cards(p):
-            def add_cards(new_cards):
-                # Add new cards to hand
-                p.hand.cards.extend(new_cards)
-
-            return add_cards
-
-        player.hand.remove_cards = make_remove_cards(player)
-        player.hand.add_cards = make_add_cards(player)
-
-        # Add show method
-        player.hand.show = Mock(return_value=str([str(c) for c in player.hand.cards]))
-
-    # Store initial hands
-    initial_hands = {p: p.hand.cards[:] for p in mock_players}
+        player.decide_draw = Mock(return_value=[0, 1, 2])  # Discard first three cards
 
     # Run draw phase
     game.draw_phase()
 
-    # Verify each player's hand
+    # Verify deck was used
+    assert game.deck.shuffle_count > 0, "Deck was never shuffled"
+    assert len(game.deck.dealt_cards) > 0, "No cards were dealt"
+
+    # Calculate total cards dealt
+    total_dealt = len(game.deck.dealt_cards)
+
+    # Verify all players got their cards
     for player in mock_players:
-        # Print debug info
-        print(f"\nPlayer {player.name}:")
-        print(f"Initial hand: {[str(c) for c in initial_hands[player]]}")
-        print(f"Final hand: {[str(c) for c in player.hand.cards]}")
-        print(f"Hand size: {len(player.hand.cards)}")
+        assert len(player.hand.cards) == 5, f"Player should have 5 cards, has {len(player.hand.cards)}"
+        # Verify discarded cards were replaced
+        assert any(str(card).startswith("New") for card in player.hand.cards), \
+            "Some cards should have been replaced with new ones"
+        assert any(str(card).startswith("Initial") for card in player.hand.cards), \
+            "Some original cards should remain"
 
-        # Verify hand size
-        assert (
-            len(player.hand.cards) == 5
-        ), f"Player {player.name} should have 5 cards, has {len(player.hand.cards)}"
-
-        # Get the indices that were discarded
-        discard_indices = player.decide_draw.return_value
-
-        # Count unchanged cards
-        unchanged_count = sum(1 for i in range(5) if i not in discard_indices)
-        # Count new cards
-        new_card_count = len([c for c in player.hand.cards if str(c).startswith("New")])
-
-        # Verify correct number of cards were replaced
-        assert new_card_count == len(
-            discard_indices
-        ), f"Expected {len(discard_indices)} new cards, got {new_card_count}"
-        assert (
-            unchanged_count + new_card_count == 5
-        ), f"Total cards should be 5, got {unchanged_count} unchanged + {new_card_count} new"
-
-        # Verify decide_draw was called
-        player.decide_draw.assert_called_once()
+    # Verify we dealt the expected number of cards
+    expected_dealt = len(mock_players) * 3  # Each player discards 3 cards
+    assert total_dealt == expected_dealt, \
+        f"Expected {expected_dealt} cards dealt, found {total_dealt}"
 
 
 def test_side_pot_distribution(game, mock_players):

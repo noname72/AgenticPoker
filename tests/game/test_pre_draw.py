@@ -41,25 +41,29 @@ def mock_game_state(mock_players):
 def test_handle_pre_draw_betting_all_active(mock_players, mock_game_state):
     """Test pre-draw betting when all players remain active."""
     mock_pot_manager = MagicMock()
-    mock_side_pots = None
     
     with patch("game.betting.handle_betting_round") as mock_betting:
-        mock_betting.return_value = (150, mock_side_pots)
+        mock_betting.return_value = (150, None)
         
         new_pot, side_pots, should_continue = handle_pre_draw_betting(
             mock_players,
             100,
-            0,  # dealer_index
+            0,
             mock_game_state,
             mock_pot_manager
+        )
+        
+        mock_betting.assert_called_once_with(
+            players=mock_players,
+            pot=100,
+            dealer_index=0,
+            game_state=mock_game_state,
+            phase="pre-draw"
         )
         
         assert new_pot == 150
         assert side_pots is None
         assert should_continue is True
-        mock_betting.assert_called_once_with(
-            mock_players, 100, 0, mock_game_state, phase="pre-draw"
-        )
 
 
 def test_handle_pre_draw_betting_one_remaining(mock_players, mock_game_state, caplog):
