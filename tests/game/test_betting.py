@@ -475,18 +475,14 @@ def test_collect_blinds_and_antes_short_stack():
     """Test collecting blinds and antes when players are short stacked."""
     players = [
         Player("Player 1", 100),
-        Player("Player 2", 5),   # Can only post partial small blind
+        Player("Player 2", 5),  # Can only post partial small blind
         Player("Player 3", 15),  # Can only post partial big blind
     ]
-    
+
     total = collect_blinds_and_antes(
-        players=players, 
-        dealer_index=0, 
-        small_blind=10, 
-        big_blind=20, 
-        ante=5
+        players=players, dealer_index=0, small_blind=10, big_blind=20, ante=5
     )
-    
+
     # Recalculate expected total:
     # Player 1: 5 (ante)
     # Player 2: 5 (all-in for partial small blind)
@@ -496,16 +492,22 @@ def test_collect_blinds_and_antes_short_stack():
     assert players[2].chips == 0  # All-in from big blind
 
 
-def test_handle_betting_round_pre_draw():
-    """Test handling a complete pre-draw betting round."""
-    players = [
-        Player("Player 1", 1000),
-        Player("Player 2", 1000),
-        Player("Player 3", 1000),
-    ]
+@pytest.fixture
+def mock_game_state():
+    """Create a mock game state for testing."""
+    return {
+        "pot": 0,
+        "current_bet": 20,
+        "small_blind": 10,
+        "big_blind": 20,
+        "dealer_index": 0,
+    }
 
+
+def test_handle_betting_round_pre_draw(basic_players):
+    """Test handling a complete pre-draw betting round."""
     # Mock player decisions
-    for player in players:
+    for player in basic_players:
         player.decide_action = lambda x: ("call", 20)
 
     game_state = {
@@ -516,13 +518,14 @@ def test_handle_betting_round_pre_draw():
         "dealer_index": 0,
     }
 
-    new_pot, side_pots = handle_betting_round(
-        players=players, pot=0, dealer_index=0, game_state=game_state, phase="pre-draw"
+    new_pot, side_pots, should_continue = handle_betting_round(
+        players=basic_players, pot=0, game_state=game_state
     )
 
     assert new_pot == 60  # All players called 20
     assert side_pots is None  # No side pots created
-    assert all(p.bet == 20 for p in players)
+    assert all(p.bet == 20 for p in basic_players)
+    assert should_continue is True  # Game should continue with multiple active players
 
 
 def test_handle_betting_round_all_in():
@@ -540,14 +543,15 @@ def test_handle_betting_round_all_in():
 
     game_state = {
         "pot": 0,
-        "current_bet": 0,
         "small_blind": 10,
         "big_blind": 20,
         "dealer_index": 0,
     }
 
-    new_pot, side_pots = handle_betting_round(
-        players=players, pot=0, dealer_index=0, game_state=game_state, phase="post-draw"
+    new_pot, side_pots, should_continue = handle_betting_round(
+        players=players,
+        pot=0,
+        game_state=game_state,
     )
 
     assert new_pot == 200  # Total bets: 75 + 50 + 75
@@ -570,27 +574,25 @@ def test_handle_betting_round_everyone_folds():
         Player("Player 2", 100),
         Player("Player 3", 100),
     ]
-    
+
     # Everyone folds to Player 1's bet
-    players[0].decide_action = lambda x: ("raise", 30)  # Changed from 50 to match actual bet
+    players[0].decide_action = lambda x: (
+        "raise",
+        30,
+    )  # Changed from 50 to match actual bet
     players[1].decide_action = lambda x: ("fold", 0)
     players[2].decide_action = lambda x: ("fold", 0)
-    
-    game_state = {
-        "current_bet": 0,
-        "small_blind": 10,
-        "big_blind": 20,
-        "dealer_index": 0
-    }
-    
-    new_pot, side_pots = handle_betting_round(
+
+    game_state = {"small_blind": 10, "big_blind": 20, "dealer_index": 0}
+
+    new_pot, side_pots, should_continue = handle_betting_round(
         players=players,
         pot=0,
-        dealer_index=0,
-        game_state=game_state
+        game_state=game_state,
     )
-    
+
     assert new_pot == 30  # Only Player 1's bet
     assert side_pots is None
     assert all(p.folded for p in players[1:])
     assert not players[0].folded
+    assert should_continue is False  # Game should not continue when all but one fold

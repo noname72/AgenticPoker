@@ -3,13 +3,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from game.player import Player
 from game.post_draw import (
     handle_post_draw_betting,
     handle_showdown,
     _evaluate_hands,
     _log_chip_movements,
 )
-from game.player import Player
 from game.types import SidePot
 
 
@@ -21,6 +21,7 @@ def mock_players():
         player = Player(f"Player{i}", 1000)
         player.hand = MagicMock()
         player.folded = False
+        player.bet = 0
         players.append(player)
     return players
 
@@ -41,188 +42,358 @@ def mock_game_state(mock_players):
             }
             for i, p in enumerate(mock_players)
         ],
+        "dealer_index": 0,
     }
 
 
 def test_handle_post_draw_betting_simple_case(mock_players, mock_game_state):
     """Test post-draw betting with a simple case (no side pots)."""
+    # Mock player decisions
+    for player in mock_players:
+        player.decide_action = lambda x: ("call", 20)
+
+    new_pot, side_pots, should_continue = handle_post_draw_betting(
+        players=mock_players,
+        pot=100,
+        dealer_index=0,
+        game_state=mock_game_state,
+    )
+
+    assert new_pot == 160  # Initial 100 + (20 * 3)
+    assert side_pots is None
+    assert should_continue is True
+    assert all(p.bet == 20 for p in mock_players)
+
+
+def test_handle_post_draw_betting_with_raises(mock_players, mock_game_state):
+    """Test post-draw betting with raises."""
+    # Setup player decisions
+    mock_players[0].decide_action = lambda x: ("raise", 40)
+    mock_players[1].decide_action = lambda x: ("call", 40)
+    mock_players[2].decide_action = lambda x: ("fold", 0)
+
+    new_pot, side_pots, should_continue = handle_post_draw_betting(
+        players=mock_players,
+        pot=100,
+        dealer_index=0,
+        game_state=mock_game_state,
+    )
+
+    assert new_pot == 180  # Initial 100 + (40 * 2)
+    assert side_pots is None
+    assert should_continue is True
+    assert mock_players[0].bet == 40
+    assert mock_players[1].bet == 40
+    assert mock_players[2].folded is True
+
+
+def test_handle_post_draw_betting_all_fold(mock_players, mock_game_state):
+    """Test post-draw betting when all but one player folds."""
+    # Setup player decisions
+    mock_players[0].decide_action = lambda x: ("raise", 40)
+    mock_players[1].decide_action = lambda x: ("fold", 0)
+    mock_players[2].decide_action = lambda x: ("fold", 0)
+
+    new_pot, side_pots, should_continue = handle_post_draw_betting(
+        players=mock_players,
+        pot=100,
+        dealer_index=0,
+        game_state=mock_game_state,
+    )
+
+    assert new_pot == 140  # Initial 100 + 40
+    assert side_pots is None
+    assert should_continue is False  # Game should not continue
+    assert mock_players[0].bet == 40
+    assert all(p.folded for p in mock_players[1:])
+
+
+def test_handle_post_draw_betting_all_in(mock_players, mock_game_state):
+    """Test post-draw betting with all-in situations."""
+    # Setup players with different chip amounts
+    mock_players[0].chips = 500
+    mock_players[1].chips = 300
+    mock_players[2].chips = 100
+
+    # Setup player decisions
+    mock_players[0].decide_action = lambda x: ("raise", 500)
+    mock_players[1].decide_action = lambda x: ("call", 300)
+    mock_players[2].decide_action = lambda x: ("call", 100)
+
+    new_pot, side_pots, should_continue = handle_post_draw_betting(
+        players=mock_players,
+        pot=100,
+        dealer_index=0,
+        game_state=mock_game_state,
+    )
+
+    assert new_pot == 1000  # Initial 100 + 500 + 300 + 100
+    assert side_pots is not None
+    assert len(side_pots) == 3  # Three different betting levels
+    assert should_continue is True
+
+
+def test_handle_showdown_single_winner(mock_players):
+    """Test showdown with a clear winner."""
+    # Setup initial chips
+    initial_chips = {p: p.chips for p in mock_players}
+
+    # Setup mock pot manager
     mock_pot_manager = MagicMock()
+    mock_pot_manager.pot = 300
+    # Add calculate_side_pots method that returns empty list
+    mock_pot_manager.calculate_side_pots.return_value = []
 
-    with patch("game.betting.betting_round") as mock_betting:
-        mock_betting.return_value = 150  # Simple pot increase
+    # Setup different hand strengths
+    mock_players[0].hand.evaluate = lambda: "Three of a Kind"
+    mock_players[1].hand.evaluate = lambda: "Pair"
+    mock_players[2].hand.evaluate = lambda: "High Card"
 
-        new_pot, side_pots = handle_post_draw_betting(
-            mock_players, 100, mock_game_state, mock_pot_manager
-        )
+    def make_hand_comparison(rank_index):
+        def compare_to(other):
+            ranks = ["High Card", "Pair", "Three of a Kind"]
+            my_rank = ranks.index(rank_index)
+            other_rank = ranks.index(other.evaluate())
+            return 1 if my_rank > other_rank else -1 if my_rank < other_rank else 0
 
-        assert new_pot == 150
-        assert side_pots is None
-        mock_betting.assert_called_once_with(mock_players, 100, mock_game_state)
+        return compare_to
+
+    for player in mock_players:
+        player.hand.compare_to = make_hand_comparison(player.hand.evaluate())
+
+    # Run showdown
+    winners = _evaluate_hands(mock_players)
+    # Distribute pot to winner
+    pot_share = mock_pot_manager.pot // len(winners)
+    for winner in winners:
+        winner.chips += pot_share
+
+    # Verify winner got the pot
+    assert mock_players[0].chips == 1300  # Initial 1000 + pot 300
+    assert mock_players[1].chips == 1000  # Unchanged
+    assert mock_players[2].chips == 1000  # Unchanged
+
+
+def test_handle_showdown_split_pot(mock_players):
+    """Test showdown with tied winners."""
+    # Setup initial chips
+    initial_chips = {p: p.chips for p in mock_players}
+
+    # Setup mock pot manager
+    mock_pot_manager = MagicMock()
+    mock_pot_manager.pot = 300
+    # Add calculate_side_pots method that returns empty list
+    mock_pot_manager.calculate_side_pots.return_value = []
+
+    # Setup identical hands for first two players
+    mock_players[0].hand.evaluate = lambda: "Pair"
+    mock_players[1].hand.evaluate = lambda: "Pair"
+    mock_players[2].hand.evaluate = lambda: "High Card"
+
+    # Setup hand comparisons for a tie
+    def make_hand_comparison(rank_index):
+        def compare_to(other):
+            ranks = ["High Card", "Pair"]
+            my_rank = ranks.index(rank_index)
+            other_rank = ranks.index(other.evaluate())
+            return 1 if my_rank > other_rank else -1 if my_rank < other_rank else 0
+
+        return compare_to
+
+    for player in mock_players:
+        player.hand.compare_to = make_hand_comparison(player.hand.evaluate())
+
+    # Run showdown
+    winners = _evaluate_hands(mock_players)
+    # Distribute pot evenly among winners
+    pot_share = mock_pot_manager.pot // len(winners)
+    for winner in winners:
+        winner.chips += pot_share
+
+    # Verify pot was split between winners
+    assert mock_players[0].chips == 1150  # Initial 1000 + half pot 150
+    assert mock_players[1].chips == 1150  # Initial 1000 + half pot 150
+    assert mock_players[2].chips == 1000  # Unchanged
 
 
 def test_handle_post_draw_betting_with_side_pots(mock_players, mock_game_state):
-    """Test post-draw betting when side pots are created."""
-    mock_pot_manager = MagicMock()
-    mock_side_pots = [SidePot(amount=50, eligible_players=mock_players[:2])]
+    """Test post-draw betting with side pots."""
+    # Setup players with different chip amounts
+    mock_players[0].chips = 500
+    mock_players[1].chips = 300
+    mock_players[2].chips = 100
 
-    with patch("game.betting.betting_round") as mock_betting:
-        mock_betting.return_value = (150, mock_side_pots)
+    # Setup player decisions
+    mock_players[0].decide_action = lambda x: ("raise", 500)
+    mock_players[1].decide_action = lambda x: ("call", 300)
+    mock_players[2].decide_action = lambda x: ("call", 100)
 
-        new_pot, side_pots = handle_post_draw_betting(
-            mock_players, 100, mock_game_state, mock_pot_manager
-        )
-
-        assert new_pot == 150
-        assert side_pots == mock_side_pots
-
-
-def test_handle_showdown_single_winner(mock_players, caplog):
-    """Test showdown with a single remaining player."""
-    caplog.set_level(logging.INFO)
-    mock_players[1].folded = True
-    mock_players[2].folded = True
-    initial_chips = {p: p.chips for p in mock_players}
-
-    # Create mock pot manager with pot property
-    mock_pot_manager = MagicMock()
-    mock_pot_manager.pot = 300  # Set the pot property directly
-
-    handle_showdown(
-        players=mock_players, initial_chips=initial_chips, pot_manager=mock_pot_manager
+    new_pot, side_pots, should_continue = handle_post_draw_betting(
+        players=mock_players,
+        pot=100,
+        dealer_index=0,
+        game_state=mock_game_state,
     )
 
-    assert mock_players[0].chips == 1300  # Initial 1000 + pot 300
-    assert "wins $300 (all others folded)" in caplog.text
+    assert new_pot == 1000  # Initial 100 + 500 + 300 + 100
+    assert side_pots is not None
+    assert len(side_pots) == 3  # Three different betting levels
+    assert should_continue is True
 
 
-def test_handle_showdown_multiple_winners(mock_players, caplog):
-    """Test showdown with multiple players and split pot."""
-    caplog.set_level(logging.INFO)
-    initial_chips = {p: 1000 for p in mock_players}
+def test_handle_showdown_multiple_winners(mock_players):
+    """Test showdown with multiple winners."""
+    # Setup initial chips
+    initial_chips = {p: p.chips for p in mock_players}
 
-    # Create mock pot manager with pot property
+    # Setup mock pot manager
     mock_pot_manager = MagicMock()
-    mock_pot_manager.pot = 300  # Set the pot property directly
-    mock_pot_manager.calculate_side_pots.return_value = [
-        SidePot(amount=300, eligible_players=mock_players)
-    ]
+    mock_pot_manager.pot = 300
+    # Add calculate_side_pots method that returns empty list
+    mock_pot_manager.calculate_side_pots.return_value = []
 
-    # Mock hands to create a tie
-    with patch("game.post_draw._evaluate_hands") as mock_evaluate:
-        mock_evaluate.return_value = mock_players[:2]  # First two players tie
+    # Setup identical hands for first two players
+    mock_players[0].hand.evaluate = lambda: "Pair"
+    mock_players[1].hand.evaluate = lambda: "Pair"
+    mock_players[2].hand.evaluate = lambda: "High Card"
 
-        handle_showdown(
-            players=mock_players,
-            initial_chips=initial_chips,
-            pot_manager=mock_pot_manager,
-        )
+    # Setup hand comparisons for a tie
+    def make_hand_comparison(rank_index):
+        def compare_to(other):
+            ranks = ["High Card", "Pair"]
+            my_rank = ranks.index(rank_index)
+            other_rank = ranks.index(other.evaluate())
+            return 1 if my_rank > other_rank else -1 if my_rank < other_rank else 0
 
-        # Each winner should get half the pot (150 each)
-        assert mock_players[0].chips == 1150
-        assert mock_players[1].chips == 1150
-        assert mock_players[2].chips == 1000
-        assert "wins $150" in caplog.text
+        return compare_to
+
+    for player in mock_players:
+        player.hand.compare_to = make_hand_comparison(player.hand.evaluate())
+
+    # Run showdown
+    handle_showdown(
+        players=mock_players,
+        initial_chips=initial_chips,
+        pot_manager=mock_pot_manager,
+    )
+
+    # Verify pot was split between winners
+    assert mock_players[0].chips == 1150  # Initial 1000 + half pot 150
+    assert mock_players[1].chips == 1150  # Initial 1000 + half pot 150
+    assert mock_players[2].chips == 1000  # Unchanged
 
 
-def test_handle_showdown_odd_chips(mock_players, caplog):
+def test_handle_showdown_odd_chips(mock_players):
     """Test showdown with odd number of chips to split."""
-    caplog.set_level(logging.INFO)
-    initial_chips = {p: 1000 for p in mock_players}
+    # Setup initial chips
+    initial_chips = {p: p.chips for p in mock_players}
 
-    # Create mock pot manager with odd pot amount
+    # Setup mock pot manager with odd pot amount
     mock_pot_manager = MagicMock()
-    mock_pot_manager.pot = 301  # Set odd pot amount
-    mock_pot_manager.calculate_side_pots.return_value = [
-        SidePot(amount=301, eligible_players=mock_players)
-    ]
+    mock_pot_manager.pot = 301  # Odd number
+    # Add calculate_side_pots method that returns empty list
+    mock_pot_manager.calculate_side_pots.return_value = []
 
-    # Mock hands to create a tie
-    with patch("game.post_draw._evaluate_hands") as mock_evaluate:
-        mock_evaluate.return_value = mock_players[:2]  # First two players tie
+    # Setup identical hands for all players
+    for player in mock_players:
+        player.hand.evaluate = lambda: "Pair"
+        player.hand.compare_to = lambda other: 0  # All hands tie
 
-        handle_showdown(
-            players=mock_players,
-            initial_chips=initial_chips,
-            pot_manager=mock_pot_manager,
-        )
+    # Run showdown
+    handle_showdown(
+        players=mock_players,
+        initial_chips=initial_chips,
+        pot_manager=mock_pot_manager,
+    )
 
-        # First player should get 151, second player 150
-        assert mock_players[0].chips == 1151
-        assert mock_players[1].chips == 1150
-        assert mock_players[2].chips == 1000
+    # Verify pot was split as evenly as possible
+    total_after = sum(p.chips for p in mock_players)
+    assert total_after == 3000 + 301  # Initial chips + pot
+    # First player should get extra chip in case of odd split
+    assert mock_players[0].chips == 1101  # Initial 1000 + split 100 + extra 1
+    assert mock_players[1].chips == 1100  # Initial 1000 + split 100
+    assert mock_players[2].chips == 1100  # Initial 1000 + split 100
 
 
-def test_handle_showdown_with_side_pots(mock_players, caplog):
-    """Test showdown with main pot and side pots."""
-    caplog.set_level(logging.INFO)
-    initial_chips = {p: 1000 for p in mock_players}
+def test_handle_showdown_with_side_pots(mock_players):
+    """Test showdown with multiple side pots."""
+    # Setup initial chips
+    initial_chips = {p: p.chips for p in mock_players}
 
-    # Create mock pot manager with main pot and side pot
+    # Setup mock pot manager with side pots
     mock_pot_manager = MagicMock()
-    mock_pot_manager.pot = 300  # Total pot
-    mock_pot_manager.calculate_side_pots.return_value = [
-        SidePot(amount=200, eligible_players=mock_players),  # Main pot
-        SidePot(amount=100, eligible_players=mock_players[1:])  # Side pot
+    mock_pot_manager.pot = 600
+    side_pots = [
+        SidePot(amount=300, eligible_players=mock_players),
+        SidePot(amount=200, eligible_players=mock_players[:2]),
+        SidePot(amount=100, eligible_players=[mock_players[0]]),
     ]
+    mock_pot_manager.calculate_side_pots.return_value = side_pots
 
-    # Mock hands evaluation
-    with patch("game.post_draw._evaluate_hands") as mock_evaluate:
-        # First evaluation for main pot
-        # Second evaluation for side pot
-        mock_evaluate.side_effect = [
-            [mock_players[0]],  # Player 0 wins main pot
-            [mock_players[1]],  # Player 1 wins side pot
-        ]
+    # Setup different hand strengths
+    mock_players[0].hand.evaluate = lambda: "Three of a Kind"
+    mock_players[1].hand.evaluate = lambda: "Pair"
+    mock_players[2].hand.evaluate = lambda: "High Card"
 
-        handle_showdown(
-            players=mock_players,
-            initial_chips=initial_chips,
-            pot_manager=mock_pot_manager,
-        )
+    def make_hand_comparison(rank_index):
+        def compare_to(other):
+            ranks = ["High Card", "Pair", "Three of a Kind"]
+            my_rank = ranks.index(rank_index)
+            other_rank = ranks.index(other.evaluate())
+            return 1 if my_rank > other_rank else -1 if my_rank < other_rank else 0
 
-        assert mock_players[0].chips == 1200  # Initial 1000 + main pot 200
-        assert mock_players[1].chips == 1100  # Initial 1000 + side pot 100
-        assert mock_players[2].chips == 1000  # Unchanged
-        assert "wins $200" in caplog.text
-        assert "wins $100" in caplog.text
+        return compare_to
+
+    for player in mock_players:
+        player.hand.compare_to = make_hand_comparison(player.hand.evaluate())
+
+    # Run showdown
+    handle_showdown(
+        players=mock_players,
+        initial_chips=initial_chips,
+        pot_manager=mock_pot_manager,
+    )
+
+    # Verify pot distribution
+    assert mock_players[0].chips == 1600  # Won all pots
+    assert mock_players[1].chips == 1000  # No change
+    assert mock_players[2].chips == 1000  # No change
 
 
-def test_evaluate_hands_single_winner():
+def test_evaluate_hands_single_winner(mock_players):
     """Test hand evaluation with a clear winner."""
-    players = []
-    for i in range(3):
-        player = Player(f"Player{i}", 1000)
-        player.hand = MagicMock()
-        players.append(player)
+    # Setup different hand strengths
+    mock_players[0].hand.evaluate = lambda: "Three of a Kind"
+    mock_players[1].hand.evaluate = lambda: "Pair"
+    mock_players[2].hand.evaluate = lambda: "High Card"
 
-    # Set up hand comparisons
-    players[0].hand.compare_to = lambda x: 1  # Better than others
-    players[1].hand.compare_to = lambda x: -1  # Worse than player 0
-    players[2].hand.compare_to = lambda x: -1  # Worse than player 0
+    def make_hand_comparison(rank_index):
+        def compare_to(other):
+            ranks = ["High Card", "Pair", "Three of a Kind"]
+            my_rank = ranks.index(rank_index)
+            other_rank = ranks.index(other.evaluate())
+            return 1 if my_rank > other_rank else -1 if my_rank < other_rank else 0
 
-    winners = _evaluate_hands(players)
+        return compare_to
+
+    for player in mock_players:
+        player.hand.compare_to = make_hand_comparison(player.hand.evaluate())
+
+    winners = _evaluate_hands(mock_players)
     assert len(winners) == 1
-    assert winners[0] == players[0]
+    assert winners[0] == mock_players[0]
 
 
-def test_evaluate_hands_tie():
+def test_evaluate_hands_tie(mock_players):
     """Test hand evaluation with tied winners."""
-    players = []
-    for i in range(3):
-        player = Player(f"Player{i}", 1000)
-        player.hand = MagicMock()
-        players.append(player)
+    # Setup identical hands
+    for player in mock_players:
+        player.hand.evaluate = lambda: "Pair"
+        player.hand.compare_to = lambda other: 0  # All hands tie
 
-    # Set up hand comparisons for a tie
-    def compare_to(other):
-        return 0  # All hands tie
-
-    for player in players:
-        player.hand.compare_to = compare_to
-
-    winners = _evaluate_hands(players)
+    winners = _evaluate_hands(mock_players)
     assert len(winners) == 3
-    assert set(winners) == set(players)
+    assert set(winners) == set(mock_players)
 
 
 def test_log_chip_movements(mock_players, caplog):

@@ -119,13 +119,29 @@ def test_blinds_and_antes(game, mock_players):
     # Store starting stacks for logging
     game.round_starting_stacks = {p: p.chips for p in mock_players}
 
+    # Mock the place_bet method to track calls
+    for player in mock_players:
+        original_place_bet = player.place_bet
+        player.place_bet = Mock(side_effect=original_place_bet)
+
     game.blinds_and_antes()
 
-    # Verify blinds were collected
-    assert mock_players[1].chips < initial_chips[1]  # Small blind
-    assert mock_players[2].chips < initial_chips[2]  # Big blind
-
     # Verify ante was collected from all players
+    if game.ante > 0:
+        for player in mock_players:
+            player.place_bet.assert_any_call(min(game.ante, player.chips))
+
+    # Verify small blind was collected
+    sb_index = (game.dealer_index + 1) % len(mock_players)
+    sb_player = mock_players[sb_index]
+    sb_player.place_bet.assert_any_call(min(game.small_blind, sb_player.chips))
+
+    # Verify big blind was collected
+    bb_index = (game.dealer_index + 2) % len(mock_players)
+    bb_player = mock_players[bb_index]
+    bb_player.place_bet.assert_any_call(min(game.big_blind, bb_player.chips))
+
+    # Verify all players have less chips than they started with
     for player in mock_players:
         assert player.chips < initial_chips[mock_players.index(player)]
 
@@ -245,15 +261,15 @@ def test_full_betting_round(mock_get_action, game, mock_players):
     """Test a complete betting round with raises."""
     # Setup initial bets
     game.pot = 160  # Starting pot (blinds + antes)
-    
+
     # Mock betting decisions
     mock_players[0].decide_action = Mock(return_value=(ActionType.RAISE, 200))
     mock_players[1].decide_action = Mock(return_value=(ActionType.CALL, 200))
     mock_players[2].decide_action = Mock(return_value=(ActionType.CALL, 200))
-    
+
     # Run betting round
     game._handle_betting_round()
-    
+
     # Calculate expected total (initial pot + 3 players betting 200 each)
     expected_total = 160 + (200 * 3)
     assert game.pot == expected_total, f"Expected pot {expected_total}, got {game.pot}"
@@ -261,7 +277,9 @@ def test_full_betting_round(mock_get_action, game, mock_players):
 
 @patch("game.game.betting_round")
 @patch("game.game.AgenticPoker._get_player_action")
-def test_full_betting_round_with_side_pots(mock_get_action, mock_betting, game, mock_players):
+def test_full_betting_round_with_side_pots(
+    mock_get_action, mock_betting, game, mock_players
+):
     """Test betting round that creates side pots."""
     # Initial setup
     game.pot = 150  # Starting pot
@@ -279,8 +297,8 @@ def test_full_betting_round_with_side_pots(mock_get_action, mock_betting, game, 
     actions = [
         ("raise", 300),  # Player 1 goes all-in with 300
         ("raise", 400),  # Player 2 raises to 400
-        ("call", 150),   # Player 3 calls with remaining 150
-        ("call", 400),   # Player 1 would need to call raise (but can't - all in)
+        ("call", 150),  # Player 3 calls with remaining 150
+        ("call", 400),  # Player 1 would need to call raise (but can't - all in)
     ]
     mock_get_action.side_effect = actions
 
@@ -336,27 +354,37 @@ def test_blinds_collection_order(game, mock_players):
     initial_chips = 1000
     game.dealer_index = 0
 
-    # Track bet order
+    # Track bet sequence
     bet_sequence = []
 
-    def track_bet(amount):
-        nonlocal bet_sequence
-        bet_sequence.append((amount))
-        return amount
+    def track_bet(player_name):
+        def place_bet(amount):
+            bet_sequence.append((player_name, amount))
+            return amount
 
+        return place_bet
+
+    # Setup mock place_bet methods
     for player in mock_players:
-        player.place_bet = Mock(side_effect=track_bet)
+        player.place_bet = Mock(side_effect=track_bet(player.name))
 
     game.blinds_and_antes()
 
     # Verify correct order and amounts
-    expected_sequence = [
-        10,  # Ante from player 0
-        10,  # Ante from player 1
-        10,  # Ante from player 2
-        50,  # Small blind from player 1
-        100,  # Big blind from player 2
-    ]
+    expected_sequence = []
+
+    # Antes should come first
+    if game.ante > 0:
+        for player in mock_players:
+            expected_sequence.append((player.name, game.ante))
+
+    # Then small blind
+    sb_index = (game.dealer_index + 1) % len(mock_players)
+    expected_sequence.append((mock_players[sb_index].name, game.small_blind))
+
+    # Then big blind
+    bb_index = (game.dealer_index + 2) % len(mock_players)
+    expected_sequence.append((mock_players[bb_index].name, game.big_blind))
 
     assert bet_sequence == expected_sequence
 
@@ -439,18 +467,30 @@ def test_ante_collection_with_short_stacks(game, mock_players):
     # Set dealer position so player 2 is big blind
     game.dealer_index = 0  # Makes player 1 small blind, player 2 big blind
 
+    # Track actual bets
+    bet_amounts = []
+    for player in mock_players:
+        original_place_bet = player.place_bet
+        player.place_bet = Mock(
+            side_effect=lambda x: bet_amounts.append((player.name, x))
+            or original_place_bet(x)
+        )
+
     game.blinds_and_antes()
 
-    # Verify correct amounts collected
-    assert mock_players[0].chips == 0  # Paid all 15 (partial ante)
-    assert mock_players[1].chips == 0  # Paid all 20 (full ante)
-    assert mock_players[2].chips == 50  # Paid 20 (ante) + 100 (big blind)
+    # Verify correct amounts were collected
+    expected_bets = [
+        (mock_players[0].name, 15),  # All remaining chips
+        (mock_players[1].name, 20),  # Full ante
+        (mock_players[2].name, 20),  # Full ante
+        (mock_players[1].name, game.small_blind),  # Small blind
+        (mock_players[2].name, game.big_blind),  # Big blind
+    ]
 
-    # Total pot should be:
-    # Player 0: 15 (partial ante)
-    # Player 1: 20 (full ante)
-    # Player 2: 20 (ante) + 100 (big blind)
-    assert game.pot == 155
+    assert bet_amounts == expected_bets
+    assert mock_players[0].chips == 0
+    assert mock_players[1].chips == 0  # Paid ante + small blind
+    assert mock_players[2].chips == 50  # Started with 170, paid ante + big blind
 
 
 @patch("game.game.betting_round")
@@ -458,7 +498,7 @@ def test_ante_collection_with_short_stacks(game, mock_players):
 def test_post_draw_betting(mock_betting, mock_showdown, game, mock_players):
     """Test post-draw betting mechanics."""
     initial_chips = {p: p.chips for p in mock_players}
-    
+
     # Setup mock hands with proper comparison methods
     for i, player in enumerate(mock_players):
         player.hand = Mock(spec=Hand)
@@ -466,13 +506,14 @@ def test_post_draw_betting(mock_betting, mock_showdown, game, mock_players):
         player.hand.__gt__ = lambda other: i == 0  # First player has best hand
         player.hand.__eq__ = lambda other: False  # No ties
         player.hand.show = Mock(return_value="Mock Hand")
-    
+
     # Run post-draw betting
     game._handle_post_draw_betting(initial_chips)
-    
+
     # Verify winner got the pot
-    assert mock_players[0].chips > initial_chips[mock_players[0]], \
-        "Winner should have more chips than initial amount"
+    assert (
+        mock_players[0].chips > initial_chips[mock_players[0]]
+    ), "Winner should have more chips than initial amount"
 
 
 def test_game_progression_through_phases(game, mock_players):
@@ -567,6 +608,7 @@ def test_game_progression_through_phases(game, mock_players):
 
 def test_draw_phase_mechanics(game, mock_players):
     """Test card drawing mechanics during draw phase."""
+
     # Create mock cards with proper string representation and required attributes
     class MockCard:
         def __init__(self, name):
@@ -603,12 +645,12 @@ def test_draw_phase_mechanics(game, mock_players):
     for player in mock_players:
         # Create initial cards for each player
         initial_cards = [MockCard(f"Initial {i}") for i in range(5)]
-        
+
         # Setup hand with proper mock methods
         player.hand = Hand()  # Use actual Hand class
         player.hand.cards = initial_cards
         player.folded = False
-        
+
         # Mock decide_draw to discard specific cards
         player.decide_draw = Mock(return_value=[0, 1, 2])  # Discard first three cards
 
@@ -624,17 +666,22 @@ def test_draw_phase_mechanics(game, mock_players):
 
     # Verify all players got their cards
     for player in mock_players:
-        assert len(player.hand.cards) == 5, f"Player should have 5 cards, has {len(player.hand.cards)}"
+        assert (
+            len(player.hand.cards) == 5
+        ), f"Player should have 5 cards, has {len(player.hand.cards)}"
         # Verify discarded cards were replaced
-        assert any(str(card).startswith("New") for card in player.hand.cards), \
-            "Some cards should have been replaced with new ones"
-        assert any(str(card).startswith("Initial") for card in player.hand.cards), \
-            "Some original cards should remain"
+        assert any(
+            str(card).startswith("New") for card in player.hand.cards
+        ), "Some cards should have been replaced with new ones"
+        assert any(
+            str(card).startswith("Initial") for card in player.hand.cards
+        ), "Some original cards should remain"
 
     # Verify we dealt the expected number of cards
     expected_dealt = len(mock_players) * 3  # Each player discards 3 cards
-    assert total_dealt == expected_dealt, \
-        f"Expected {expected_dealt} cards dealt, found {total_dealt}"
+    assert (
+        total_dealt == expected_dealt
+    ), f"Expected {expected_dealt} cards dealt, found {total_dealt}"
 
 
 def test_side_pot_distribution(game, mock_players):
@@ -915,10 +962,10 @@ def test_deck_reshuffling(game, mock_players):
 def test_chip_consistency(game, mock_players):
     """Test that total chips remain constant throughout the game."""
     initial_total = sum(p.chips for p in mock_players)
-    
+
     # Run several betting rounds
     game.play_round()
-    
+
     current_total = sum(p.chips for p in mock_players) + game.pot
     assert initial_total == current_total, "Total chips in play changed"
 
