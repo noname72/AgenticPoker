@@ -8,16 +8,16 @@ from .types import SidePot
 def betting_round(
     players: List[Player], current_pot: int, game_state: Optional[dict] = None
 ) -> Union[int, Tuple[int, List[SidePot]]]:
-    """
-    Run a betting round and return the final pot size.
-
+    """Handle a round of betting.
+    
     Args:
-        players: List of players in the hand
-        current_pot: Current pot size
-        game_state: Optional game state for AI decisions
-
+        players: List of active players
+        current_pot: Current pot amount
+        game_state: Optional game state dictionary
+        
     Returns:
-        Union[int, Tuple[int, List[SidePot]]]: Final pot size and side pots if any
+        Union[int, Tuple[int, List[SidePot]]]: Either just the new pot amount,
+        or a tuple of (new_pot, side_pots) if side pots were created
     """
     pot = current_pot
     active_players = [p for p in players if not p.folded]

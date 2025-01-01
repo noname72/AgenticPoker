@@ -340,9 +340,17 @@ class AgenticPoker:
     def _handle_post_draw_betting(self, initial_chips: Dict[Player, int]) -> None:
         """Handle post-draw betting round."""
         game_state = self._create_game_state()
-        new_pot, side_pots = betting.handle_betting_round(
-            self.players, self.pot, self.dealer_index, game_state, phase="post-draw"
+        result = betting.betting_round(
+            self.players, self.pot, game_state
         )
+        
+        # Handle both return types
+        if isinstance(result, tuple):
+            new_pot, side_pots = result
+        else:
+            new_pot = result
+            side_pots = None
+        
         self.pot = new_pot
         self.side_pots = side_pots
 

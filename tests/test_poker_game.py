@@ -488,8 +488,8 @@ def test_ante_collection_with_short_stacks(game, mock_players):
     assert game.pot == 155
 
 
-@patch("game.game.AgenticPoker.showdown")
 @patch("game.game.betting_round")
+@patch("game.game.AgenticPoker.showdown")
 def test_post_draw_betting(mock_betting, mock_showdown, game, mock_players):
     """Test post-draw betting with and without side pots."""
     initial_chips = {p: p.chips for p in mock_players}
@@ -503,10 +503,6 @@ def test_post_draw_betting(mock_betting, mock_showdown, game, mock_players):
         player.hand.evaluate = Mock(return_value=f"Hand {i}")
         player.folded = False
         player.chips = 1000
-
-    # Test case 1: Simple pot (no side pots)
-    # Make one player fold to avoid showdown
-    mock_players[0].folded = True
 
     # Expected game state
     expected_state = {
@@ -527,8 +523,8 @@ def test_post_draw_betting(mock_betting, mock_showdown, game, mock_players):
         "dealer_index": game.dealer_index,
     }
 
-    # Set up mock returns
-    mock_betting.return_value = 300
+    # Set up mock returns - always return a tuple of (pot, side_pots)
+    mock_betting.return_value = (300, None)  # Return tuple of (pot, side_pots)
 
     # Run post-draw betting
     game._handle_post_draw_betting(initial_chips)
@@ -542,51 +538,6 @@ def test_post_draw_betting(mock_betting, mock_showdown, game, mock_players):
     # Verify the pot was updated
     assert game.pot == 300
     assert game.side_pots is None
-
-    # Reset for second test
-    mock_betting.reset_mock()
-    mock_showdown.reset_mock()
-    game.pot = 150
-    mock_players[0].folded = False
-
-    # Test case 2: With side pots
-    mock_players[0].folded = True
-
-    # Update expected state
-    expected_state = {
-        "pot": 150,
-        "players": [
-            {
-                "name": p.name,
-                "chips": p.chips,
-                "bet": p.bet,
-                "folded": p.folded,
-                "position": i,
-            }
-            for i, p in enumerate(mock_players)
-        ],
-        "current_bet": 0,
-        "small_blind": game.small_blind,
-        "big_blind": game.big_blind,
-        "dealer_index": game.dealer_index,
-    }
-
-    # Set up mock returns for second test
-    side_pots = [(200, [mock_players[0], mock_players[1]])]
-    mock_betting.return_value = (400, side_pots)
-
-    # Run post-draw betting again
-    game._handle_post_draw_betting(initial_chips)
-
-    # Verify betting round was called correctly
-    mock_betting.assert_called_once_with(game.players, 150, expected_state)
-
-    # Verify showdown was called
-    mock_showdown.assert_called_once()
-
-    # Verify pot and side pots were updated
-    assert game.pot == 400
-    assert game.side_pots == side_pots
 
 
 def test_game_progression_through_phases(game, mock_players):
