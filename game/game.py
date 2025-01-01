@@ -12,6 +12,7 @@ from .pot_manager import PotManager
 from .types import SidePot
 from . import betting
 from . import post_draw
+from . import pre_draw
 
 
 @dataclass
@@ -328,15 +329,18 @@ class AgenticPoker:
     def _handle_pre_draw_betting(self, initial_chips: Dict[Player, int]) -> bool:
         """Handle pre-draw betting round."""
         game_state = self._create_game_state()
-        new_pot, side_pots = betting.handle_betting_round(
-            self.players, self.pot, self.dealer_index, game_state, phase="pre-draw"
+        new_pot, side_pots, should_continue = pre_draw.handle_pre_draw_betting(
+            self.players,
+            self.pot,
+            self.dealer_index,
+            game_state,
+            self.pot_manager
         )
+        
         self.pot = new_pot
         self.side_pots = side_pots
-
-        # Check if only one player remains
-        active_players = [p for p in self.players if not p.folded]
-        return len(active_players) > 1
+        
+        return should_continue
 
     def _handle_post_draw_betting(self, initial_chips: Dict[Player, int]) -> None:
         """Handle post-draw betting round."""
