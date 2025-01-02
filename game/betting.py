@@ -346,17 +346,6 @@ def _process_player_action(
     return pot, current_bet, new_last_raiser
 
 
-def _no_more_betting_needed(
-    active_players: List[Player],
-    current_bet: int,
-) -> bool:
-    """
-    Check if all active (non-folded) players have matched the current bet.
-    """
-    # If every non-folded player's bet is the same, no more betting.
-    return all(p.bet == current_bet for p in active_players if not p.folded)
-
-
 def calculate_side_pots(
     active_players: List[Player], all_in_players: List[Player]
 ) -> List[SidePot]:
