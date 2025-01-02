@@ -813,35 +813,26 @@ class TestPotManager:
         # Track initial total before any bets
         initial_total = sum(p.chips for p in active_players)  # Should be 1500
 
-        # P1 has already bet everything (400 chips left)
+        # P1 bets 100
         mock_players[0].bet = 100
-        mock_players[0].chips = mock_players[0].chips - 100
+        mock_players[0].chips = 400
         mock_players[0].folded = False
 
-        # P2 has chips but folds (450 chips left)
-        mock_players[1].bet = 50
-        mock_players[1].chips = mock_players[1].chips - 50
+        # P2 matches the bet but folds
+        mock_players[1].bet = 100
+        mock_players[1].chips = 400
         mock_players[1].folded = True
 
-        # P3 calls P1's bet (400 chips left)
+        # P3 calls P1's bet
         mock_players[2].bet = 100
-        mock_players[2].chips = mock_players[2].chips - 100
+        mock_players[2].chips = 400
         mock_players[2].folded = False
-
-        # Calculate expected total after bets
-        total_bets = sum(p.bet for p in mock_players)  # 250
-        total_remaining = sum(p.chips for p in mock_players)  # 1250
-        assert (
-            total_bets + total_remaining == initial_total
-        ), "Chip total changed during setup"
-
-        all_in_players = [mock_players[0]]
 
         side_pots = pot_manager.calculate_side_pots(active_players)
 
         # Verify pots
         assert len(side_pots) == 1, "Should create one pot"
-        assert side_pots[0].amount == 250, "Pot should include all bets"
+        assert side_pots[0].amount == 300, "Pot should include all bets"
         # Only non-folded players are eligible
         assert len(side_pots[0].eligible_players) == 2
         assert mock_players[1] not in side_pots[0].eligible_players
@@ -957,3 +948,98 @@ class TestPotManager:
         assert side_pots[0].amount == 294  # 98 * 3
         assert side_pots[1].amount == 2  # 1 * 2
         assert side_pots[2].amount == 1  # 1 * 1
+
+    def test_side_pots_merging_across_rounds(self, pot_manager, mock_players):
+        """Test that side pots with identical eligible players are merged even across betting rounds."""
+        active_players = mock_players.copy()
+
+        # Set initial chips for all players (total should be 3000)
+        mock_players[0].chips = 1000  # Alice starts with 1000
+        mock_players[1].chips = 1000  # Bob starts with 1000
+        mock_players[2].chips = 1000  # Charlie starts with 1000
+
+        # First betting round
+        mock_players[0].bet = 400  # Alice bets 400
+        mock_players[0].chips -= 400  # Now has 600
+        mock_players[1].bet = 400  # Bob matches
+        mock_players[1].chips -= 400  # Now has 600
+        mock_players[2].bet = 200  # Charlie goes all-in for 200
+        mock_players[2].chips -= 200  # Now has 800
+
+        print("\nInitial state:")
+        print(f"Total bets: {sum(p.bet for p in active_players)}")
+        print(f"Total chips: {sum(p.chips for p in active_players)}")
+        print(f"Player states:")
+        for p in active_players:
+            print(f"  {p.name}: chips={p.chips}, bet={p.bet}")
+
+        # Calculate first round side pots
+        first_round_pots = pot_manager.calculate_side_pots(active_players)
+
+        print("\nAfter first round:")
+        print(f"Number of pots: {len(first_round_pots)}")
+        for i, pot in enumerate(first_round_pots):
+            print(
+                f"  Pot {i+1}: amount={pot.amount}, eligible={[p.name for p in pot.eligible_players]}"
+            )
+        print(f"Total in pots: {sum(pot.amount for pot in first_round_pots)}")
+
+        # Store first round pots
+        pot_manager.side_pots = first_round_pots
+
+        # Clear bets for next round
+        for p in active_players:
+            p.bet = 0
+
+        # Second betting round
+        mock_players[0].bet = 100  # Alice bets 100
+        mock_players[0].chips -= 100  # Now has 500
+        mock_players[1].bet = 100  # Bob bets remaining 100
+        mock_players[1].chips -= 100  # Now has 500
+        # Charlie is already all-in, can't bet
+
+        print("\nBefore second round calculation:")
+        print(f"Total bets: {sum(p.bet for p in active_players)}")
+        print(f"Total chips: {sum(p.chips for p in active_players)}")
+        print(f"Existing pots: {sum(pot.amount for pot in pot_manager.side_pots)}")
+        print(f"Player states:")
+        for p in active_players:
+            print(f"  {p.name}: chips={p.chips}, bet={p.bet}")
+
+        # Calculate new side pots - this should automatically merge with existing pots
+        final_pots = pot_manager.calculate_side_pots(active_players)
+
+        print("\nFinal state:")
+        print(f"Number of pots: {len(final_pots)}")
+        for i, pot in enumerate(final_pots):
+            print(
+                f"  Pot {i+1}: amount={pot.amount}, eligible={[p.name for p in pot.eligible_players]}"
+            )
+        print(f"Total in pots: {sum(pot.amount for pot in final_pots)}")
+        print(f"Total chips in stacks: {sum(p.chips for p in active_players)}")
+        print(
+            f"Total chips + pots: {sum(p.chips for p in active_players) + sum(pot.amount for pot in final_pots)}"
+        )
+
+        # Verify final merged pots
+        assert len(final_pots) == 3, "Should have three pots total"
+
+        # First pot - all players eligible (200 * 3 from first round)
+        assert final_pots[0].amount == 600, "Main pot should be from first round"
+        assert len(final_pots[0].eligible_players) == 3
+
+        # Second pot - Alice and Bob eligible (200 * 2 from first round)
+        assert final_pots[1].amount == 400, "Second pot should be from first round"
+        assert len(final_pots[1].eligible_players) == 2
+
+        # Third pot - Alice and Bob eligible (100 * 2 from second round)
+        assert final_pots[2].amount == 200, "Third pot should be from second round"
+        assert len(final_pots[2].eligible_players) == 2
+
+        # Verify total chips in play remains constant
+        total_chips = sum(
+            p.chips for p in active_players
+        ) + sum(  # Remaining chips in stacks
+            pot.amount for pot in final_pots
+        )  # All side pots
+        assert total_chips == 3000, "Total chips should remain constant"

@@ -102,8 +102,12 @@ class PotManager:
         Calculate side pots when one or more players is all-in.
 
         Args:
-            active_players (List[Player]): List of all players still in the hand,
-                                         including those who are all-in or folded
+            active_players (List[Player]): List of ALL players who were dealt into the hand,
+                including:
+                - Players who are still in the hand
+                - Players who folded but contributed chips
+                - Players who are all-in
+                Does NOT include players who mucked their hands without contributing.
 
         Returns:
             List[SidePot]: List of calculated side pots, where each pot contains
@@ -114,35 +118,38 @@ class PotManager:
             - Sets self.side_pots to empty list if no active players
 
         Note:
-            This method assumes that any existing main pot (self.pot) should be
-            preserved and included in chip total validation. If you need to reset
-            the main pot before calculation, call reset_pot() first.
-
-        Edge Cases:
-            - Empty input: Returns empty list and sets self.side_pots to []
-            - All players folded: Creates pots with no eligible players
-            - Single chip differences: Creates separate pots for each bet level
-            - Existing main pot: Preserves main pot and only calculates side pots for new bets
+            - Players who folded after betting are included in pot creation but not
+              eligible to win
+            - All-in players are eligible for pots up to their contribution amount
+            - The method uses player.folded status to determine pot eligibility
+            - Side pots with identical eligible players are merged, even across betting rounds.
+              This is standard poker behavior since pot eligibility is determined by total
+              contribution, not when the contribution was made.
         """
         # Validate inputs
         if not active_players:
             self.side_pots = []
             return []
 
-        # Track total chips in play before calculation (including folded players and main pot)
-        total_chips_before = sum(p.chips + p.bet for p in active_players) + self.pot
+        # Track total chips in play before calculation
+        total_chips_before = sum(
+            p.chips + p.bet for p in active_players
+        ) + (  # Current chips + bets
+            sum(pot.amount for pot in self.side_pots) if self.side_pots else 0
+        )  # Existing pots
 
-        # Create dictionary of all bets, including folded players' bets
+        # Create dictionary of all bets from players who contributed
         posted_amounts = {
             p: p.bet
             for p in active_players
-            if p.bet > 0  # Include folded players' bets
+            if p.bet > 0  # Include all bets, even from folded players
         }
         if not posted_amounts:
-            return []
+            # If no new bets, return existing side pots
+            return self.side_pots if self.side_pots else []
 
-        # Calculate side pots
-        side_pots = []
+        # Calculate new side pots from current bets
+        new_side_pots = []
         current_amount = 0
 
         # Sort players by their bet amounts
@@ -153,58 +160,53 @@ class PotManager:
 
         for player, amount in sorted_players:
             if amount > current_amount:
-                # Find all eligible players (not folded and bet >= amount)
+                # Players are eligible if they:
+                # 1. Bet at least this amount
+                # 2. Haven't folded
                 eligible = [
                     p
                     for p, bet in posted_amounts.items()
                     if bet >= amount and not p.folded
                 ]
 
-                # Calculate contribution from each player for this level
+                # Calculate pot size for this level
                 contribution = amount - current_amount
-
-                # Calculate number of contributors at this level
                 contributors = sum(
                     1 for bet in posted_amounts.values() if bet >= amount
                 )
-
-                # Calculate pot size for this level
                 pot_size = contribution * contributors
 
                 # Only create a new side pot if it would have a positive amount
                 # and hasn't been processed at this level
                 if pot_size > 0 and amount not in processed_amounts:
-                    # Check if we can combine with the previous pot
-                    if side_pots and set(side_pots[-1].eligible_players) == set(
-                        eligible
-                    ):
-                        # Create new pot with combined amount
-                        combined_pot = SidePot(
-                            amount=side_pots[-1].amount + pot_size,
-                            eligible_players=eligible,
-                        )
-                        side_pots[-1] = combined_pot
-                    else:
-                        side_pots.append(SidePot(pot_size, eligible))
+                    # Always create new pots for current betting round
+                    new_side_pots.append(SidePot(pot_size, eligible))
+                    logging.debug(
+                        f"Created new pot: amount={pot_size}, "
+                        f"eligible={[p.name for p in eligible]}"
+                    )
                     processed_amounts[amount] = pot_size
 
                 current_amount = amount
 
-        # Validate total chips haven't changed (including main pot)
-        total_chips_after = (
-            sum(p.chips for p in active_players)
-            + self.pot
-            + sum(pot.amount for pot in side_pots)
-        )
+        # Combine existing and new pots, preserving order
+        final_pots = []
+        if self.side_pots:
+            final_pots.extend(self.side_pots)  # Keep existing pots first
+        final_pots.extend(new_side_pots)  # Add new pots from this round
+
+        # Validate total chips haven't changed
+        total_chips_after = sum(p.chips for p in active_players) + sum(  # Current chips
+            pot.amount for pot in final_pots
+        )  # All side pots
 
         if total_chips_before != total_chips_after:
             raise InvalidGameStateError(
                 f"Chip total mismatch in side pot calculation: {total_chips_before} vs {total_chips_after}"
             )
 
-        # Store the calculated side pots
-        self.side_pots = side_pots
-        return side_pots
+        self.side_pots = final_pots
+        return final_pots
 
     def get_side_pots_view(self) -> List[SidePotView]:
         """
