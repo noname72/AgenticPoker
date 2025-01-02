@@ -81,10 +81,23 @@ def handle_draw_phase(players: List[Player], deck: Deck) -> None:
             deck.add_discarded(discarded)  # Use deck's discard tracking
             player.hand.remove_cards(discards)
 
-            # Reshuffle if needed
+            # Add more detailed logging for validation
+            logging.debug(f"Validating discard positions for {player.name}: {discards}")
+
+            # Add deck status logging
+            logging.info(f"Deck status before draw: {len(deck.cards)} cards remaining")
+
             if len(deck.cards) < len(discards):
-                logging.info("Reshuffling discarded cards into deck")
-                deck.reshuffle_discards()  # Use deck's reshuffle method
+                logging.info(
+                    f"Deck low on cards ({len(deck.cards)} remaining). "
+                    f"Need {len(discards)} cards. Reshuffling..."
+                )
+                deck.reshuffle_discards()
+
+            # Log after reshuffling
+            logging.debug(
+                f"Deck status after potential reshuffle: {len(deck.cards)} cards"
+            )
 
             # Draw new cards
             new_cards = deck.deal(len(discards))

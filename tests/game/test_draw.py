@@ -85,8 +85,10 @@ def test_handle_draw_phase_reshuffle(mock_players, mock_deck, caplog):
 
     handle_draw_phase(mock_players, mock_deck)
 
-    # Verify reshuffle behavior
-    assert "Reshuffling discarded cards into deck" in caplog.text
+    # Verify reshuffle behavior with new message format
+    assert (
+        "Deck low on cards (1 remaining). Need 3 cards. Reshuffling..." in caplog.text
+    )
     assert len(mock_players[0].hand.cards) == 5
 
     # After reshuffling, we can only verify:
