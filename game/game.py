@@ -7,7 +7,6 @@ from .deck import Deck
 from .hand import Hand
 from .player import Player
 from .pot_manager import PotManager
-from .types import SidePot
 
 
 @dataclass
@@ -80,7 +79,6 @@ class AgenticPoker:
     Attributes:
         deck (Deck): The deck of cards used for dealing
         players (List[Player]): List of currently active players in the game
-        pot (int): Total chips in the current pot
         small_blind (int): Required small blind bet amount
         big_blind (int): Required big blind bet amount
         dealer_index (int): Position of current dealer (0-based, moves clockwise)
@@ -89,7 +87,6 @@ class AgenticPoker:
         max_rounds (Optional[int]): Maximum number of rounds to play, or None for unlimited
         ante (int): Mandatory bet required from all players at start of each hand
         session_id (Optional[str]): Unique identifier for this game session
-        side_pots (Optional[List[SidePot]]): List of side pots when players are all-in
         round_starting_stacks (Dict[Player, int]): Dictionary of starting chip counts for each round
         config (GameConfig): Configuration parameters for the game
         current_bet (int): Current bet amount that players must match
@@ -105,7 +102,6 @@ class AgenticPoker:
     # Class attributes defined before __init__
     deck: Deck
     players: List[Player]
-    pot: int
     small_blind: int
     big_blind: int
     dealer_index: int
@@ -113,7 +109,6 @@ class AgenticPoker:
     round_number: int
     max_rounds: Optional[int]
     ante: int
-    side_pots: Optional[List[SidePot]]
     session_id: Optional[str]
     round_starting_stacks: Dict[Player, int]
     config: GameConfig
@@ -160,7 +155,6 @@ class AgenticPoker:
             if any(p.chips < 0 for p in self.players):
                 raise ValueError("Players cannot have negative chips")
 
-        self.pot = 0  # Initialize pot
         self.current_bet = 0  # Add this line to initialize current_bet
         self.pot_manager = PotManager()
 
@@ -171,7 +165,6 @@ class AgenticPoker:
         self.round_number = 0
         self.max_rounds = self.config.max_rounds
         self.ante = self.config.ante
-        self.side_pots = None
 
         # Log game configuration
         logging.info(f"\n{'='*50}")
@@ -243,9 +236,6 @@ class AgenticPoker:
                 game_state=game_state,
             )
 
-            self.pot = new_pot
-            self.side_pots = side_pots
-
             if not should_continue:
                 self.round_count += 1
                 self._reset_round()
@@ -311,7 +301,7 @@ class AgenticPoker:
             - Updates self.round_starting_stacks with initial chip counts
             - Updates players' chip counts as they post blinds/antes
             - Sets self.current_bet to the big blind amount
-            - Updates self.pot_manager and self.pot with collected chips
+            - Updates self.pot_manager with collected chips
 
         Note:
             - Small blind is posted by player to left of dealer
@@ -335,7 +325,6 @@ class AgenticPoker:
 
         # Update pot through pot manager
         self.pot_manager.add_to_pot(collected)
-        self.pot = self.pot_manager.pot
 
     def _log_chip_counts(
         self,
@@ -368,13 +357,6 @@ class AgenticPoker:
     def _log_round_info(self) -> None:
         """
         Log complete round state including stacks, positions, and betting information.
-
-        Provides a detailed snapshot of the game state at the start of each round,
-        including:
-        - Round number and separator
-        - Player chip stacks (sorted by amount)
-        - Table positions (dealer, blinds)
-        - Betting structure (blinds, ante, min bet)
         """
         # Log round header
         self._log_round_header()
@@ -411,14 +393,9 @@ class AgenticPoker:
             logging.info(f"  Ante: ${self.ante}")
         logging.info(f"  Minimum bet: ${self.config.min_bet}")
 
-        # Log pot information if there are side pots
-        if self.side_pots:
-            logging.info("\nSide pots:")
-            for i, side_pot in enumerate(self.side_pots, 1):
-                eligible_players = ", ".join(p.name for p in side_pot.eligible_players)
-                logging.info(
-                    f"  Pot {i}: ${side_pot.amount} (Eligible: {eligible_players})"
-                )
+        # Log side pots using pot manager's method
+        if self.pot_manager.side_pots:
+            self.pot_manager.log_side_pots(logging)
 
     def _handle_player_eliminations(self, eliminated_players: List[Player]) -> bool:
         """
