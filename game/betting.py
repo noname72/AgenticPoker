@@ -1,3 +1,22 @@
+"""
+Betting module for poker game implementation.
+
+This module handles all betting-related functionality including:
+- Managing betting rounds
+- Processing player actions (fold, call, raise)
+- Handling all-in situations and side pots
+- Collecting blinds and antes
+- Validating bets
+
+The module provides functions to manage the complete betting workflow in a poker game,
+with support for:
+- Multiple betting rounds
+- Side pot calculations
+- Blind and ante collection
+- Bet validation and limits
+- Detailed logging of all betting actions
+"""
+
 import logging
 from typing import List, Optional, Tuple, Union
 
@@ -8,16 +27,28 @@ from .types import SidePot
 def betting_round(
     players: List[Player], current_pot: int, game_state: Optional[dict] = None
 ) -> Union[int, Tuple[int, List[SidePot]]]:
-    """Handle a round of betting.
+    """Manages a complete round of betting among active players.
+
+    Handles the full betting sequence including:
+    - Processing each player's actions (fold/call/raise)
+    - Tracking betting order and amounts
+    - Managing all-in situations
+    - Creating side pots when necessary
+    - Enforcing betting rules and limits
 
     Args:
-        players: List of active players
-        current_pot: Current pot amount
-        game_state: Optional game state dictionary
+        players: List of active players in the game
+        current_pot: The current amount in the pot
+        game_state: Optional dictionary containing game state information like:
+            - current_bet: Current bet amount
+            - max_raise_multiplier: Maximum raise multiplier (default 3)
+            - max_raises_per_round: Maximum raises allowed per round (default 4)
+            - raise_count: Current number of raises in this round
 
     Returns:
-        Union[int, Tuple[int, List[SidePot]]]: Either just the new pot amount,
-        or a tuple of (new_pot, side_pots) if side pots were created
+        Either:
+        - int: The new pot amount (if no side pots were created)
+        - Tuple[int, List[SidePot]]: The new pot amount and list of side pots
     """
     pot = current_pot
     active_players = [p for p in players if not p.folded]
@@ -147,9 +178,21 @@ def betting_round(
 def _get_action_and_amount(
     player: Player, current_bet: int, game_state: Optional[dict]
 ) -> Tuple[str, int]:
-    """
-    Retrieve the player's decision.
-    Defaults to "call" the current bet if no decision function is provided.
+    """Retrieves and validates a player's betting action and amount.
+
+    Gets the player's decision through their decide_action method if available,
+    otherwise defaults to calling. Validates and normalizes the action and amount
+    to ensure they're legal.
+
+    Args:
+        player: The player making the decision
+        current_bet: Current bet amount to match
+        game_state: Optional game state information for decision making
+
+    Returns:
+        Tuple containing:
+        - str: The action ('fold', 'call', or 'raise')
+        - int: The bet amount (total bet for raises, amount to call for calls)
     """
     if hasattr(player, "decide_action"):
         decision = player.decide_action(game_state)
@@ -180,15 +223,15 @@ def _get_action_and_amount(
 
 
 def validate_bet_to_call(current_bet: int, player_bet: int) -> int:
-    """
-    Ensure bet to call amount is correct.
+    """Calculates the amount a player needs to add to call the current bet.
 
     Args:
-        current_bet: Current bet amount on the table
-        player_bet: Player's current bet amount
+        current_bet: The current bet amount that needs to be matched
+        player_bet: The amount the player has already bet in this round
 
     Returns:
-        int: Amount player needs to call
+        int: The additional amount the player needs to bet to call.
+            Always returns non-negative value.
     """
     bet_to_call = max(0, current_bet - player_bet)  # Can't be negative
     return bet_to_call
@@ -205,7 +248,32 @@ def _process_player_action(
     all_in_players: List[Player],
     game_state: Optional[dict] = None,
 ) -> Tuple[int, int, Optional[Player]]:
-    """Handle the player's action (fold, call, raise)."""
+    """Processes a player's betting action and updates game state accordingly.
+
+    Handles the mechanics of:
+    - Processing folds, calls, and raises
+    - Managing all-in situations
+    - Updating pot and bet amounts
+    - Enforcing betting limits
+    - Logging actions and state changes
+
+    Args:
+        player: Player making the action
+        action: The action ('fold', 'call', or 'raise')
+        amount: Bet amount (total bet for raises)
+        pot: Current pot amount
+        current_bet: Current bet to match
+        last_raiser: Last player who raised
+        active_players: List of players still in hand
+        all_in_players: List of players who are all-in
+        game_state: Optional game state information
+
+    Returns:
+        Tuple containing:
+        - int: Updated pot amount
+        - int: New current bet amount
+        - Optional[Player]: New last raiser (if any)
+    """
     new_last_raiser = None
 
     # Get max raise settings from game state
@@ -305,13 +373,22 @@ def _process_player_action(
 def calculate_side_pots(
     active_players: List[Player], all_in_players: List[Player]
 ) -> List[SidePot]:
-    """
-    Calculate side pots when one or more players is all-in.
+    """Creates side pots when one or more players are all-in.
 
-    The logic is:
-    1. Sort all-in players by their total bet.
-    2. Create a pot for each distinct all-in level.
-    3. Calculate which players are eligible for each pot.
+    Calculates multiple pots based on different all-in amounts:
+    1. Sorts all-in players by their total bet
+    2. Creates separate pots for each distinct all-in amount
+    3. Determines eligible players for each pot
+    4. Calculates the amount in each pot
+
+    Args:
+        active_players: List of players still in the hand
+        all_in_players: List of players who are all-in
+
+    Returns:
+        List[SidePot]: List of side pots, each containing:
+            - amount: The amount in this pot
+            - eligible_players: Players who can win this pot
     """
     # Sort all-in players by their total bet
     all_in_players.sort(key=lambda p: p.bet)
@@ -380,8 +457,15 @@ def log_action(
 
 
 def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante):
-    """
-    Collect blinds and antes from players.
+    """Collects mandatory bets (blinds and antes) from players.
+
+    Processes the collection of:
+    1. Antes from all players (if any)
+    2. Small blind from player after dealer
+    3. Big blind from player after small blind
+
+    Handles partial payments when players don't have enough chips
+    and tracks all-in situations.
 
     Args:
         players: List of players in the game
@@ -392,11 +476,6 @@ def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante
 
     Returns:
         int: Total amount collected from all players
-
-    Side Effects:
-        - Updates player chip counts
-        - Updates player bet amounts
-        - Logs all collections
     """
     collected = 0
     num_players = len(players)
@@ -457,16 +536,23 @@ def handle_betting_round(
     pot: int,
     game_state: Optional[dict],
 ) -> Tuple[int, Optional[List[SidePot]], bool]:
-    """Handle a complete betting round.
+    """Manages a complete betting round and determines if the game should continue.
+
+    Coordinates the entire betting process including:
+    - Running the betting round
+    - Managing side pots
+    - Determining if the game should continue
 
     Args:
         players: List of active players
         pot: Current pot amount
-        game_state: Optional game state dictionary
-        current_bet: Current bet amount (default 0)
+        game_state: Optional game state information
 
     Returns:
-        Tuple[int, Optional[List[SidePot]], bool]: New pot amount, any side pots, and whether game should continue
+        Tuple containing:
+        - int: New pot amount
+        - Optional[List[SidePot]]: Any side pots created
+        - bool: Whether the game should continue (False if only one player remains)
     """
     active_players = [p for p in players if not p.folded]
 

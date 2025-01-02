@@ -16,31 +16,21 @@ def handle_draw_phase(players: List[Player], deck: Deck) -> None:
     discarded_cards = []  # Track discarded cards for potential reshuffling
 
     for player in players:
-        # Skip folded players
         if player.folded:
             continue
 
-        # Get discard decisions from player
+        # Get discard decisions with better error handling
         discards = None
         if hasattr(player, "decide_draw"):
             try:
                 discards = player.decide_draw()
-
                 # Validate discard indexes
                 if any(idx < 0 or idx >= 5 for idx in discards):
                     logging.info(f"{player.name} provided invalid discard indexes")
-                    logging.info("Keeping current hand")
                     continue
-
             except Exception as e:
                 logging.info(f"Error getting discard decision from {player.name}: {e}")
-                logging.info("Keeping current hand")
                 continue
-        else:
-            logging.info(
-                "Non-AI player or player without decision method; keeping current hand"
-            )
-            continue
 
         # Handle discards and drawing new cards
         if discards:
