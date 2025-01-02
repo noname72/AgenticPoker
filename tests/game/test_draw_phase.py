@@ -62,8 +62,9 @@ def test_handle_draw_phase_with_discards(mock_players, mock_deck, caplog):
     handle_draw_phase(mock_players, mock_deck)
 
     # Check first player's hand was modified
-    assert mock_players[0].hand.cards[0].suit == "Spades"
-    assert all(card.suit == "Hearts" for card in mock_players[0].hand.cards[1:])
+    assert len(mock_players[0].hand.cards) == 5
+    assert mock_players[0].hand.cards[-1].suit == "Spades"
+    assert all(card.suit == "Hearts" for card in mock_players[0].hand.cards[:-1])
 
     # Check other players' hands remained unchanged
     for player in mock_players[1:]:
@@ -155,15 +156,14 @@ def test_handle_draw_phase_multiple_discards(mock_players, mock_deck):
 
     # Check first player's hand
     assert len(mock_players[0].hand.cards) == 5
-    assert mock_players[0].hand.cards[0] == new_cards[0]  # First new card
-    assert mock_players[0].hand.cards[1:] == player0_kept  # Rest unchanged
+    assert mock_players[0].hand.cards[:-1] == player0_kept  # First 4 cards unchanged
+    assert mock_players[0].hand.cards[-1] == new_cards[0]  # Last card is new
 
     # Check second player's hand
     assert len(mock_players[1].hand.cards) == 5
-    assert mock_players[1].hand.cards[1] == new_cards[1]  # Second new card
-    assert mock_players[1].hand.cards[2] == new_cards[2]  # Third new card
-    assert mock_players[1].hand.cards[0] == player1_kept[0]  # Unchanged cards
-    assert mock_players[1].hand.cards[3:] == player1_kept[1:]
+    assert mock_players[1].hand.cards[0] == player1_kept[0]  # First card unchanged
+    assert mock_players[1].hand.cards[1:3] == player1_kept[1:]  # Middle cards unchanged
+    assert mock_players[1].hand.cards[-2:] == new_cards[1:3]  # Last two cards are new
 
 
 def test_handle_draw_phase_negative_index(mock_players, mock_deck, caplog):

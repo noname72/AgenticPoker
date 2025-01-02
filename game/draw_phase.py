@@ -29,7 +29,8 @@ def handle_draw_phase(players: List[Player], deck: Deck) -> None:
             continue
 
         # Log current hand
-        logging.info(f"\n{player.name}'s hand: {player.hand.show()}")
+        logging.info(f"\n{player.name}'s turn to draw")
+        logging.info(f"Current hand: {player.hand.show()}")
 
         # Get discards if player has a decision method
         if hasattr(player, "decide_draw"):
@@ -49,12 +50,15 @@ def handle_draw_phase(players: List[Player], deck: Deck) -> None:
                 continue
 
             if discards:
-                # Remove discarded cards and track them
-                discarded = []
-                for idx in sorted(discards, reverse=True):
-                    card = player.hand.cards.pop(idx)
-                    discarded.append(card)
-                discarded_cards.extend(reversed(discarded))
+                logging.info(f"{player.name} discarding positions: {discards}")
+                logging.info(f"Discarding cards at positions: {discards}")
+
+                # Capture the cards being discarded before removing them
+                discarded = [player.hand.cards[idx] for idx in discards]
+                discarded_cards.extend(discarded)
+
+                # Remove discarded cards using Hand's remove_cards method
+                player.hand.remove_cards(discards)
 
                 # Check if we need to reshuffle
                 if len(deck.cards) < len(discards):
@@ -70,15 +74,12 @@ def handle_draw_phase(players: List[Player], deck: Deck) -> None:
                         logging.info("Keeping current hand")
                         continue
 
-                # Draw new cards
+                # Draw and add new cards using Hand's add_cards method
                 new_cards = deck.deal(len(discards))
-
-                # Insert new cards at original positions
-                for i, card in zip(sorted(discards), new_cards):
-                    player.hand.cards.insert(i, card)
+                player.hand.add_cards(new_cards)
 
                 logging.info(
-                    f"{player.name} discards {len(discards)} and draws {len(new_cards)}"
+                    f"Drew {len(new_cards)} new cards: {', '.join(str(card) for card in new_cards)}"
                 )
                 logging.info(f"New hand: {player.hand.show()}")
             else:

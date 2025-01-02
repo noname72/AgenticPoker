@@ -96,6 +96,15 @@ class Hand:
         self.cards.extend(cards)
         self._rank = None  # Invalidate cached rank
 
+    def remove_cards(self, positions: List[int]) -> None:
+        """
+        Remove cards from the hand by index positions (highest first),
+        then invalidate the cached rank.
+        """
+        for idx in sorted(positions, reverse=True):
+            self.cards.pop(idx)
+        self._rank = None
+
     def show(self) -> str:
         """
         Get a detailed string representation of the hand.

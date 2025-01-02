@@ -1,5 +1,6 @@
-import pytest
 import copy
+
+import pytest
 
 from game.card import Card
 from game.hand import Hand
@@ -73,15 +74,19 @@ class TestHand:
         """Test adding cards to a hand."""
         hand = Hand()
 
+        # Test adding non-list
+        with pytest.raises(TypeError, match="Cards must be provided as a list"):
+            hand.add_cards(sample_cards[0])
+
         # Add single card
         hand.add_cards([sample_cards[0]])
         assert len(hand.cards) == 1
-        assert hand._rank is None  # Rank should be invalidated
+        assert hand._rank is None
 
         # Add multiple cards
         hand.add_cards(sample_cards[1:])
         assert len(hand.cards) == 5
-        assert hand._rank is None  # Rank should still be invalidated
+        assert hand._rank is None
 
     def test_get_rank_caching(self, royal_flush):
         """Test that hand ranking is cached properly."""
@@ -156,10 +161,8 @@ class TestHand:
         """Test comparisons with invalid types."""
         with pytest.raises(AttributeError):
             royal_flush < "not a hand"
-
         with pytest.raises(AttributeError):
             royal_flush > 42
-
         with pytest.raises(AttributeError):
             royal_flush == None
 
@@ -432,3 +435,126 @@ class TestHand:
         # Verify reasonable memory usage
         total_size = sum(sys.getsizeof(hand) for hand in hands)
         assert total_size < initial_size * 1100  # Allow some overhead
+
+    def test_remove_cards(self):
+        """Test removing cards from hand."""
+        cards = [
+            Card("A", "♠"),
+            Card("K", "♠"),
+            Card("Q", "♠"),
+            Card("J", "♠"),
+            Card("10", "♠"),
+        ]
+        hand = Hand(cards)
+
+        # Remove cards from positions 1 and 3
+        hand.remove_cards([1, 3])
+        assert len(hand.cards) == 3
+        assert hand._rank is None
+
+        # Compare card values instead of objects directly
+        assert hand.cards[0].rank == "A" and hand.cards[0].suit == "♠"
+        assert hand.cards[1].rank == "Q" and hand.cards[1].suit == "♠"
+        assert hand.cards[2].rank == "10" and hand.cards[2].suit == "♠"
+
+    def test_hand_rank_updates_after_draw(self):
+        """Test that hand ranks are properly updated when cards change."""
+        
+        # Test Case 1: High Card becomes Pair
+        initial_hand = Hand([
+            Card("10", "♠"),
+            Card("8", "♦"), 
+            Card("6", "♠"),
+            Card("4", "♥"),
+            Card("K", "♥")
+        ])
+        
+        # Verify initial hand rank
+        rank, tiebreakers, description = initial_hand._get_rank()
+        assert rank == 10  # High card
+        assert "High Card" in description
+        assert tiebreakers[0] == 13  # King high
+        
+        # Simulate draw by removing cards and adding new ones
+        initial_hand.cards = [
+            Card("10", "♠"),  # Kept
+            Card("Q", "♣"),   # New
+            Card("K", "♣"),   # New
+            Card("9", "♦"),   # New
+            Card("K", "♥")    # Kept
+        ]
+        
+        # Force rank recalculation by clearing cache
+        initial_hand._rank = None
+        
+        # Verify updated hand rank
+        rank, tiebreakers, description = initial_hand._get_rank()
+        assert rank == 9  # One pair
+        assert "Pair" in description
+        assert tiebreakers[0] == 13  # Pair of Kings
+        
+        # Test Case 2: Pair becomes High Card
+        pair_hand = Hand([
+            Card("9", "♣"),
+            Card("5", "♣"),
+            Card("9", "♠"),
+            Card("8", "♥"),
+            Card("J", "♦")
+        ])
+        
+        # Verify initial pair
+        rank, tiebreakers, description = pair_hand._get_rank()
+        assert rank == 9  # One pair
+        assert "Pair" in description
+        assert tiebreakers[0] == 9  # Pair of 9s
+        
+        # Simulate draw by replacing cards
+        pair_hand.cards = [
+            Card("6", "♥"),   # New
+            Card("K", "♦"),   # New
+            Card("9", "♠"),   # Kept
+            Card("8", "♥"),   # Kept
+            Card("J", "♦")    # Kept
+        ]
+        
+        # Force rank recalculation
+        pair_hand._rank = None
+        
+        # Verify updated hand rank
+        rank, tiebreakers, description = pair_hand._get_rank()
+        assert rank == 10  # High card
+        assert "High Card" in description
+        assert tiebreakers[0] == 13  # King high
+        
+        # Test Case 3: Pair of 3s becomes High Card
+        three_pair_hand = Hand([
+            Card("3", "♠"),
+            Card("4", "♠"),
+            Card("3", "♣"),
+            Card("2", "♠"),
+            Card("K", "♠")
+        ])
+        
+        # Verify initial pair
+        rank, tiebreakers, description = three_pair_hand._get_rank()
+        assert rank == 9  # One pair
+        assert "Pair" in description
+        assert tiebreakers[0] == 3  # Pair of 3s
+        
+        # Simulate draw
+        three_pair_hand.cards = [
+            Card("7", "♦"),   # New
+            Card("4", "♦"),   # New
+            Card("3", "♣"),   # Kept
+            Card("2", "♠"),   # Kept
+            Card("K", "♠")    # Kept
+        ]
+        
+        # Force rank recalculation
+        three_pair_hand._rank = None
+        
+        # Verify updated hand rank
+        rank, tiebreakers, description = three_pair_hand._get_rank()
+        assert rank == 10  # High card
+        assert "High Card" in description
+        assert tiebreakers[0] == 13  # King high
