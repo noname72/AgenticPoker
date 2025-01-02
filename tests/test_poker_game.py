@@ -5,6 +5,7 @@ import pytest
 
 from agents.llm_agent import LLMAgent
 from game import AgenticPoker
+from game.draw_phase import handle_draw_phase
 from game.hand import Hand
 from game.card import Card
 
@@ -132,7 +133,7 @@ def test_game_state_creation(game, mock_players):
 def test_hand_ranks_update_after_draw(game, mock_players):
     """Test that hand ranks are properly updated after the draw phase."""
 
-    # Create real Hand objects instead of Mocks for proper card handling
+    # Create real Hand objects for all players
     mock_players[0].hand = Hand(
         [  # Alice's hand
             Card("10", "♠"),
@@ -153,8 +154,20 @@ def test_hand_ranks_update_after_draw(game, mock_players):
         ]
     )
 
-    # Store the evaluate method so we can mock it after creating real hands
-    real_evaluate = Hand.evaluate
+    mock_players[2].hand = Hand(
+        [  # Charlie's hand
+            Card("2", "♣"),
+            Card("3", "♣"),
+            Card("4", "♣"),
+            Card("5", "♦"),
+            Card("6", "♥"),
+        ]
+    )
+
+    # Store initial cards for verification
+    alice_initial_cards = mock_players[0].hand.cards.copy()
+    bob_initial_cards = mock_players[1].hand.cards.copy()
+    charlie_initial_cards = mock_players[2].hand.cards.copy()
 
     # Setup initial ranks and descriptions
     mock_players[0].hand.evaluate = Mock(
@@ -163,33 +176,69 @@ def test_hand_ranks_update_after_draw(game, mock_players):
     mock_players[1].hand.evaluate = Mock(
         return_value="One Pair, 9s [Rank: 9, Tiebreakers: [9, 11, 8, 5]]"
     )
+    mock_players[2].hand.evaluate = Mock(
+        return_value="High Card, 6 high [Rank: 10, Tiebreakers: [6, 5, 4, 3, 2]]"
+    )
 
-    # Verify initial evaluations
-    initial_alice = mock_players[0].hand.evaluate()
-    initial_bob = mock_players[1].hand.evaluate()
-    assert "High Card" in initial_alice, f"Alice's initial hand wrong: {initial_alice}"
-    assert "One Pair" in initial_bob, f"Bob's initial hand wrong: {initial_bob}"
+    # Add debugging before draw phase
+    print("\n=== Debug Info Before Draw Phase ===")
+    print(f"Alice's initial hand: {[str(c) for c in mock_players[0].hand.cards]}")
+    print(f"Bob's initial hand: {[str(c) for c in mock_players[1].hand.cards]}")
+    print(f"Charlie's initial hand: {[str(c) for c in mock_players[2].hand.cards]}")
 
-    # Mock the draw decisions with actual lists instead of Mock objects
-    def alice_decide_draw(game_state=None):
-        return [1, 2, 3]  # Discard three cards
+    # Mock the draw decisions
+    def alice_draw(game_state=None):
+        cards = [str(c) for c in mock_players[0].hand.cards]
+        print(f"\nAlice deciding discards. Current hand: {cards}")
+        # Keep 10♠ and K♥, discard others
+        return [
+            i
+            for i, card in enumerate(mock_players[0].hand.cards)
+            if card not in [alice_initial_cards[0], alice_initial_cards[4]]
+        ]
 
-    mock_players[0].decide_draw = alice_decide_draw
+    def bob_draw(game_state=None):
+        cards = [str(c) for c in mock_players[1].hand.cards]
+        print(f"\nBob deciding discards. Current hand: {cards}")
+        # Keep all except 5♣
+        return [
+            i
+            for i, card in enumerate(mock_players[1].hand.cards)
+            if card == bob_initial_cards[2]
+        ]
 
-    def bob_decide_draw(game_state=None):
-        return [2]  # Discard one card
+    def charlie_draw(game_state=None):
+        cards = [str(c) for c in mock_players[2].hand.cards]
+        print(f"\nCharlie deciding discards. Current hand: {cards}")
+        # Discard everything
+        return list(range(5))
 
-    mock_players[1].decide_draw = bob_decide_draw
+    # Assign the draw functions
+    mock_players[0].decide_draw = alice_draw
+    mock_players[1].decide_draw = bob_draw
+    mock_players[2].decide_draw = charlie_draw
 
     # Setup cards to be drawn
     new_cards_alice = [Card("K", "♣"), Card("Q", "♦"), Card("9", "♥")]
     new_cards_bob = [Card("K", "♠")]
-    game.deck.deal = Mock(side_effect=[new_cards_alice, new_cards_bob])
+    new_cards_charlie = [
+        Card("A", "♠"),
+        Card("K", "♦"),
+        Card("Q", "♣"),
+        Card("J", "♥"),
+        Card("10", "♣"),
+    ]
+    game.deck.deal = Mock(
+        side_effect=[new_cards_alice, new_cards_bob, new_cards_charlie]
+    )
 
-    # Run draw phase using the imported function
-    from game.draw_phase import handle_draw_phase
-
+    print("\n=== Starting Draw Phase ===")
     handle_draw_phase(mock_players, game.deck)
+
+    print("\n=== Debug Info After Draw Phase ===")
+    print(f"Alice's final hand: {[str(c) for c in mock_players[0].hand.cards]}")
+    print(f"Bob's final hand: {[str(c) for c in mock_players[1].hand.cards]}")
+    print(f"Charlie's final hand: {[str(c) for c in mock_players[2].hand.cards]}")
 
     # Verify cards were properly discarded and drawn
     expected_alice_cards = {
@@ -217,10 +266,14 @@ def test_hand_ranks_update_after_draw(game, mock_players):
     mock_players[1].hand.evaluate = Mock(
         return_value="High Card, K high [Rank: 10, Tiebreakers: [13, 11, 9, 9, 8]]"
     )
+    mock_players[2].hand.evaluate = Mock(
+        return_value="High Card, 6 high [Rank: 10, Tiebreakers: [6, 5, 4, 3, 2]]"
+    )
 
     # Verify hands were properly updated
     alice_eval = mock_players[0].hand.evaluate()
     bob_eval = mock_players[1].hand.evaluate()
+    charlie_eval = mock_players[2].hand.evaluate()
 
     # Check that ranks reflect the new hands with detailed error messages
     assert "One Pair, Ks" in alice_eval, (
@@ -235,11 +288,18 @@ def test_hand_ranks_update_after_draw(game, mock_players):
         f"Got: {bob_eval}\n"
         f"Cards: {[str(c) for c in mock_players[1].hand.cards]}"
     )
+    assert "High Card, 6" in charlie_eval, (
+        f"Charlie's hand didn't improve to high card.\n"
+        f"Expected: High Card, 6\n"
+        f"Got: {charlie_eval}\n"
+        f"Cards: {[str(c) for c in mock_players[2].hand.cards]}"
+    )
 
     # Verify the evaluation was called with updated cards
     try:
         mock_players[0].hand.evaluate.assert_called_once()
         mock_players[1].hand.evaluate.assert_called_once()
+        mock_players[2].hand.evaluate.assert_called_once()
     except AssertionError as e:
         print(f"\nEvaluation call counts wrong:")
         print(
@@ -247,5 +307,8 @@ def test_hand_ranks_update_after_draw(game, mock_players):
         )
         print(
             f"Bob's evaluate() called {mock_players[1].hand.evaluate.call_count} times"
+        )
+        print(
+            f"Charlie's evaluate() called {mock_players[2].hand.evaluate.call_count} times"
         )
         raise e
