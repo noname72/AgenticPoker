@@ -256,26 +256,12 @@ def _process_player_action(
         max_possible_bet = min(player.chips + player.bet, max_raise)
         actual_total_bet = min(total_wanted_bet, max_possible_bet)
 
-        # If it's not a valid raise amount or we've hit max raises, convert to call
-        # But if they're going all-in, let them do it
-        if (
-            actual_total_bet <= current_bet and player.chips > to_call
-        ) or raise_count >= max_raises_per_round:
-            # Player can only bet what they have
+        # If we've already hit the max raises, treat as a call
+        if raise_count >= max_raises_per_round:
             bet_amount = min(to_call, player.chips)
             actual_bet = player.place_bet(bet_amount)
             pot += actual_bet
-
-            # If they went all-in trying to call, count it as a raise
-            if player.chips == 0 and bet_amount < to_call:
-                new_last_raiser = player
-
-            if raise_count >= max_raises_per_round:
-                logging.info(f"{player.name} calls ${bet_amount} (max raises reached)")
-            else:
-                logging.info(
-                    f"{player.name} calls ${bet_amount} (invalid raise converted to call)"
-                )
+            logging.info(f"{player.name} calls ${bet_amount} (max raises reached)")
         else:
             # Valid raise or all-in
             to_add = min(actual_total_bet - player.bet, player.chips)
@@ -286,13 +272,12 @@ def _process_player_action(
             if actual_total_bet > current_bet:
                 current_bet = actual_total_bet
                 new_last_raiser = player
-                # Update raise count in game state
+                # Increment raise count in the game state
                 if game_state is not None:
                     game_state["raise_count"] = raise_count + 1
             elif player.chips == 0:
                 # All-in below current bet still counts as a raise
                 new_last_raiser = player
-                # Update raise count in game state for all-in raises too
                 if game_state is not None:
                     game_state["raise_count"] = raise_count + 1
 
