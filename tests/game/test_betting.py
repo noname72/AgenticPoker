@@ -687,15 +687,15 @@ def test_betting_round_last_raiser_short_stack():
 def test_betting_round_one_player_left_with_chips():
     """Test when only one player has chips remaining but others are all-in."""
     players = [
-        Player("Player 1", 100),
-        Player("Player 2", 20),  # Will go all-in
-        Player("Player 3", 30),  # Will go all-in
+        Player("Player 1", 100),  # Has enough chips
+        Player("Player 2", 20),  # Will go all-in first
+        Player("Player 3", 30),  # Will go all-in second
     ]
 
-    # All players try to call/raise
-    players[0].decide_action = lambda x: ("raise", 40)
-    players[1].decide_action = lambda x: ("call", 40)  # Will be all-in with 20
-    players[2].decide_action = lambda x: ("call", 40)  # Will be all-in with 30
+    # Set up betting sequence
+    players[0].decide_action = lambda x: ("raise", 30)  # Raises to 30
+    players[1].decide_action = lambda x: ("call", 30)  # Can only call 20 (all-in)
+    players[2].decide_action = lambda x: ("call", 30)  # Can only call 30 (all-in)
 
     pot, side_pots = betting_round(players, 0)
 
@@ -714,22 +714,29 @@ def test_betting_round_one_player_left_with_chips():
     # Verify final state
     assert (
         players[0].chips == 70
-    ), f"Expected Player 1 to have 70 chips, but had {players[0].chips} (bet: {players[0].bet})"
+    ), f"Expected Player 1 to have 70 chips, but had {players[0].chips}"
     assert (
         players[1].chips == 0
     ), f"Expected Player 2 to be all-in, but had {players[1].chips} chips"
     assert (
         players[2].chips == 0
     ), f"Expected Player 3 to be all-in, but had {players[2].chips} chips"
-    assert pot == 80, f"Expected pot to be 80, but was {pot}"  # Changed from 90 to 80
+
+    # Total pot should be 80 (Player 1: 30 + Player 2: 20 + Player 3: 30)
+    assert pot == 80, f"Expected pot to be 80, but was {pot}"
 
     # Verify side pots
-    assert (
-        len(side_pots) == 2
-    ), f"Expected 2 side pots, but got {len(side_pots)}"  # Changed from 3 to 2
+    assert len(side_pots) == 2, f"Expected 2 side pots, but got {len(side_pots)}"
+
+    # First side pot: All players contribute 20 each
     assert (
         side_pots[0].amount == 60
-    ), f"First side pot should be 60, but was {side_pots[0].amount}"  # All players contribute 20
+    ), f"First side pot should be 60, but was {side_pots[0].amount}"
+    assert len(side_pots[0].eligible_players) == 3
+
+    # Second side pot: Only Player 1 and 3 contribute additional 10 each
     assert (
         side_pots[1].amount == 20
-    ), f"Second side pot should be 20, but was {side_pots[1].amount}"  # Player 1 and 3 contribute 10 more each
+    ), f"Second side pot should be 20, but was {side_pots[1].amount}"
+    assert len(side_pots[1].eligible_players) == 2
+    assert players[1] not in side_pots[1].eligible_players
