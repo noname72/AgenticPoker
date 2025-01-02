@@ -6,7 +6,7 @@ This module handles all betting-related functionality including:
 - Processing player actions (fold, call, raise)
 - Handling all-in situations and side pots
 - Collecting blinds and antes
-- Validating bets
+- Validating bets and raises
 
 The module provides functions to manage the complete betting workflow in a poker game,
 with support for:
@@ -14,7 +14,19 @@ with support for:
 - Side pot calculations
 - Blind and ante collection
 - Bet validation and limits
+- Minimum raise enforcement
+- Last raiser restrictions
 - Detailed logging of all betting actions
+- Showdown situation detection
+
+Key features:
+- Enforces minimum raise amounts (double the last raise)
+- Prevents players from raising twice consecutively unless they're the last active player
+- Tracks and validates betting sequences
+- Handles partial calls and all-in situations
+- Creates side pots automatically when needed
+- Provides detailed logging of betting actions and game state
+- Supports customizable betting limits and raise restrictions
 """
 
 import logging
@@ -288,8 +300,17 @@ def _process_player_action(
     # Calculate how much player needs to call
     to_call = validate_bet_to_call(current_bet, player.bet)
 
-    # Log initial state
+    # Add validation for minimum raise amount based on last raiser's bet
+    min_raise_amount = 0
+    if last_raiser and last_raiser in active_players:
+        min_raise_amount = last_raiser.bet * 2  # Double the last raise
+
+    # Log initial state with active player context
     logging.info(f"\n{player.name}'s turn:")
+    logging.info(
+        f"  Active players: {[p.name for p in active_players if not p.folded]}"
+    )
+    logging.info(f"  Last raiser: {last_raiser.name if last_raiser else 'None'}")
     logging.info(
         f"  Hand: {player.hand.show() if hasattr(player, 'hand') else 'Unknown'}"
     )
@@ -316,6 +337,29 @@ def _process_player_action(
         logging.info(f"{player.name} calls ${bet_amount}{status}")
 
     elif action == "raise":
+        # Validate raise against minimum raise amount
+        if amount < min_raise_amount:
+            action = "call"
+            amount = current_bet
+            logging.info(
+                f"Raise amount ${amount} below minimum (${min_raise_amount}), converting to call"
+            )
+        else:
+            # Check if this player is allowed to raise based on position and active players
+            can_raise = True
+            if last_raiser:
+                # Prevent same player from raising twice in a row unless they're the only active player
+                active_non_folded = [
+                    p for p in active_players if not p.folded and p.chips > 0
+                ]
+                if player == last_raiser and len(active_non_folded) > 1:
+                    can_raise = False
+                    logging.info(f"{player.name} cannot raise twice in a row")
+
+            if not can_raise:
+                action = "call"
+                amount = current_bet
+
         # For raises, amount represents the total bet they want to make
         total_wanted_bet = amount
 
@@ -357,11 +401,16 @@ def _process_player_action(
             else:
                 logging.info(f"{player.name} raises to ${actual_total_bet}{status}")
 
-    # Check for all-in
+    # Update all-in status considering active players
     if player.chips == 0 and not player.folded:
         if player not in all_in_players:
             all_in_players.append(player)
-            logging.info(f"{player.name} is all in!")
+            # Check if this creates a showdown situation
+            active_with_chips = [
+                p for p in active_players if not p.folded and p.chips > 0
+            ]
+            if len(active_with_chips) <= 1:
+                logging.info("Showdown situation: Only one player with chips remaining")
 
     # Log updated state
     logging.info(f"  Pot after action: ${pot}")
