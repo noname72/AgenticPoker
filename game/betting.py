@@ -68,8 +68,11 @@ def betting_round(
     round_complete = False
     last_raiser = None
 
+    # Create a copy of game state at the start
+    current_game_state = {} if game_state is None else game_state.copy()
+
     # Get current bet from game state if provided
-    current_bet = game_state.get("current_bet", 0) if game_state else 0
+    current_bet = current_game_state.get("current_bet", 0)
 
     # If there is no current bet, define a minimum bet (e.g., 10)
     if current_bet <= 0:
@@ -206,32 +209,37 @@ def _get_action_and_amount(
         - str: The action ('fold', 'call', or 'raise')
         - int: The bet amount (total bet for raises, amount to call for calls)
     """
-    if hasattr(player, "decide_action"):
-        decision = player.decide_action(game_state)
-        # If the player returns just 'fold'/'call'/'raise', default the amount
-        if isinstance(decision, tuple):
-            action, amount = decision
+    try:
+        if hasattr(player, "decide_action"):
+            decision = player.decide_action(game_state)
+            # If the player returns just 'fold'/'call'/'raise', default the amount
+            if isinstance(decision, tuple):
+                action, amount = decision
+            else:
+                action, amount = decision, current_bet
         else:
-            action, amount = decision, current_bet
-    else:
-        # Fallback to calling if no custom logic is provided
-        action, amount = "call", current_bet
+            # Fallback to calling if no custom logic is provided
+            action, amount = "call", current_bet
 
-    # If action is invalid, default to "call" for safety
-    if action not in ("fold", "call", "raise"):
-        action, amount = "call", current_bet
+        # If action is invalid, default to "call" for safety
+        if action not in ("fold", "call", "raise"):
+            action, amount = "call", current_bet
 
-    # For raises, amount represents the total bet they want to make
-    if action == "raise":
-        # If they try to raise less than the current bet, convert to call
-        if amount <= current_bet:
-            action = "call"
-            amount = current_bet
+        # For raises, amount represents the total bet they want to make
+        if action == "raise":
+            # If they try to raise less than the current bet, convert to call
+            if amount <= current_bet:
+                action = "call"
+                amount = current_bet
 
-    # Ensure non-negative amounts
-    amount = max(0, amount)
+        # Ensure non-negative amounts
+        amount = max(0, amount)
 
-    return action, amount
+        return action, amount
+    except Exception as e:
+        logging.error(f"Error getting action from {player.name}: {e}")
+        # Default to calling in case of error
+        return "call", current_bet
 
 
 def validate_bet_to_call(current_bet: int, player_bet: int) -> int:
@@ -603,6 +611,13 @@ def handle_betting_round(
         - Optional[List[SidePot]]: Any side pots created
         - bool: Whether the game should continue (False if only one player remains)
     """
+    if not players:
+        raise ValueError("Cannot run betting round with no players")
+    if pot < 0:
+        raise ValueError("Pot amount cannot be negative")
+    if any(not isinstance(p, Player) for p in players):
+        raise TypeError("All elements in players list must be Player instances")
+
     active_players = [p for p in players if not p.folded]
 
     # Run betting round

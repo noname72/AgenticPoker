@@ -7,6 +7,7 @@ from .deck import Deck
 from .hand import Hand
 from .player import Player
 from .pot_manager import PotManager
+from .utils import log_chip_movements
 
 
 @dataclass
@@ -455,12 +456,7 @@ class AgenticPoker:
 
     def _log_chip_movements(self, initial_chips: Dict[Player, int]) -> None:
         """Log the chip movements for each player from their initial amounts."""
-        for player in self.players:
-            if player.chips != initial_chips[player]:
-                net_change = player.chips - initial_chips[player]
-                logging.info(
-                    f"{player.name}: ${initial_chips[player]} → ${player.chips} ({net_change:+d})"
-                )
+        log_chip_movements(self.players, initial_chips)
 
     def _log_game_summary(self, eliminated_players: List[Player]) -> None:
         """Log the final game summary and standings."""

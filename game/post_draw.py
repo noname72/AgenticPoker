@@ -5,6 +5,7 @@ from . import betting
 from .player import Player
 from .pot_manager import PotManager
 from .types import SidePot
+from .utils import log_chip_movements
 
 
 def handle_post_draw_betting(
@@ -75,7 +76,7 @@ def handle_showdown(
     # Get side pots from pot manager
     try:
         side_pots = pot_manager.calculate_side_pots(active_players, [])
-        
+
         # If no side pots, create one main pot
         if not side_pots:
             pot_amount = int(pot_manager.pot)
@@ -94,21 +95,21 @@ def handle_showdown(
                 pot_amount = int(pot.amount)
                 split_amount = pot_amount // len(winners)
                 remainder = pot_amount % len(winners)
-                
+
                 # Distribute split amount and remainder
                 for i in range(len(winners)):
                     winner = winners[i]
                     amount = split_amount
                     if i < remainder:  # Add extra chip for remainder
                         amount += 1
-                        
+
                     # Update winner's chips
                     if isinstance(winner.chips, int):
                         winner.chips += amount
                     else:
                         # Handle mock player
                         winner.chips = initial_chips[winner] + amount
-                        
+
                     logging.info(f"{winner.name} wins ${amount}")
 
     # Log final chip movements
@@ -154,17 +155,7 @@ def _evaluate_hands(players: List[Player]) -> List[Player]:
 
 
 def _log_chip_movements(
-    players: List[Player], 
-    initial_chips: Dict[Player, int]
+    players: List[Player], initial_chips: Dict[Player, int]
 ) -> None:
     """Log the chip movements for each player from their initial amounts."""
-    for player in players:
-        try:
-            if player.chips != initial_chips[player]:
-                net_change = player.chips - initial_chips[player]
-                logging.info(
-                    f"{player.name}: ${initial_chips[player]} → ${player.chips} ({net_change:+})"
-                )
-        except (TypeError, AttributeError):
-            # Handle MagicMock objects in tests
-            logging.info(f"{player.name}: Chip movement tracking skipped in test mode")
+    log_chip_movements(players, initial_chips, handle_mocks=True)
