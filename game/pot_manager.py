@@ -15,9 +15,38 @@ class PotManager:
     calculating side pots when players go all-in, and providing formatted views
     of the pot state for logging and display.
 
+    The PotManager maintains consistency of all chip movements and ensures that:
+    - Total chips in play remain constant
+    - Side pots are correctly calculated for all-in situations
+    - Pot state can be validated at any time
+    - Chip movements are properly logged for debugging
+
     Attributes:
         pot (int): Current amount in the main pot
-        side_pots (Optional[List[SidePot]]): List of active side pots, if any
+        side_pots (Optional[List[SidePot]]): List of active side pots, if any.
+            None indicates no side pots have been calculated yet.
+            Empty list indicates calculation returned no side pots.
+
+    Usage:
+        pot_manager = PotManager()
+
+        # Add chips to main pot
+        pot_manager.add_to_pot(100)
+
+        # Calculate side pots when players go all-in
+        side_pots = pot_manager.calculate_side_pots(active_players)
+
+        # Get formatted view of side pots
+        pot_view = pot_manager.get_side_pots_view()
+
+        # Reset at end of hand
+        pot_manager.reset_pot()
+
+    Note:
+        - Side pots are only created when players go all-in for different amounts
+        - Main pot and side pots are kept separate for proper pot distribution
+        - All chip movements are logged for debugging and validation
+        - Pot state can be restored from saved game state using set_pots()
     """
 
     def __init__(self) -> None:
@@ -68,16 +97,40 @@ class PotManager:
             f"Pot reset: Main {old_pot}->0, " f"Side pots {old_side_pots}->None"
         )
 
-    def calculate_side_pots(
-        self, active_players: List[Player], all_in_players: List[Player]
-    ) -> List[SidePot]:
-        """Calculate side pots when one or more players is all-in."""
+    def calculate_side_pots(self, active_players: List[Player]) -> List[SidePot]:
+        """
+        Calculate side pots when one or more players is all-in.
+
+        Args:
+            active_players (List[Player]): List of all players still in the hand,
+                                         including those who are all-in or folded
+
+        Returns:
+            List[SidePot]: List of calculated side pots, where each pot contains
+                          an amount and list of eligible players
+
+        Side Effects:
+            - Updates self.side_pots with the calculated side pots
+            - Sets self.side_pots to empty list if no active players
+
+        Note:
+            This method assumes that any existing main pot (self.pot) should be
+            preserved and included in chip total validation. If you need to reset
+            the main pot before calculation, call reset_pot() first.
+
+        Edge Cases:
+            - Empty input: Returns empty list and sets self.side_pots to []
+            - All players folded: Creates pots with no eligible players
+            - Single chip differences: Creates separate pots for each bet level
+            - Existing main pot: Preserves main pot and only calculates side pots for new bets
+        """
         # Validate inputs
         if not active_players:
+            self.side_pots = []
             return []
 
-        # Track total chips in play before calculation (including folded players)
-        total_chips_before = sum(p.chips + p.bet for p in active_players)
+        # Track total chips in play before calculation (including folded players and main pot)
+        total_chips_before = sum(p.chips + p.bet for p in active_players) + self.pot
 
         # Create dictionary of all bets, including folded players' bets
         posted_amounts = {
@@ -137,9 +190,11 @@ class PotManager:
 
                 current_amount = amount
 
-        # Validate total chips haven't changed
-        total_chips_after = sum(p.chips for p in active_players) + sum(
-            pot.amount for pot in side_pots
+        # Validate total chips haven't changed (including main pot)
+        total_chips_after = (
+            sum(p.chips for p in active_players)
+            + self.pot
+            + sum(pot.amount for pot in side_pots)
         )
 
         if total_chips_before != total_chips_after:
@@ -147,6 +202,8 @@ class PotManager:
                 f"Chip total mismatch in side pot calculation: {total_chips_before} vs {total_chips_after}"
             )
 
+        # Store the calculated side pots
+        self.side_pots = side_pots
         return side_pots
 
     def get_side_pots_view(self) -> List[SidePotView]:
@@ -181,12 +238,22 @@ class PotManager:
         Set the main pot and side pots directly.
 
         Args:
-            main_pot: Amount for the main pot
+            main_pot: Amount for the main pot (must be non-negative)
             side_pots: Optional list of side pots to set
+
+        Raises:
+            ValueError: If main_pot is negative
 
         Side Effects:
             - Updates the main pot amount
             - Updates the side pots list
+            - Logs the changes for debugging
+
+        Note:
+            This method is typically used for:
+            - Initializing pot state at the start of a hand
+            - Restoring pot state from saved game
+            - Testing pot scenarios
         """
         if main_pot < 0:
             raise ValueError("Main pot cannot be negative")
@@ -209,6 +276,11 @@ class PotManager:
         """
         Validate the current pot state for consistency.
 
+        Checks that:
+        1. Total chips in play (including pots) matches initial total if provided
+        2. Current bets don't exceed pot amounts
+        3. All chip movements are accounted for
+
         Args:
             active_players: List of players still in the hand
             initial_total: Optional initial total chips to validate against
@@ -217,7 +289,17 @@ class PotManager:
             bool: True if pot state is valid
 
         Raises:
-            InvalidGameStateError: If pot state is invalid
+            InvalidGameStateError: If pot state is invalid, with detailed error message
+
+        Side Effects:
+            None - This is a validation method only
+
+        Note:
+            When validating with initial_total, includes:
+            - Chips in player stacks
+            - Current bets
+            - Main pot
+            - All side pots
         """
         # Calculate total chips in play (excluding bets since they're in the pot)
         total_chips = sum(p.chips for p in active_players)

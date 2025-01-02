@@ -88,7 +88,7 @@ class TestPotManager:
             player.bet = 100
             player.chips = 900  # Started with 1000, bet 100
 
-        side_pots = pot_manager.calculate_side_pots(active_players, [])
+        side_pots = pot_manager.calculate_side_pots(active_players)
 
         # Should be one main pot with all players
         assert len(side_pots) == 1
@@ -105,9 +105,7 @@ class TestPotManager:
         mock_players[2].bet = 100
         mock_players[2].chips = 0
 
-        all_in_players = [mock_players[2], mock_players[1]]
-
-        side_pots = pot_manager.calculate_side_pots(mock_players, all_in_players)
+        side_pots = pot_manager.calculate_side_pots(mock_players)
 
         # Verify number of pots
         assert (
@@ -129,10 +127,10 @@ class TestPotManager:
 
     def test_calculate_side_pots_empty_input(self, pot_manager):
         """Test side pot calculation with empty input."""
-        side_pots = pot_manager.calculate_side_pots([], [])
+        side_pots = pot_manager.calculate_side_pots([])
         assert len(side_pots) == 0
-        # The side_pots property should remain None since no pots were created
-        assert pot_manager.side_pots is None
+        # The side_pots property should be an empty list
+        assert pot_manager.side_pots == []
 
     def test_get_side_pots_view_no_pots(self, pot_manager):
         """Test getting side pots view when no side pots exist."""
@@ -188,7 +186,7 @@ class TestPotManager:
             player.bet = 100
             player.chips = 900  # Started with 1000
 
-        side_pots = pot_manager.calculate_side_pots(active_players, [])
+        side_pots = pot_manager.calculate_side_pots(active_players)
 
         # Should be single main pot since no all-ins
         assert len(side_pots) == 1
@@ -208,7 +206,7 @@ class TestPotManager:
         mock_players[2].bet = 0
         mock_players[2].chips = 200  # Original amount
 
-        side_pots = pot_manager.calculate_side_pots(active_players, [])
+        side_pots = pot_manager.calculate_side_pots(active_players)
 
         # Should be single pot with only the betting player
         assert len(side_pots) == 1
@@ -248,7 +246,7 @@ class TestPotManager:
         mock_players[2].bet = 0
         mock_players[2].chips = 200
 
-        side_pots = pot_manager.calculate_side_pots(active_players, [])
+        side_pots = pot_manager.calculate_side_pots(active_players)
 
         # Should be single pot with only the betting player
         assert len(side_pots) == 1
@@ -274,7 +272,7 @@ class TestPotManager:
 
         all_in_players = [mock_players[2], mock_players[1]]  # Ordered by bet size
 
-        side_pots = pot_manager.calculate_side_pots(active_players, all_in_players)
+        side_pots = pot_manager.calculate_side_pots(active_players)
 
         assert len(side_pots) == 3
         # Main pot: all contribute 200
@@ -305,7 +303,7 @@ class TestPotManager:
 
         all_in_players = [mock_players[1]]  # P1 is all-in
 
-        side_pots = pot_manager.calculate_side_pots(active_players, all_in_players)
+        side_pots = pot_manager.calculate_side_pots(active_players)
 
         # Should only count each player once
         assert len(side_pots) == 2
@@ -337,7 +335,7 @@ class TestPotManager:
             mock_players[2],
         ]  # Both all-in for same amount
 
-        side_pots = pot_manager.calculate_side_pots(active_players, all_in_players)
+        side_pots = pot_manager.calculate_side_pots(active_players)
 
         assert len(side_pots) == 2
         # Main pot - everyone contributed 100
@@ -369,7 +367,7 @@ class TestPotManager:
 
         all_in_players = [mock_players[2], mock_players[1]]
 
-        side_pots = pot_manager.calculate_side_pots(active_players, all_in_players)
+        side_pots = pot_manager.calculate_side_pots(active_players)
 
         quarter = large_bet // 4
         half = large_bet // 2
@@ -445,7 +443,7 @@ class TestPotManager:
             mock_players[2],
         ]  # Both all-in for same amount
 
-        side_pots = pot_manager.calculate_side_pots(active_players, all_in_players)
+        side_pots = pot_manager.calculate_side_pots(active_players)
 
         assert len(side_pots) == 2
 
@@ -580,7 +578,7 @@ class TestPotManager:
             mock_players[0],  # 1000
         ]
 
-        side_pots = pot_manager.calculate_side_pots(active_players, all_in_players)
+        side_pots = pot_manager.calculate_side_pots(active_players)
 
         # Verify the number of pots
         assert len(side_pots) == 3, "Should create three side pots"
@@ -677,9 +675,7 @@ class TestPotManager:
         )  # Never loses
 
         # Calculate side pots
-        side_pots = pot_manager.calculate_side_pots(
-            active_players, [mock_players[1], mock_players[2]]
-        )
+        side_pots = pot_manager.calculate_side_pots(active_players)
 
         # Verify pot structure
         assert len(side_pots) == 2
@@ -743,7 +739,7 @@ class TestPotManager:
             total_bets + total_remaining == initial_total
         ), "Chip total changed during setup"
 
-        side_pots = pot_manager.calculate_side_pots(active_players, all_in_players)
+        side_pots = pot_manager.calculate_side_pots(active_players)
 
         # Verify pots
         assert len(side_pots) == 2, "Should create two pots"
@@ -790,7 +786,7 @@ class TestPotManager:
 
         all_in_players = [mock_players[1]]
 
-        side_pots = pot_manager.calculate_side_pots(active_players, all_in_players)
+        side_pots = pot_manager.calculate_side_pots(active_players)
 
         # Verify pots
         assert len(side_pots) == 2, "Should create two pots"
@@ -841,7 +837,7 @@ class TestPotManager:
 
         all_in_players = [mock_players[0]]
 
-        side_pots = pot_manager.calculate_side_pots(active_players, all_in_players)
+        side_pots = pot_manager.calculate_side_pots(active_players)
 
         # Verify pots
         assert len(side_pots) == 1, "Should create one pot"
@@ -877,7 +873,7 @@ class TestPotManager:
 
         all_in_players = mock_players.copy()
 
-        side_pots = pot_manager.calculate_side_pots(active_players, all_in_players)
+        side_pots = pot_manager.calculate_side_pots(active_players)
 
         # Verify pots
         assert len(side_pots) == 2, "Should create two pots"
@@ -895,3 +891,69 @@ class TestPotManager:
         total_bets = sum(p.bet for p in mock_players)
         total_pots = sum(pot.amount for pot in side_pots)
         assert total_pots == total_bets
+
+    def test_calculate_side_pots_with_existing_main_pot(
+        self, pot_manager, mock_players
+    ):
+        """Test side pot calculation when there's already money in the main pot."""
+        active_players = mock_players.copy()
+
+        # Set existing main pot
+        pot_manager.pot = 300  # Previous betting round
+
+        # Current round bets
+        mock_players[0].bet = 200
+        mock_players[0].chips = 800
+        mock_players[1].bet = 200
+        mock_players[1].chips = 0  # All-in
+        mock_players[2].bet = 100
+        mock_players[2].chips = 0  # All-in for less
+
+        side_pots = pot_manager.calculate_side_pots(active_players)
+
+        # Verify pots include only new bets
+        assert len(side_pots) == 2
+        assert side_pots[0].amount == 300  # All players contribute 100
+        assert side_pots[1].amount == 200  # P1 and P2 contribute extra 100
+
+        # Main pot should remain unchanged
+        assert pot_manager.pot == 300
+
+    def test_calculate_side_pots_all_players_folded(self, pot_manager, mock_players):
+        """Test side pot calculation when all players have folded."""
+        active_players = mock_players.copy()
+
+        # All players bet but then fold
+        for player in mock_players:
+            player.bet = 100
+            player.chips = 900
+            player.folded = True
+
+        side_pots = pot_manager.calculate_side_pots(active_players)
+
+        # Should still create pot but with no eligible players
+        assert len(side_pots) == 1
+        assert side_pots[0].amount == 300  # Total bets
+        assert len(side_pots[0].eligible_players) == 0
+
+    def test_calculate_side_pots_single_chip_differences(
+        self, pot_manager, mock_players
+    ):
+        """Test side pot calculation with 1-chip differences in bets."""
+        active_players = mock_players.copy()
+
+        # Players bet very close amounts
+        mock_players[0].bet = 100
+        mock_players[0].chips = 900
+        mock_players[1].bet = 99
+        mock_players[1].chips = 0  # All-in
+        mock_players[2].bet = 98
+        mock_players[2].chips = 0  # All-in
+
+        side_pots = pot_manager.calculate_side_pots(active_players)
+
+        # Should create three distinct pots
+        assert len(side_pots) == 3
+        assert side_pots[0].amount == 294  # 98 * 3
+        assert side_pots[1].amount == 2  # 1 * 2
+        assert side_pots[2].amount == 1  # 1 * 1
