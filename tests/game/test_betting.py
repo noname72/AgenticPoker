@@ -596,3 +596,24 @@ def test_handle_betting_round_everyone_folds():
     assert all(p.folded for p in players[1:])
     assert not players[0].folded
     assert should_continue is False  # Game should not continue when all but one fold
+
+
+def test_betting_round_max_raises(basic_players):
+    """Test that betting round enforces maximum number of raises."""
+    game_state = {
+        "max_raises_per_round": 2,  # Set a low limit for testing
+        "current_bet": 10,
+    }
+
+    # Setup a sequence of raises
+    basic_players[0].decide_action = lambda x: ("raise", 20)  # First raise
+    basic_players[1].decide_action = lambda x: ("raise", 40)  # Second raise
+    basic_players[2].decide_action = lambda x: ("raise", 80)  # Should convert to call
+
+    result = betting_round(basic_players, 0, game_state)
+
+    # After max raises reached, all subsequent raises should convert to calls
+    assert game_state["raise_count"] == 2  # Verify raise count was tracked
+    assert all(
+        p.bet == 40 for p in basic_players
+    )  # All should match the last valid raise

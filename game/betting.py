@@ -321,9 +321,15 @@ def _process_player_action(
             if actual_total_bet > current_bet:
                 current_bet = actual_total_bet
                 new_last_raiser = player
+                # Update raise count in game state
+                if game_state is not None:
+                    game_state["raise_count"] = raise_count + 1
             elif player.chips == 0:
                 # All-in below current bet still counts as a raise
                 new_last_raiser = player
+                # Update raise count in game state for all-in raises too
+                if game_state is not None:
+                    game_state["raise_count"] = raise_count + 1
 
             status = " (all in)" if player.chips == 0 else ""
             if actual_total_bet < total_wanted_bet:
