@@ -144,41 +144,6 @@ def betting_round(
     return pot
 
 
-def _player_needs_to_act(
-    player: Player,
-    last_raiser: Optional[Player],
-    current_bet: int,
-    players_acted_this_cycle: set,
-    current_cycle: int,
-    last_raise_cycle: int,
-    active_players: List[Player],
-) -> bool:
-    """
-    Determine if `player` still needs to act.
-    """
-    # Skip players with zero chips - they can't act
-    if player.chips == 0:
-        return False
-
-    # A player needs to act if:
-    # 1. Their bet is less than the current bet (they need to call or fold)
-    # 2. They haven't acted in this cycle yet
-    needs_to_call = player.bet < current_bet
-    hasnt_acted = player not in players_acted_this_cycle
-
-    # The last raiser gets another chance after everyone else has acted
-    is_last_raiser = player == last_raiser
-    others_have_acted = len(players_acted_this_cycle) == len(
-        [p for p in active_players if not p.folded and p != player]
-    )
-
-    # Player needs to act if:
-    # - They need to call
-    # - Haven't acted yet
-    # - OR they're the last raiser and everyone else has acted
-    return needs_to_call or hasnt_acted or (is_last_raiser and others_have_acted)
-
-
 def _get_action_and_amount(
     player: Player, current_bet: int, game_state: Optional[dict]
 ) -> Tuple[str, int]:
