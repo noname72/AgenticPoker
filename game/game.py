@@ -15,16 +15,22 @@ class GameConfig:
     """
     Configuration parameters for a poker game.
 
+    This class defines all the customizable parameters that control game behavior,
+    including betting limits, starting conditions, and round restrictions.
+
     Attributes:
-        starting_chips: Initial chip amount for each player
-        small_blind: Small blind bet amount
-        big_blind: Big blind bet amount
-        ante: Mandatory bet required from all players
-        max_rounds: Maximum number of rounds to play (None for unlimited)
-        session_id: Unique identifier for the game session
-        max_raise_multiplier: Maximum raise as multiplier of current bet (e.g., 3 means max raise is 3x current bet)
-        max_raises_per_round: Maximum number of raises allowed per betting round
-        min_bet: Minimum bet amount (defaults to big blind amount)
+        starting_chips (int): Initial chip amount for each player (default: 1000)
+        small_blind (int): Small blind bet amount (default: 10)
+        big_blind (int): Big blind bet amount (default: 20)
+        ante (int): Mandatory bet required from all players before dealing (default: 0)
+        max_rounds (Optional[int]): Maximum number of rounds to play, None for unlimited (default: None)
+        session_id (Optional[str]): Unique identifier for the game session (default: None)
+        max_raise_multiplier (int): Maximum raise as multiplier of current bet (default: 3)
+        max_raises_per_round (int): Maximum number of raises allowed per betting round (default: 4)
+        min_bet (Optional[int]): Minimum bet amount, defaults to big blind if not specified
+
+    Raises:
+        ValueError: If any of the numerical parameters are invalid (negative or zero where not allowed)
     """
 
     starting_chips: int = 1000
@@ -58,28 +64,42 @@ class GameConfig:
 
 class AgenticPoker:
     """
-    A 5-card draw poker game manager that handles multiple players and betting rounds.
+    A comprehensive 5-card draw poker game manager that handles game flow and player interactions.
 
-    Manages the complete game flow including dealing cards, collecting blinds/antes,
-    handling betting rounds, and determining winners. Supports side pots and tracks
-    player eliminations.
+    This class manages the complete lifecycle of a poker game, including:
+    - Player management and chip tracking
+    - Dealing cards and managing the deck
+    - Betting rounds and pot management
+    - Side pot creation and resolution
+    - Winner determination and chip distribution
+    - Game state tracking and logging
+
+    The game follows standard 5-card draw poker rules with configurable betting structures
+    including blinds, antes, and various betting limits.
 
     Attributes:
-        deck (Deck): The deck of cards used for dealing.
-        players (List[Player]): List of currently active players in the game.
-        pot (int): Total chips in the current pot.
-        small_blind (int): Required small blind bet amount.
-        big_blind (int): Required big blind bet amount.
-        dealer_index (int): Position of current dealer (0-based, moves clockwise).
-        round_count (int): Number of completed game rounds.
-        round_number (int): Current round number (increments at start of each round).
-        max_rounds (Optional[int]): Maximum number of rounds to play, or None for unlimited.
-        ante (int): Mandatory bet required from all players at start of each hand.
-        session_id (Optional[str]): Unique identifier for this game session.
-        side_pots (Optional[List[SidePot]]): List of side pots in the game.
-        round_starting_stacks (Dict[Player, int]): Dictionary of starting chip counts for each round.
-        config (GameConfig): Configuration parameters for the game.
-        current_bet (int): Current bet amount in the game.
+        deck (Deck): The deck of cards used for dealing
+        players (List[Player]): List of currently active players in the game
+        pot (int): Total chips in the current pot
+        small_blind (int): Required small blind bet amount
+        big_blind (int): Required big blind bet amount
+        dealer_index (int): Position of current dealer (0-based, moves clockwise)
+        round_count (int): Number of completed game rounds
+        round_number (int): Current round number (increments at start of each round)
+        max_rounds (Optional[int]): Maximum number of rounds to play, or None for unlimited
+        ante (int): Mandatory bet required from all players at start of each hand
+        session_id (Optional[str]): Unique identifier for this game session
+        side_pots (Optional[List[SidePot]]): List of side pots when players are all-in
+        round_starting_stacks (Dict[Player, int]): Dictionary of starting chip counts for each round
+        config (GameConfig): Configuration parameters for the game
+        current_bet (int): Current bet amount that players must match
+        pot_manager (PotManager): Manages pot calculations and side pot creation
+        logger (Logger): Logger instance for game events and state changes
+
+    Example:
+        >>> players = ["Alice", "Bob", "Charlie"]
+        >>> game = AgenticPoker(players, small_blind=10, big_blind=20)
+        >>> game.start_game()
     """
 
     # Class attributes defined before __init__
@@ -167,8 +187,137 @@ class AgenticPoker:
             logging.info(f"Session ID: {self.config.session_id}")
         logging.info(f"{'='*50}\n")
 
-    def blinds_and_antes(self) -> None:
-        """Collect mandatory bets at the start of each hand."""
+    def start_game(self) -> None:
+        """
+        Execute the main game loop until a winner is determined or max rounds reached.
+
+        This method controls the overall game flow, including:
+        - Round initialization and progression
+        - Player elimination handling
+        - Pre-draw betting phase
+        - Draw phase for card exchanges
+        - Post-draw betting and showdown
+        - Pot distribution and winner determination
+
+        The game continues until one of these conditions is met:
+        - Only one player remains with chips
+        - Maximum number of rounds is reached (if configured)
+        - All players are eliminated
+
+        Side Effects:
+            - Updates player chip counts
+            - Modifies deck composition
+            - Updates game state variables
+            - Logs game progress and results
+        """
+        eliminated_players = []
+        self.round_number = 0  # Initialize round counter
+
+        while len(self.players) > 1:
+            self.round_number += 1
+
+            # Combined elimination check
+            if not self._handle_player_eliminations(eliminated_players):
+                break
+
+            # Check end conditions
+            if len([p for p in self.players if p.chips > 0]) <= 1:
+                break
+            if self.max_rounds and self.round_count >= self.max_rounds:
+                logging.info(f"\nGame ended after {self.max_rounds} rounds!")
+                break
+
+            # Start new round
+            self.players = [p for p in self.players if p.chips > 0]
+
+            # Store initial chips before starting round
+            initial_chips = {p: p.chips for p in self.players}
+
+            self.start_round()
+
+            game_state = self._create_game_state()
+            new_pot, side_pots, should_continue = pre_draw.handle_pre_draw_betting(
+                players=self.players,
+                pot=self.pot_manager.pot,
+                dealer_index=self.dealer_index,
+                game_state=game_state,
+            )
+
+            self.pot = new_pot
+            self.side_pots = side_pots
+
+            if not should_continue:
+                self.round_count += 1
+                self._reset_round()
+                continue
+
+            # Draw phase
+            draw_phase.handle_draw_phase(players=self.players, deck=self.deck)
+
+            # Showdown
+            post_draw.handle_showdown(
+                players=self.players,
+                initial_chips=initial_chips,
+                pot_manager=self.pot_manager,
+            )
+
+            self.round_count += 1
+            self._reset_round()
+
+        self._log_game_summary(eliminated_players)
+
+    def start_round(self) -> None:
+        """
+        Start a new round of poker by initializing the round state and collecting mandatory bets.
+
+        This method:
+        1. Initializes the round state (new deck, deal cards, reset bets)
+        2. Logs the round information and current game state
+        3. Collects blinds and antes from players
+        4. Processes any pre-round AI player messages
+
+        Side Effects:
+            - Deals new cards to players
+            - Collects blinds and antes
+            - Updates pot and player chip counts
+            - Logs round information
+            - Processes AI player messages
+        """
+        self._initialize_round()
+
+        # Log round info
+        self._log_round_info()
+
+        # Collect blinds and antes after initialization
+        self._collect_blinds_and_antes()
+
+        # Handle AI player pre-round messages
+        for player in self.players:
+            if hasattr(player, "get_message"):
+                game_state = f"Round {self.round_number}, Your chips: ${player.chips}"
+                message = player.get_message(game_state)
+
+    def _collect_blinds_and_antes(self) -> None:
+        """
+        Collect mandatory bets (blinds and antes) at the start of each hand.
+
+        This method:
+        1. Stores the starting chip stacks for each player
+        2. Collects small blind, big blind, and antes from appropriate players
+        3. Sets the current bet to the big blind amount
+        4. Updates the pot with all collected chips
+
+        Side Effects:
+            - Updates self.round_starting_stacks with initial chip counts
+            - Updates players' chip counts as they post blinds/antes
+            - Sets self.current_bet to the big blind amount
+            - Updates self.pot_manager and self.pot with collected chips
+
+        Note:
+            - Small blind is posted by player to left of dealer
+            - Big blind is posted by player to left of small blind
+            - Antes are collected from all players if configured
+        """
         # Store starting stacks
         self.round_starting_stacks = {p: p.chips for p in self.players}
 
@@ -188,67 +337,114 @@ class AgenticPoker:
         self.pot_manager.add_to_pot(collected)
         self.pot = self.pot_manager.pot
 
-    def _log_blind_post(self, blind_type: str, player: "Player", amount: int) -> None:
-        """Helper to log blind postings consistently."""
-        status = " (all in)" if player.chips == 0 else ""
-        if amount < (self.small_blind if blind_type == "small" else self.big_blind):
-            logging.info(
-                f"{player.name} posts partial {blind_type} blind of ${amount}{status}"
-            )
-        else:
-            logging.info(f"{player.name} posts {blind_type} blind of ${amount}{status}")
-
-    def handle_side_pots(self) -> List[SidePot]:
-        """Calculate side pots when players are all-in."""
-        # Example usage:
-        posted_amounts = {p: p.bet for p in self.players if p.bet > 0}
-        side_pots = self.pot_manager.calculate_side_pots(posted_amounts)
-        self.pot_manager.log_side_pots(logging)
-        return side_pots
-
-    def showdown(self) -> None:
+    def _log_chip_counts(
+        self,
+        chips_dict: Dict[Player, int],
+        message: str,
+        show_short_stack: bool = False,
+    ) -> None:
         """
-        Delegate showdown handling to post_draw module.
-        Kept for backwards compatibility.
+        Log chip counts for all players.
+
+        Args:
+            chips_dict: Dictionary mapping players to their chip counts
+            message: Header message to display
+            show_short_stack: Whether to show short stack warnings
         """
-        initial_chips = {p: p.chips for p in self.players}
-        post_draw.handle_showdown(
-            players=self.players,
-            initial_chips=initial_chips,
-            pot_manager=self.pot_manager,
+        logging.info(f"\n{message}:")
+        sorted_players = sorted(self.players, key=lambda p: chips_dict[p], reverse=True)
+        for player in sorted_players:
+            chips_str = f"${chips_dict[player]}"
+            if show_short_stack and chips_dict[player] < self.big_blind:
+                chips_str += " (short stack)"
+            logging.info(f"  {player.name}: {chips_str}")
+
+    def _log_round_header(self) -> None:
+        """Log the round number with separator lines."""
+        logging.info(f"\n{'='*50}")
+        logging.info(f"Round {self.round_number}")
+        logging.info(f"{'='*50}")
+
+    def _log_round_info(self) -> None:
+        """
+        Log complete round state including stacks, positions, and betting information.
+
+        Provides a detailed snapshot of the game state at the start of each round,
+        including:
+        - Round number and separator
+        - Player chip stacks (sorted by amount)
+        - Table positions (dealer, blinds)
+        - Betting structure (blinds, ante, min bet)
+        """
+        # Log round header
+        self._log_round_header()
+
+        # Log chip stacks
+        self._log_chip_counts(
+            self.round_starting_stacks,
+            "Starting stacks (before antes/blinds)",
+            show_short_stack=True,
         )
 
-    def _log_chip_summary(self) -> None:
-        """
-        Log a summary of all players' chip counts, sorted by amount.
+        # Log table positions
+        logging.info("\nTable positions:")
+        players_count = len(self.players)
+        for i in range(players_count):
+            position_index = (self.dealer_index + i) % players_count
+            player = self.players[position_index]
+            position = ""
+            if i == 0:
+                position = "Dealer"
+            elif i == 1:
+                position = "Small Blind"
+            elif i == 2:
+                position = "Big Blind"
+            else:
+                position = f"Position {i}"
+            logging.info(f"  {position}: {player.name}")
 
-        Side Effects:
-            - Writes chip counts to game log
-            - Adds separator lines for readability
-        """
-        logging.info("\nFinal chip counts (sorted by amount):")
-        # Sort players by chip count, descending
-        sorted_players = sorted(self.players, key=lambda p: p.chips, reverse=True)
-        for player in sorted_players:
-            logging.info(f"  {player.name}: ${player.chips}")
-        logging.info(f"{'='*50}\n")
+        # Log betting structure
+        logging.info("\nBetting structure:")
+        logging.info(f"  Small blind: ${self.small_blind}")
+        logging.info(f"  Big blind: ${self.big_blind}")
+        if self.ante > 0:
+            logging.info(f"  Ante: ${self.ante}")
+        logging.info(f"  Minimum bet: ${self.config.min_bet}")
 
-    def remove_bankrupt_players(self) -> bool:
+        # Log pot information if there are side pots
+        if self.side_pots:
+            logging.info("\nSide pots:")
+            for i, side_pot in enumerate(self.side_pots, 1):
+                eligible_players = ", ".join(p.name for p in side_pot.eligible_players)
+                logging.info(
+                    f"  Pot {i}: ${side_pot.amount} (Eligible: {eligible_players})"
+                )
+
+    def _handle_player_eliminations(self, eliminated_players: List[Player]) -> bool:
         """
-        Remove players with zero chips and check if game should continue.
+        Handle player eliminations and determine if the game should continue.
+
+        Args:
+            eliminated_players: List to track eliminated players for game history
 
         Returns:
             bool: True if game can continue, False if game should end
-                  (one or zero players remain)
 
         Side Effects:
             - Updates players list
+            - Updates eliminated_players list
             - Logs elimination messages
         """
-        # Only remove players with exactly 0 chips
+        # Track newly eliminated players first
+        for player in self.players:
+            if player.chips <= 0 and player not in eliminated_players:
+                eliminated_players.append(player)
+                logging.info(f"\n{player.name} is eliminated (out of chips)!")
+
+        # Remove bankrupt players from active game
         self.players = [player for player in self.players if player.chips > 0]
 
-        # If only one player remains, declare them the winner and end the game
+        # Check game end conditions
         if len(self.players) == 1:
             logging.info(
                 f"\nGame Over! {self.players[0].name} wins with ${self.players[0].chips}!"
@@ -259,42 +455,6 @@ class AgenticPoker:
             return False
 
         return True
-
-    def _handle_eliminated_players(self, eliminated_players: List[Player]) -> None:
-        """Check for and handle any newly eliminated players."""
-        for player in self.players:
-            if player.chips <= 0 and player not in eliminated_players:
-                eliminated_players.append(player)
-                logging.info(f"\n{player.name} is eliminated (out of chips)!")
-
-    def _handle_single_remaining_player(
-        self, initial_chips: Dict[Player, int], phase: str
-    ) -> bool:
-        """
-        Award pot to last remaining player after others fold.
-
-        Args:
-            initial_chips: Starting chip counts for tracking changes
-            phase: Game phase when win occurred ('pre-draw' or 'post-draw')
-
-        Returns:
-            bool: True if single winner found, False if multiple players remain
-
-        Side Effects:
-            - Updates winner's chip count
-            - Logs win and chip movements
-        """
-        active_players = [p for p in self.players if not p.folded]
-        if len(active_players) == 1:
-            winner = active_players[0]
-            winner.chips += self.pot_manager.pot
-            logging.info(
-                f"\n{winner.name} wins ${self.pot_manager.pot} (all others folded {phase})"
-            )
-            self._log_chip_movements(initial_chips)
-            self._log_chip_summary()
-            return True
-        return False
 
     def _create_game_state(self) -> dict:
         """Create a dictionary containing the current game state."""
@@ -315,51 +475,6 @@ class AgenticPoker:
             "big_blind": self.big_blind,
             "dealer_index": self.dealer_index,
         }
-
-    def _handle_pre_draw_betting(self, initial_chips: Dict[Player, int]) -> bool:
-        """Handle pre-draw betting round."""
-        game_state = self._create_game_state()
-
-        # Use pre_draw module for betting round
-        betting_result = pre_draw.handle_pre_draw_betting(
-            players=self.players,
-            pot=self.pot_manager.pot,
-            dealer_index=self.dealer_index,
-            game_state=game_state,
-        )
-
-        # Unpack the values we need from the result
-        new_pot, side_pots, should_continue = betting_result
-
-        # Update game state
-        self.pot = new_pot
-        self.side_pots = side_pots
-
-        return should_continue
-
-    def _handle_post_draw_betting(self, initial_chips: Dict[Player, int]) -> None:
-        """Handle post-draw betting round and showdown."""
-        game_state = self._create_game_state()
-
-        # Use post_draw module for betting round
-        new_pot, side_pots, should_continue = post_draw.handle_post_draw_betting(
-            players=self.players,
-            pot=self.pot_manager.pot,
-            dealer_index=self.dealer_index,
-            game_state=game_state,
-        )
-
-        # Update game state
-        self.pot = new_pot
-        if side_pots:
-            self.side_pots = side_pots
-
-        # Handle showdown using post_draw module
-        post_draw.handle_showdown(
-            players=self.players,
-            initial_chips=initial_chips,
-            pot_manager=self.pot_manager,
-        )
 
     def _log_chip_movements(self, initial_chips: Dict[Player, int]) -> None:
         """Log the chip movements for each player from their initial amounts."""
@@ -388,7 +503,9 @@ class AgenticPoker:
             logging.info(f"{i}. {player.name}: ${player.chips}{status}")
 
     def _initialize_round(self) -> None:
-        """Initialize the state for a new round."""
+        """
+        Initialize the state for a new round of poker.
+        """
         # Rotate dealer button first
         self.dealer_index = (self.dealer_index + 1) % len(self.players)
 
@@ -404,26 +521,6 @@ class AgenticPoker:
         # Deal cards
         self._deal_cards()
 
-    def start_round(self) -> None:
-        """Start a new round of poker."""
-        self._initialize_round()
-
-        # Log round info
-        self._log_round_info()
-
-        # Collect blinds and antes after initialization
-        self.blinds_and_antes()
-
-        # Handle AI player pre-round messages
-        for player in self.players:
-            if hasattr(player, "get_message"):
-                game_state = f"Round {self.round_number}, Your chips: ${player.chips}"
-                message = player.get_message(game_state)
-
-    def draw_phase(self) -> None:
-        """Handle the draw phase where players can discard and draw new cards."""
-        draw_phase.handle_draw_phase(players=self.players, deck=self.deck)
-
     def _reset_round(self) -> None:
         """Reset the state after a round is complete."""
         # Clear hands and bets
@@ -436,61 +533,6 @@ class AgenticPoker:
         # Reset pot in pot_manager as well
         self.pot_manager.reset_pot()
 
-    def _log_side_pots(self) -> None:
-        """
-        Log the current side pot structure.
-
-        Side Effects:
-            - Logs each pot's amount and eligible players
-        """
-        if not self.side_pots:
-            return
-
-        logging.info("\nSide pots:")
-        side_pots_view = self.pot_manager.get_side_pots_view()
-        for i, pot in enumerate(side_pots_view, 1):
-            players_str = ", ".join(pot["eligible_players"])
-            logging.info(f"  Pot {i}: ${pot['amount']} (Eligible: {players_str})")
-
-    def start_game(self) -> None:
-        """Execute the main game loop until a winner is determined or max rounds reached."""
-        eliminated_players = []
-        self.round_number = 0  # Initialize round counter
-
-        while len(self.players) > 1:
-            self.round_number += 1  # Increment round number at start of each iteration
-            self._handle_eliminated_players(eliminated_players)
-
-            # Check end conditions
-            if len([p for p in self.players if p.chips > 0]) <= 1:
-                break
-            if self.max_rounds and self.round_count >= self.max_rounds:
-                logging.info(f"\nGame ended after {self.max_rounds} rounds!")
-                break
-
-            # Start new round
-            self.players = [p for p in self.players if p.chips > 0]
-
-            # Store initial chips before starting round
-            initial_chips = {p: p.chips for p in self.players}
-
-            self.start_round()  # This will handle all round logging
-
-            # Handle betting rounds with initial chips
-            should_continue = self._handle_pre_draw_betting(initial_chips)
-            if not should_continue:
-                self.round_count += 1
-                self._reset_round()
-                continue
-
-            self.draw_phase()
-            self._handle_post_draw_betting(initial_chips)
-
-            self.round_count += 1
-            self._reset_round()
-
-        self._log_game_summary(eliminated_players)
-
     def _deal_cards(self) -> None:
         """Reset the deck and deal new hands to all players."""
         self.deck = Deck()
@@ -500,154 +542,3 @@ class AgenticPoker:
             player.folded = False
             player.hand = Hand()
             player.hand.add_cards(self.deck.deal(5))
-
-    def _log_round_info(self) -> None:
-        """
-        Log the current round state including stacks and positions.
-
-        Side Effects:
-            - Logs round number
-            - Logs each player's stack and short stack status
-            - Logs dealer and blind positions
-        """
-        logging.info(f"\n{'='*50}")
-        logging.info(f"Round {self.round_number}")
-        logging.info(f"{'='*50}")
-
-        logging.info("\nStarting stacks (before antes/blinds):")
-        for player in self.players:
-            chips_str = f"${self.round_starting_stacks[player]}"
-            if self.round_starting_stacks[player] < self.big_blind:
-                chips_str += " (short stack)"
-            logging.info(f"  {player.name}: {chips_str}")
-
-        sb_index = (self.dealer_index + 1) % len(self.players)
-        bb_index = (self.dealer_index + 2) % len(self.players)
-
-        logging.info(f"\nDealer: {self.players[self.dealer_index].name}")
-        logging.info(f"Small Blind: {self.players[sb_index].name}")
-        logging.info(f"Big Blind: {self.players[bb_index].name}")
-        logging.info("\n")
-
-    def play_round(self) -> None:
-        """Play a single round of poker."""
-        self.round_number += 1  # Increment round number at start of each round
-
-        logging.info(f"\n{'='*50}")
-        logging.info(f"Round {self.round_number}")
-        logging.info(f"{'='*50}\n")
-
-        # Log starting stacks
-        logging.info("Starting stacks (before antes/blinds):")
-        for player in self.players:
-            logging.info(f"  {player.name}: ${player.chips}")
-
-        # ... rest of play_round implementation ...
-
-    def _handle_side_pots(
-        self, all_in_players: List[Player], active_players: List[Player]
-    ) -> None:
-        """
-        Calculate and distribute side pots when players are all-in.
-
-        Args:
-            all_in_players: List of players who have gone all-in
-            active_players: List of players still in the hand
-
-        This method:
-        1. Uses pot manager to calculate side pots based on all-in amounts
-        2. For each side pot:
-            - Determines eligible winners from that pot's players
-            - Splits pot amount evenly among winners
-            - Updates winner chip counts
-
-        Side Effects:
-            - Updates player chip counts
-            - Modifies side pot structures
-        """
-        side_pots = self.pot_manager.calculate_side_pots(active_players, all_in_players)
-
-        for side_pot in side_pots:
-            winners = self._evaluate_hands(side_pot.eligible_players, side_pot)
-            split_amount = side_pot.amount // len(winners)
-            for winner in winners:
-                winner.chips += split_amount
-
-    def _evaluate_hands(self, players: List[Player], pot_amount: int) -> List[Player]:
-        """
-        Evaluate player hands to determine winner(s).
-
-        Args:
-            players: List of players to evaluate
-            pot_amount: Amount in the current pot being contested
-
-        Returns:
-            List[Player]: List of winning players (multiple in case of tie)
-        """
-        active_players = [p for p in players if not p.folded]
-        if not active_players:
-            return []
-
-        # Find best hand(s)
-        best_players = [active_players[0]]
-        best_hand = active_players[0].hand
-
-        for player in active_players[1:]:
-            # Try compare_to first, fall back to direct comparison
-            try:
-                comparison = player.hand.compare_to(best_hand)
-            except AttributeError:
-                # For test mocks, use direct comparison
-                if player.hand > best_hand:
-                    comparison = 1
-                elif player.hand == best_hand:
-                    comparison = 0
-                else:
-                    comparison = -1
-
-            if comparison > 0:  # Current player has better hand
-                best_players = [player]
-                best_hand = player.hand
-            elif comparison == 0:  # Tie
-                best_players.append(player)
-
-        return best_players
-
-    def _handle_betting_round(self, round_name: str) -> bool:
-        """
-        Handle a complete betting round.
-
-        Args:
-            round_name: Name of the betting round for logging
-
-        Returns:
-            bool: True if game should continue, False if round is over
-        """
-        # Store initial total for validation
-        initial_total = sum(p.chips + p.bet for p in self.players)
-
-        # Get active players
-        active_players = [p for p in self.players if not p.folded]
-
-        # Run betting round
-        result = betting.handle_betting_round(
-            players=active_players,
-            pot=self.pot_manager.pot,
-            game_state={"current_bet": self.current_bet},
-        )
-
-        # Unpack result
-        new_pot, side_pots, should_continue = result
-
-        # Update pot manager with new values
-        if side_pots:
-            self.pot_manager.set_pots(new_pot, side_pots)
-        else:
-            self.pot_manager.add_to_pot(
-                new_pot - self.pot_manager.pot
-            )  # Add only the difference
-
-        # Validate pot state
-        self.pot_manager.validate_pot_state(active_players, initial_total)
-
-        return should_continue
