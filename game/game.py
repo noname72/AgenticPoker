@@ -2,7 +2,7 @@ import logging
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
 
-from . import betting, draw_phase, post_draw, pre_draw
+from . import betting, draw, post_draw, pre_draw
 from .deck import Deck
 from .hand import Hand
 from .player import Player
@@ -242,7 +242,7 @@ class AgenticPoker:
                 continue
 
             # Draw phase
-            draw_phase.handle_draw_phase(players=self.players, deck=self.deck)
+            draw.handle_draw_phase(players=self.players, deck=self.deck)
 
             # Showdown
             post_draw.handle_showdown(

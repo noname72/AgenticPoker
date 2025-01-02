@@ -5,7 +5,7 @@ import pytest
 
 from agents.llm_agent import LLMAgent
 from game import AgenticPoker
-from game.draw_phase import handle_draw_phase
+from game.draw import handle_draw_phase
 from game.hand import Hand
 from game.card import Card
 

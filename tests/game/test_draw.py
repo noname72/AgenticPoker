@@ -5,7 +5,7 @@ import pytest
 
 from game.card import Card
 from game.deck import Deck
-from game.draw_phase import handle_draw_phase
+from game.draw import handle_draw_phase
 from game.hand import Hand
 from game.player import Player
 
@@ -179,4 +179,23 @@ def test_handle_draw_phase_negative_index(mock_players, mock_deck, caplog):
     # Check that hand remained unchanged
     assert mock_players[0].hand.cards == original_hand
     assert "invalid discard indexes" in caplog.text
-    assert "Keeping current hand" in caplog.text
+    assert f"{mock_players[0].name} keeping current hand" in caplog.text
+
+
+def test_draw_phase_logging_not_duplicated(mock_players, mock_deck, caplog):
+    """Test that draw phase logging isn't duplicated."""
+    caplog.set_level(logging.INFO)
+
+    # Set up a player with discards
+    mock_players[0].decide_draw = MagicMock(return_value=[0, 1])
+
+    handle_draw_phase(mock_players, mock_deck)
+
+    # Count occurrences of discard logging for this player
+    discard_logs = sum(
+        1
+        for record in caplog.records
+        if f"Draw phase: {mock_players[0].name} discarding" in record.message
+    )
+
+    assert discard_logs == 1, "Discard action should only be logged once"

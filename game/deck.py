@@ -1,5 +1,6 @@
 import random
 from typing import List
+
 from .card import Card
 
 
@@ -47,23 +48,11 @@ class Deck:
         return dealt
 
     def add_discarded(self, cards: List[Card]) -> None:
-        """
-        Add discarded cards to the discard pile.
-
-        Args:
-            cards: List of cards to add to discard pile
-        """
+        """Add discarded cards to the discard pile."""
         self.discarded_cards.extend(cards)
 
     def reshuffle_discards(self) -> None:
-        """
-        Shuffle discarded cards back into the deck.
-
-        Side Effects:
-            - Moves all discarded cards back to main deck
-            - Shuffles entire deck
-            - Clears discard pile
-        """
+        """Shuffle discarded cards back into the deck."""
         self.cards.extend(self.discarded_cards)
         self.discarded_cards = []
         self.shuffle()
