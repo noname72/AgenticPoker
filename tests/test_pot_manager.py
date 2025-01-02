@@ -1043,3 +1043,143 @@ class TestPotManager:
             pot.amount for pot in final_pots
         )  # All side pots
         assert total_chips == 3000, "Total chips should remain constant"
+
+    def test_overcall_return_scenario(self, pot_manager, mock_players):
+        """Test correct handling of overcalls when a player goes all-in for less than current bet."""
+        active_players = mock_players.copy()
+
+        # P1 bets 100
+        mock_players[0].bet = 100
+        mock_players[0].chips = 900
+        mock_players[0].folded = False
+
+        # P2 goes all-in for 50 (less than current bet)
+        mock_players[1].bet = 50  # All they have
+        mock_players[1].chips = 0
+        mock_players[1].folded = False
+
+        # P3 calls full amount of 100
+        mock_players[2].bet = 100
+        mock_players[2].chips = 900
+        mock_players[2].folded = False
+
+        side_pots = pot_manager.calculate_side_pots(active_players)
+
+        # Verify pots
+        assert len(side_pots) == 2, "Should create two pots"
+
+        # Main pot - all players contribute 50
+        assert side_pots[0].amount == 150, "Main pot should be 50 * 3"
+        assert len(side_pots[0].eligible_players) == 3
+
+        # Side pot - P1 and P3 contribute remaining 50 each
+        assert side_pots[1].amount == 100, "Side pot should be 50 * 2"
+        assert len(side_pots[1].eligible_players) == 2
+        assert mock_players[1] not in side_pots[1].eligible_players
+
+    def test_end_betting_round_clears_bets(self, pot_manager, mock_players):
+        """Test that end_betting_round properly clears bets after adding to pot."""
+        active_players = mock_players.copy()
+        initial_total = sum(p.chips for p in active_players)
+
+        # Setup some bets
+        for i, player in enumerate(active_players):
+            bet_amount = (i + 1) * 100  # 100, 200, 300
+            player.chips -= bet_amount
+            player.bet = bet_amount
+
+        # End betting round
+        pot_manager.end_betting_round(active_players)
+
+        # Verify bets were added to pot
+        assert pot_manager.pot == 600, "Pot should contain all bets"
+
+        # Verify bets were cleared
+        for player in active_players:
+            assert player.bet == 0, f"{player.name}'s bet should be cleared"
+
+        # Verify total chips unchanged
+        current_total = sum(p.chips for p in active_players) + pot_manager.pot
+        assert current_total == initial_total, "Total chips should remain constant"
+
+    def test_multiple_betting_rounds_with_all_in(self, pot_manager, mock_players):
+        """Test handling of multiple betting rounds when a player is all-in."""
+        # Set up initial chip stacks
+        mock_players[0].chips = 1000  # P1 starts with 1000
+        mock_players[1].chips = 500  # P2 starts with 500
+        mock_players[2].chips = 100  # P3 starts with 100 (not 200)
+
+        active_players = mock_players.copy()
+        initial_total = sum(p.chips for p in active_players)
+
+        # Round 1: P3 goes all-in
+        mock_players[0].bet = 200
+        mock_players[0].chips -= 200  # 800 left
+        mock_players[1].bet = 200
+        mock_players[1].chips -= 200  # 300 left
+        mock_players[2].bet = 100  # All-in
+        mock_players[2].chips = 0
+
+        # Calculate side pots after round 1
+        side_pots = pot_manager.calculate_side_pots(active_players)
+        pot_manager.side_pots = side_pots
+
+        # Clear round 1 bets
+        for player in active_players:
+            player.bet = 0
+
+        # Round 2: P1 and P2 continue betting
+        mock_players[0].bet = 300
+        mock_players[0].chips -= 300  # 500 left
+        mock_players[1].bet = 300
+        mock_players[1].chips -= 300  # 0 left
+        # P3 can't bet (all-in)
+
+        # Calculate final side pots
+        final_pots = pot_manager.calculate_side_pots(active_players)
+
+        # Verify pot structure
+        assert (
+            len(final_pots) == 3
+        ), f"Should have three pots\n{get_game_state_str(pot_manager, active_players)}"
+
+        # Main pot - all players contributed 100
+        assert (
+            final_pots[0].amount == 300
+        ), f"Main pot should be 100 * 3\n{get_game_state_str(pot_manager, active_players)}"
+        assert (
+            len(final_pots[0].eligible_players) == 3
+        ), f"Main pot should have 3 eligible players\n{get_game_state_str(pot_manager, active_players)}"
+
+        # First side pot - P1 and P2's extra 100 from round 1
+        assert (
+            final_pots[1].amount == 200
+        ), f"First side pot should be 100 * 2\n{get_game_state_str(pot_manager, active_players)}"
+        assert (
+            len(final_pots[1].eligible_players) == 2
+        ), f"First side pot should have 2 eligible players\n{get_game_state_str(pot_manager, active_players)}"
+        assert (
+            mock_players[2] not in final_pots[1].eligible_players
+        ), f"P3 should not be eligible for first side pot\n{get_game_state_str(pot_manager, active_players)}"
+
+        # Second side pot - P1 and P2's round 2 bets
+        assert (
+            final_pots[2].amount == 600
+        ), f"Second side pot should be 300 * 2\n{get_game_state_str(pot_manager, active_players)}"
+        assert (
+            len(final_pots[2].eligible_players) == 2
+        ), f"Second side pot should have 2 eligible players\n{get_game_state_str(pot_manager, active_players)}"
+        assert (
+            mock_players[2] not in final_pots[2].eligible_players
+        ), f"P3 should not be eligible for second side pot\n{get_game_state_str(pot_manager, active_players)}"
+
+        # Verify total chips unchanged
+        current_total = sum(p.chips for p in active_players) + sum(
+            pot.amount for pot in final_pots
+        )
+        assert current_total == initial_total, (
+            f"Total chips should remain constant\n"
+            f"Initial total: {initial_total}\n"
+            f"Current total: {current_total}\n"
+            f"{get_game_state_str(pot_manager, active_players)}"
+        )
