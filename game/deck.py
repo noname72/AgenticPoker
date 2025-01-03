@@ -1,6 +1,6 @@
+import logging
 import random
 from typing import List
-import logging
 
 from .card import Card
 
@@ -16,6 +16,7 @@ class Deck:
         self.cards = [Card(rank, suit) for suit in self.suits for rank in self.ranks]
         self.dealt_cards: List[Card] = []  # Track dealt cards
         self.discarded_cards: List[Card] = []  # Track discarded cards
+        logging.info("New deck initialized with 52 cards")
 
     def shuffle(self) -> None:
         """
@@ -67,6 +68,23 @@ class Deck:
     def remaining(self) -> int:
         """Return number of cards remaining in deck."""
         return len(self.cards)
+
+    def remaining_cards(self) -> int:
+        """Get count of remaining cards in deck."""
+        return len(self.cards)
+
+    def needs_reshuffle(self, needed_cards: int) -> bool:
+        """Check if deck needs reshuffling based on needed cards."""
+        return len(self.cards) < needed_cards
+
+    def reshuffle_all(self) -> None:
+        """Reshuffle ALL cards (including dealt and discarded) back into deck."""
+        self.cards.extend(self.dealt_cards)
+        self.cards.extend(self.discarded_cards)
+        self.dealt_cards = []
+        self.discarded_cards = []
+        self.shuffle()
+        logging.info("Full deck reshuffle - all 52 cards back in play")
 
     def __str__(self) -> str:
         """Return string representation of current deck state."""

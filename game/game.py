@@ -474,9 +474,7 @@ class AgenticPoker:
             logging.info(f"{i}. {player.name}: ${player.chips}{status}")
 
     def _initialize_round(self) -> None:
-        """
-        Initialize the state for a new round of poker.
-        """
+        """Initialize the state for a new round of poker."""
         # Reset round state
         self.pot_manager.reset_pot()
 
@@ -489,12 +487,17 @@ class AgenticPoker:
             player.folded = False
 
         # Create and shuffle a fresh deck for the new round
-        self.deck = Deck()  # Create new deck
-        self.deck.shuffle()  # Shuffle it
+        self.deck = Deck()
+        self.deck.shuffle()
         logging.info("New deck shuffled for this round")
 
-        # Deal cards
+        # Deal initial hands
         self._deal_cards()
+
+        # Log deck status after initial deal
+        logging.info(
+            f"Deck status after initial deal: {self.deck.remaining_cards()} cards remaining"
+        )
 
     def _reset_round(self) -> None:
         """Reset the state after a round is complete."""
