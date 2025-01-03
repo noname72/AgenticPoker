@@ -809,3 +809,202 @@ def test_betting_round_last_active_player_can_reraise():
     assert players[1].folded
     assert players[2].folded
     assert result == 30  # Update expected pot
+
+
+def test_collect_blinds_and_antes_standard_case(basic_players):
+    """Test collecting blinds and antes in standard case."""
+    # Setup
+    dealer_index = 0
+    small_blind = 50
+    big_blind = 100
+    ante = 10
+
+    # First verify ante collection
+    total = collect_blinds_and_antes(
+        players=basic_players,
+        dealer_index=dealer_index,
+        small_blind=small_blind,
+        big_blind=big_blind,
+        ante=ante,
+    )
+
+    # Verify total collected
+    expected_total = (len(basic_players) * ante) + small_blind + big_blind
+    assert (
+        total == expected_total
+    ), f"Expected {expected_total} chips collected, got {total}"
+
+    # Get references to players in blind positions
+    sb_player = basic_players[1]  # Player after dealer
+    bb_player = basic_players[2]  # Player after SB
+
+    # Verify final state after all deductions
+    assert sb_player.bet == 50, "Small blind bet should be 50"
+    assert bb_player.bet == 100, "Big blind bet should be 100"
+    assert (
+        sb_player.chips == 940
+    ), "Small blind player should have 940 chips (1000 - 10 ante - 50 SB)"
+    assert (
+        bb_player.chips == 890
+    ), "Big blind player should have 890 chips (1000 - 10 ante - 100 BB)"
+    assert (
+        basic_players[0].chips == 990
+    ), "First player should have 990 chips (1000 - 10 ante)"
+    assert basic_players[0].bet == 0, "First player should have no bet"
+
+
+def test_collect_blinds_and_antes_no_ante(basic_players):
+    """Test collecting only blinds with no ante."""
+    total = collect_blinds_and_antes(
+        players=basic_players,
+        dealer_index=0,
+        small_blind=50,
+        big_blind=100,
+        ante=0,
+    )
+
+    assert total == 150, "Should collect only blinds when ante is 0"
+
+    # Verify player states
+    sb_player = basic_players[1]
+    bb_player = basic_players[2]
+    first_player = basic_players[0]
+
+    # First player should be unchanged
+    assert first_player.chips == 1000, "First player chips should be unchanged"
+    assert first_player.bet == 0, "First player should have no bet"
+
+    # Check blind bets
+    assert sb_player.bet == 50, "Small blind bet should be 50"
+    assert bb_player.bet == 100, "Big blind bet should be 100"
+
+
+def test_collect_blinds_and_antes_all_in_scenarios(basic_players):
+    """Test collecting blinds and antes when players don't have enough chips."""
+    # Setup players with limited chips
+    basic_players[0].chips = 5  # Can only post partial ante
+    basic_players[1].chips = 30  # Can only post partial small blind
+    basic_players[2].chips = 80  # Can only post partial big blind
+
+    print("\nInitial state:")
+    for i, p in enumerate(basic_players):
+        print(f"Player {i}: chips={p.chips}, bet={p.bet}")
+
+    total = collect_blinds_and_antes(
+        players=basic_players,
+        dealer_index=0,
+        small_blind=50,
+        big_blind=100,
+        ante=10,
+    )
+
+    print("\nAfter collecting blinds and antes:")
+    print(f"Total collected: {total}")
+    for i, p in enumerate(basic_players):
+        print(f"Player {i}: chips={p.chips}, bet={p.bet}")
+
+    # Verify total collected matches actual available chips
+    expected_total = 5 + 30 + 80  # All players go all-in
+    assert (
+        total == expected_total
+    ), f"Expected {expected_total} chips collected, got {total}"
+
+    print("\nVerifying player states:")
+    # Verify player states
+    assert (
+        basic_players[0].chips == 0
+    ), f"First player should be all-in, has {basic_players[0].chips} chips"
+    assert (
+        basic_players[1].chips == 0
+    ), f"Small blind should be all-in, has {basic_players[1].chips} chips"
+    assert (
+        basic_players[2].chips == 0
+    ), f"Big blind should be all-in, has {basic_players[2].chips} chips"
+
+    print("\nVerifying bet amounts:")
+    # Verify bet amounts
+    assert (
+        basic_players[0].bet == 0
+    ), f"First player should have no bet (ante doesn't count as bet), has bet {basic_players[0].bet}"
+    assert (
+        basic_players[1].bet == 20
+    ), f"Small blind bet should be 20, has bet {basic_players[1].bet}"
+    assert (
+        basic_players[2].bet == 70
+    ), f"Big blind bet should be 70, has bet {basic_players[2].bet}"
+
+    print("\nFinal state:")
+    for i, p in enumerate(basic_players):
+        print(f"Player {i}: chips={p.chips}, bet={p.bet}")
+
+
+def test_betting_round_after_antes(basic_players):
+    """Test that betting round correctly handles current bet after antes are posted."""
+    # Setup - collect antes and blinds first
+    collect_blinds_and_antes(
+        players=basic_players,
+        dealer_index=0,
+        small_blind=50,
+        big_blind=100,
+        ante=10,
+    )
+
+    # Set up game state with current bet equal to big blind
+    game_state = {
+        "current_bet": 100,  # Set current bet to big blind amount
+        "small_blind": 50,
+        "big_blind": 100,
+        "dealer_index": 0,
+    }
+
+    # Mock player decisions to call the big blind
+    for player in basic_players:
+        player.decide_action = lambda x: ("call", 100)
+
+    # Run betting round with game state
+    initial_pot = 180  # 3 players × 10 ante + 50 SB + 100 BB
+    final_pot = betting_round(basic_players, initial_pot, game_state)
+
+    print("\nBetting sequence:")
+    print(f"Initial pot: {initial_pot}")
+    print("Player bets after antes and blinds:")
+    for i, p in enumerate(basic_players):
+        print(f"Player {i}: bet={p.bet}, chips={p.chips}")
+
+    # Each player should have bet 100 total
+    for i, player in enumerate(basic_players):
+        assert (
+            player.bet == 100
+        ), f"Player {i} should have total bet of 100, but has {player.bet}"
+
+    # Calculate expected pot:
+    # Initial pot (180) +
+    # First player bets 100 +
+    # Second player bets 100 +
+    # Third player bets 100
+    expected_pot = 180 + (100 * 3)  # Initial pot + all bets
+    assert final_pot == expected_pot, (
+        f"Expected pot of {expected_pot}, got {final_pot}\n"
+        f"Initial pot: {initial_pot}\n"
+        f"Player bets: {[p.bet for p in basic_players]}"
+    )
+
+    # Verify final chip counts
+    # Player 0: 1000 - 10 (ante) - 100 (call) = 890
+    # Player 1: 1000 - 10 (ante) - 50 (SB) - 100 (call) = 840
+    # Player 2: 1000 - 10 (ante) - 100 (BB) - 100 (call) = 790
+    expected_chips = [
+        1000 - 10 - 100,  # Player 0: ante + call
+        1000 - 10 - 50 - 100,  # Player 1: ante + SB + call
+        1000 - 10 - 100 - 100,  # Player 2: ante + BB + call
+    ]
+
+    for i, player in enumerate(basic_players):
+        assert (
+            player.chips == expected_chips[i]
+        ), f"Player {i} should have {expected_chips[i]} chips, but has {player.chips}"
+
+    print("\nFinal state:")
+    print(f"Final pot: {final_pot}")
+    for i, p in enumerate(basic_players):
+        print(f"Player {i}: chips={p.chips}, bet={p.bet}")

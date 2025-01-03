@@ -542,23 +542,21 @@ def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante
         logging.info("\nCollecting antes...")
         for player in players:
             ante_amount = min(ante, player.chips)
-            actual_bet = player.place_bet(ante_amount)
-            collected += actual_bet
+            player.chips -= ante_amount
+            collected += ante_amount
 
             status = " (all in)" if player.chips == 0 else ""
-            if actual_bet < ante:
+            if ante_amount < ante:
                 logging.info(
-                    f"{player.name} posts partial ante of ${actual_bet}{status}"
+                    f"{player.name} posts partial ante of ${ante_amount}{status}"
                 )
             else:
-                logging.info(f"{player.name} posts ante of ${actual_bet}{status}")
-
-    # Collect blinds
-    sb_index = (dealer_index + 1) % num_players
-    bb_index = (dealer_index + 2) % num_players
+                logging.info(f"{player.name} posts ante of ${ante_amount}{status}")
 
     # Small blind
+    sb_index = (dealer_index + 1) % num_players
     sb_player = players[sb_index]
+    # Calculate small blind amount based on remaining chips after ante
     sb_amount = min(small_blind, sb_player.chips)
     actual_sb = sb_player.place_bet(sb_amount)
     collected += actual_sb
@@ -572,7 +570,9 @@ def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante
         logging.info(f"{sb_player.name} posts small blind of ${actual_sb}{status}")
 
     # Big blind
+    bb_index = (dealer_index + 2) % num_players
     bb_player = players[bb_index]
+    # Calculate big blind amount based on remaining chips after ante
     bb_amount = min(big_blind, bb_player.chips)
     actual_bb = bb_player.place_bet(bb_amount)
     collected += actual_bb
