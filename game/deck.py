@@ -16,7 +16,6 @@ class Deck:
         self.cards = [Card(rank, suit) for suit in self.suits for rank in self.ranks]
         self.dealt_cards: List[Card] = []  # Track dealt cards
         self.discarded_cards: List[Card] = []  # Track discarded cards
-        logging.info("New deck initialized with 52 cards")
 
     def shuffle(self) -> None:
         """
@@ -26,7 +25,6 @@ class Deck:
         if len(self.cards) == 52:
             self.dealt_cards = []
             self.discarded_cards = []
-            logging.info("Shuffling fresh 52-card deck")
         else:
             logging.info(f"Shuffling deck with {len(self.cards)} cards")
 

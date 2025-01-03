@@ -186,7 +186,6 @@ class AgenticPoker:
 
         while len(self.players) > 1:
             self.round_number += 1
-            logging.info(f"\nStarting Round {self.round_number}")
 
             # Check max rounds before starting new round
             if self.max_rounds and self.round_number > self.max_rounds:
@@ -494,14 +493,14 @@ class AgenticPoker:
         # Create and shuffle a fresh deck for the new round
         self.deck = Deck()
         self.deck.shuffle()
-        logging.info("New deck shuffled for this round")
+        logging.info(f"New deck shuffled for round {self.round_number}")
 
         # Deal initial hands
         self._deal_cards()
 
         # Log deck status after initial deal
         logging.info(
-            f"Deck status after initial deal: {self.deck.remaining_cards()} cards remaining"
+            f"Cards remaining after initial deal: {self.deck.remaining_cards()}"
         )
 
     def _reset_round(self) -> None:

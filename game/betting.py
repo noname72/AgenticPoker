@@ -524,26 +524,7 @@ def log_action(
 
 
 def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante):
-    """Collects mandatory bets (blinds and antes) from players.
-
-    Processes the collection of:
-    1. Antes from all players (if any)
-    2. Small blind from player after dealer
-    3. Big blind from player after small blind
-
-    Handles partial payments when players don't have enough chips
-    and tracks all-in situations.
-
-    Args:
-        players: List of players in the game
-        dealer_index: Position of dealer button
-        small_blind: Small blind amount
-        big_blind: Big blind amount
-        ante: Ante amount (0 for no ante)
-
-    Returns:
-        int: Total amount collected from all players
-    """
+    """Collects mandatory bets (blinds and antes) from players."""
     collected = 0
     num_players = len(players)
 
@@ -563,10 +544,12 @@ def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante
             else:
                 logging.info(f"{player.name} posts ante of ${ante_amount}{status}")
 
+        # Add extra line break after antes
+        logging.info("")
+
     # Small blind
     sb_index = (dealer_index + 1) % num_players
     sb_player = players[sb_index]
-    # Calculate small blind amount based on remaining chips after ante
     sb_amount = min(small_blind, sb_player.chips)
     actual_sb = sb_player.place_bet(sb_amount)
     collected += actual_sb
@@ -582,7 +565,6 @@ def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante
     # Big blind
     bb_index = (dealer_index + 2) % num_players
     bb_player = players[bb_index]
-    # Calculate big blind amount based on remaining chips after ante
     bb_amount = min(big_blind, bb_player.chips)
     actual_bb = bb_player.place_bet(bb_amount)
     collected += actual_bb
@@ -594,6 +576,9 @@ def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante
         )
     else:
         logging.info(f"{bb_player.name} posts big blind of ${actual_bb}{status}")
+
+    # Add extra line break after blinds
+    logging.info("")
 
     return collected
 
