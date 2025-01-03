@@ -205,6 +205,7 @@ class AgenticPoker:
 
             self.start_round()
 
+            # Pre-draw betting round
             game_state = self._create_game_state()
             new_pot, side_pots, should_continue = pre_draw.handle_pre_draw_betting(
                 players=self.players,
@@ -224,6 +225,24 @@ class AgenticPoker:
 
             # Draw phase
             draw.handle_draw_phase(players=self.players, deck=self.deck)
+
+            # Post-draw betting round
+            game_state = self._create_game_state()
+            new_pot, side_pots, should_continue = post_draw.handle_post_draw_betting(
+                players=self.players,
+                pot=self.pot_manager.pot,
+                dealer_index=self.dealer_index,
+                game_state=game_state,
+            )
+
+            # Update pot manager with new pot and side pots from post-draw betting
+            if side_pots:
+                self.pot_manager.side_pots = side_pots
+            self.pot_manager.pot = new_pot
+
+            if not should_continue:
+                self._reset_round()
+                continue
 
             # Showdown
             post_draw.handle_showdown(
