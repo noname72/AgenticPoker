@@ -1,5 +1,6 @@
 import random
 from typing import List
+import logging
 
 from .card import Card
 
@@ -19,9 +20,15 @@ class Deck:
     def shuffle(self) -> None:
         """
         Shuffle the current deck.
-
-        If discarded cards exist, they can optionally be shuffled back in.
         """
+        # Reset tracking lists when shuffling a fresh deck
+        if len(self.cards) == 52:
+            self.dealt_cards = []
+            self.discarded_cards = []
+            logging.info("Shuffling fresh 52-card deck")
+        else:
+            logging.info(f"Shuffling deck with {len(self.cards)} cards")
+
         random.shuffle(self.cards)
 
     def deal(self, num: int = 1) -> List[Card]:

@@ -488,6 +488,11 @@ class AgenticPoker:
             player.bet = 0
             player.folded = False
 
+        # Create and shuffle a fresh deck for the new round
+        self.deck = Deck()  # Create new deck
+        self.deck.shuffle()  # Shuffle it
+        logging.info("New deck shuffled for this round")
+
         # Deal cards
         self._deal_cards()
 
@@ -507,9 +512,7 @@ class AgenticPoker:
         self.dealer_index = (self.dealer_index + 1) % len(self.players)
 
     def _deal_cards(self) -> None:
-        """Reset the deck and deal new hands to all players."""
-        self.deck = Deck()
-        self.deck.shuffle()
+        """Deal new hands to all players."""
         for player in self.players:
             player.bet = 0
             player.folded = False
