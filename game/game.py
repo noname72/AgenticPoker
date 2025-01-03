@@ -276,10 +276,10 @@ class AgenticPoker:
         """
         self._initialize_round()
 
-        # Log round info
+        # Log round info BEFORE collecting antes/blinds
         self._log_round_info()
 
-        # Collect blinds and antes after initialization
+        # Collect blinds and antes AFTER logging initial state
         self._collect_blinds_and_antes()
 
         # Handle AI player pre-round messages
@@ -484,6 +484,8 @@ class AgenticPoker:
 
         # Reset round state
         self.pot_manager.reset_pot()
+
+        # Store initial chips BEFORE any deductions
         self.round_starting_stacks = {p: p.chips for p in self.players}
 
         # Reset player states

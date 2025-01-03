@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from .card import Card
 from .evaluator import evaluate_hand
@@ -126,13 +126,9 @@ class Hand:
 
         return f"{cards_str}\n    - {description} {eval_details}"
 
-    def evaluate(self) -> str:
-        """
-        Get a formatted string of the hand's evaluation details.
+    def evaluate(self) -> Tuple[int, List[int], str]:
+        """Evaluate the current hand and return its ranking information."""
+        if not self.cards or len(self.cards) != 5:
+            raise ValueError("Cannot evaluate hand: incorrect number of cards")
 
-        Returns:
-            str: String containing the numerical rank, hand description,
-                and tiebreaker values used for comparison
-        """
-        rank, tiebreakers, description = self._get_rank()
-        return f"Rank {rank} - {description} (Tiebreakers: {tiebreakers})"
+        return evaluate_hand(self.cards)

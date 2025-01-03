@@ -124,18 +124,31 @@ class TestHand:
         # Test show method
         assert empty_hand.show() == "Empty hand"
 
-        # Test evaluate method
-        evaluation = empty_hand.evaluate()
-        assert "No cards" in evaluation
+        # Test evaluate method should raise ValueError for empty hand
+        with pytest.raises(
+            ValueError, match="Cannot evaluate hand: incorrect number of cards"
+        ):
+            empty_hand.evaluate()
+
+        # Can still get rank info through _get_rank
+        rank, tiebreakers, description = empty_hand._get_rank()
+        assert description == "No cards"
+        assert rank == float("inf")
+        assert tiebreakers == []
 
     def test_evaluate_method(self, royal_flush):
         """Test the evaluate method's output format."""
         evaluation = royal_flush.evaluate()
 
-        assert isinstance(evaluation, str)
-        assert "Rank" in evaluation
-        assert "Royal Flush" in evaluation
-        assert "Tiebreakers:" in evaluation
+        # Verify the tuple structure
+        assert isinstance(evaluation, tuple)
+        assert len(evaluation) == 3
+
+        rank, tiebreakers, description = evaluation
+        assert isinstance(rank, int)
+        assert isinstance(tiebreakers, list)
+        assert isinstance(description, str)
+        assert "Royal Flush" in description
 
     def test_rank_invalidation(self, sample_cards):
         """Test that rank is properly invalidated when hand changes."""
@@ -459,100 +472,106 @@ class TestHand:
 
     def test_hand_rank_updates_after_draw(self):
         """Test that hand ranks are properly updated when cards change."""
-        
+
         # Test Case 1: High Card becomes Pair
-        initial_hand = Hand([
-            Card("10", "♠"),
-            Card("8", "♦"), 
-            Card("6", "♠"),
-            Card("4", "♥"),
-            Card("K", "♥")
-        ])
-        
+        initial_hand = Hand(
+            [
+                Card("10", "♠"),
+                Card("8", "♦"),
+                Card("6", "♠"),
+                Card("4", "♥"),
+                Card("K", "♥"),
+            ]
+        )
+
         # Verify initial hand rank
         rank, tiebreakers, description = initial_hand._get_rank()
         assert rank == 10  # High card
         assert "High Card" in description
         assert tiebreakers[0] == 13  # King high
-        
+
         # Simulate draw by removing cards and adding new ones
         initial_hand.cards = [
             Card("10", "♠"),  # Kept
-            Card("Q", "♣"),   # New
-            Card("K", "♣"),   # New
-            Card("9", "♦"),   # New
-            Card("K", "♥")    # Kept
+            Card("Q", "♣"),  # New
+            Card("K", "♣"),  # New
+            Card("9", "♦"),  # New
+            Card("K", "♥"),  # Kept
         ]
-        
+
         # Force rank recalculation by clearing cache
         initial_hand._rank = None
-        
+
         # Verify updated hand rank
         rank, tiebreakers, description = initial_hand._get_rank()
         assert rank == 9  # One pair
         assert "Pair" in description
         assert tiebreakers[0] == 13  # Pair of Kings
-        
+
         # Test Case 2: Pair becomes High Card
-        pair_hand = Hand([
-            Card("9", "♣"),
-            Card("5", "♣"),
-            Card("9", "♠"),
-            Card("8", "♥"),
-            Card("J", "♦")
-        ])
-        
+        pair_hand = Hand(
+            [
+                Card("9", "♣"),
+                Card("5", "♣"),
+                Card("9", "♠"),
+                Card("8", "♥"),
+                Card("J", "♦"),
+            ]
+        )
+
         # Verify initial pair
         rank, tiebreakers, description = pair_hand._get_rank()
         assert rank == 9  # One pair
         assert "Pair" in description
         assert tiebreakers[0] == 9  # Pair of 9s
-        
+
         # Simulate draw by replacing cards
         pair_hand.cards = [
-            Card("6", "♥"),   # New
-            Card("K", "♦"),   # New
-            Card("9", "♠"),   # Kept
-            Card("8", "♥"),   # Kept
-            Card("J", "♦")    # Kept
+            Card("6", "♥"),  # New
+            Card("K", "♦"),  # New
+            Card("9", "♠"),  # Kept
+            Card("8", "♥"),  # Kept
+            Card("J", "♦"),  # Kept
         ]
-        
+
         # Force rank recalculation
         pair_hand._rank = None
-        
+
         # Verify updated hand rank
         rank, tiebreakers, description = pair_hand._get_rank()
         assert rank == 10  # High card
         assert "High Card" in description
         assert tiebreakers[0] == 13  # King high
-        
+
         # Test Case 3: Pair of 3s becomes High Card
-        three_pair_hand = Hand([
-            Card("3", "♠"),
-            Card("4", "♠"),
-            Card("3", "♣"),
-            Card("2", "♠"),
-            Card("K", "♠")
-        ])
-        
+        three_pair_hand = Hand(
+            [
+                Card("3", "♠"),
+                Card("4", "♠"),
+                Card("3", "♣"),
+                Card("2", "♠"),
+                Card("K", "♠"),
+            ]
+        )
+
         # Verify initial pair
         rank, tiebreakers, description = three_pair_hand._get_rank()
         assert rank == 9  # One pair
         assert "Pair" in description
         assert tiebreakers[0] == 3  # Pair of 3s
-        
+
         # Simulate draw
         three_pair_hand.cards = [
-            Card("7", "♦"),   # New
-            Card("4", "♦"),   # New
-            Card("3", "♣"),   # Kept
-            Card("2", "♠"),   # Kept
-            Card("K", "♠")    # Kept
+            Card("7", "♦"),  # New
+            Card("4", "♦"),  # New
+            Card("3", "♣"),  # Kept
+            Card("2", "♠"),  # Kept
+            Card("K", "♠"),  # Kept
         ]
-        
+
         # Force rank recalculation
         three_pair_hand._rank = None
-        
+
         # Verify updated hand rank
         rank, tiebreakers, description = three_pair_hand._get_rank()
         assert rank == 10  # High card

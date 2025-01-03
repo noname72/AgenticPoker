@@ -110,3 +110,15 @@ class Player:
                  and whether they have folded
         """
         return f"{self.name} (chips: {self.chips}, folded: {self.folded})"
+
+    def decide_action(self, game_state: str) -> str:
+        """Decide what action to take based on current game state."""
+        # Get hand evaluation before making decision
+        hand_eval = self.hand.evaluate() if self.hand else None
+
+        if self.strategy_planner:
+            # Pass hand evaluation info to strategy planner
+            return self.strategy_planner.execute_action(game_state, hand_eval)
+
+        # Fallback to basic decision making if no strategy planner
+        return self._basic_decision(game_state)

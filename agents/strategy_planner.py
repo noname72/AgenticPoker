@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple, List
 
 from openai import OpenAI
 
@@ -144,7 +144,9 @@ class StrategyPlanner:
                 "fold_threshold": 0.3,
             }
 
-    def execute_action(self, game_state: str) -> str:
+    def execute_action(
+        self, game_state: str, hand_eval: Optional[Tuple[int, List[int], str]] = None
+    ) -> str:
         """Execute specific action based on current plan and game state.
 
         Translates strategic plan into concrete poker action considering
@@ -153,6 +155,7 @@ class StrategyPlanner:
 
         Args:
             game_state: Current game situation including pot size, position, etc.
+            hand_eval: Optional tuple containing (rank, tiebreakers, description) from evaluate_hand
 
         Returns:
             str: Concrete action ('fold', 'call', or 'raise')
@@ -168,7 +171,15 @@ class StrategyPlanner:
             # Returns: "raise"
         """
         if not self.current_plan:
-            return "call"  # Safe default if no plan exists
+            self.plan_strategy(
+                game_state, self._extract_game_metrics(game_state).get("chips", 0)
+            )
+
+        # Extract hand strength information
+        hand_rank = None
+        hand_description = "Unknown"
+        if hand_eval:
+            hand_rank, _, hand_description = hand_eval
 
         execution_prompt = f"""
         You are a {self.strategy_style} poker player following this plan:
@@ -178,10 +189,15 @@ class StrategyPlanner:
         Current situation:
         {game_state}
         
-        Given your {self.current_plan['approach']} approach:
+        Your hand strength:
+        Rank: {hand_rank}/10 (1 is best, 10 is worst)
+        Description: {hand_description}
+        
+        Given your {self.current_plan['approach']} approach and hand strength:
         1. Evaluate if the situation matches your plan
         2. Consider pot odds and immediate action costs
-        3. Factor in your bluff_threshold ({self.current_plan['bluff_threshold']}) and fold_threshold ({self.current_plan['fold_threshold']})
+        3. Factor in your bluff_threshold ({self.current_plan.get('bluff_threshold', 0.5)})
+        4. Premium hands (Straight or better) should typically be played aggressively
         
         Respond with EXECUTE: <fold/call/raise> and brief reasoning
         """
@@ -192,10 +208,29 @@ class StrategyPlanner:
                 raise ValueError("No EXECUTE directive found")
 
             action = response.split("EXECUTE:")[1].strip().split()[0]
+
+            # Force aggressive play with premium hands unless pot odds are terrible
+            if hand_rank and hand_rank <= 6:  # Straight or better
+                metrics = self._extract_game_metrics(game_state)
+                pot_odds = metrics.get("current_bet", 0) / metrics.get("pot", 1)
+
+                if pot_odds < 0.5:  # Reasonable pot odds
+                    if action == "fold":
+                        logger.warning("Overriding fold with call for premium hand")
+                        return "call"
+                    elif (
+                        action == "call"
+                        and self.current_plan["approach"] == "aggressive"
+                    ):
+                        logger.info(
+                            "Upgrading call to raise for premium hand with aggressive approach"
+                        )
+                        return "raise"
+
             return self._normalize_action(action)
 
         except Exception as e:
-            logger.error(f"Execution failed: {str(e)}")
+            logger.error(f"Action execution failed: {str(e)}")
             return "call"  # Safe fallback
 
     def _requires_replanning(self, game_state: str) -> bool:
