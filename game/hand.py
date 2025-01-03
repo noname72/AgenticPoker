@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from .card import Card
 from .evaluator import evaluate_hand
@@ -73,31 +73,37 @@ class Hand:
         return self_rank == other_rank and self_tiebreakers == other_tiebreakers
 
     def _get_rank(self) -> tuple:
-        """
-        Get the cached rank or calculate and cache it if needed.
-
-        Returns:
-            tuple: Contains (rank, tiebreakers, description) where:
-                - rank: Integer ranking (lower is better)
-                - tiebreakers: List of values for breaking ties
-                - description: Human-readable description of the hand
-        """
-        if self._rank is None and self.cards:
-            self._rank = evaluate_hand(self.cards)
+        """Get the cached rank or calculate and cache it if needed."""
+        if self._rank is None:
+            if not self.cards:
+                return (float("inf"), [], "No cards")
+            if len(self.cards) != 5:
+                return (float("inf"), [], "Invalid number of cards")
+            try:
+                self._rank = evaluate_hand(self.cards)
+            except (ValueError, KeyError):
+                return (float("inf"), [], "Invalid hand")
         return self._rank or (float("inf"), [], "No cards")
 
     def add_cards(self, cards: List[Card]) -> None:
-        """
-        Add cards to the hand and invalidate the cached rank.
-
-        Args:
-            cards: List of cards to add to the hand
-
-        Note:
-            This method automatically invalidates any cached rank evaluation.
-        """
+        """Add cards to the hand and invalidate the cached rank."""
+        if cards is None:
+            raise TypeError("Cannot add None as cards")
+        if not isinstance(cards, list):
+            raise TypeError("Cards must be provided as a list")
+        if any(not isinstance(card, Card) for card in cards):
+            raise TypeError("All elements must be Card objects")
         self.cards.extend(cards)
         self._rank = None  # Invalidate cached rank
+
+    def remove_cards(self, positions: List[int]) -> None:
+        """
+        Remove cards from the hand by index positions (highest first),
+        then invalidate the cached rank.
+        """
+        for idx in sorted(positions, reverse=True):
+            self.cards.pop(idx)
+        self._rank = None
 
     def show(self) -> str:
         """
@@ -120,13 +126,9 @@ class Hand:
 
         return f"{cards_str}\n    - {description} {eval_details}"
 
-    def evaluate(self) -> str:
-        """
-        Get a formatted string of the hand's evaluation details.
+    def evaluate(self) -> Tuple[int, List[int], str]:
+        """Evaluate the current hand and return its ranking information."""
+        if not self.cards or len(self.cards) != 5:
+            raise ValueError("Cannot evaluate hand: incorrect number of cards")
 
-        Returns:
-            str: String containing the numerical rank, hand description,
-                and tiebreaker values used for comparison
-        """
-        rank, tiebreakers, description = self._get_rank()
-        return f"Rank {rank} - {description} (Tiebreakers: {tiebreakers})"
+        return evaluate_hand(self.cards)

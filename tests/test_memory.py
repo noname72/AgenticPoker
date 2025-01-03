@@ -121,20 +121,28 @@ def test_invalid_collection_recovery(memory_store):
     """Test recovery from invalid collection state."""
     # Add initial memory
     memory_store.add_memory("Initial memory", {"round": 1})
-    time.sleep(0.2)  # Increase wait time
+    time.sleep(0.2)  # Wait for processing
+    
+    # Get initial results to verify memory was added
+    initial_results = memory_store.get_relevant_memories("memory", k=1)
+    assert len(initial_results) > 0, "Initial memory was not added"
     
     # Force collection to be recreated
     memory_store.collection = None
+    
+    # Try to add new memory - this should trigger recovery
     memory_store.add_memory("New memory", {"round": 2})
-    time.sleep(0.2)  # Increase wait time
+    time.sleep(0.2)  # Wait for processing
     
-    # Query should work after recovery
-    query = "memory"
-    results = memory_store.get_relevant_memories(query, k=2)
+    # Query should work after recovery and return both memories
+    results = memory_store.get_relevant_memories("memory", k=2)
+    assert len(results) > 0, "No memories found after recovery"
+    assert len(results) == 2, "Not all memories were recovered"
     
-    # Debug output
-    print(f"Query results for '{query}': {results}")
-    assert len(results) > 0
+    # Verify both memories are present
+    memory_texts = [m["text"] for m in results]
+    assert "Initial memory" in memory_texts, "Initial memory was lost"
+    assert "New memory" in memory_texts, "New memory was not added"
 
 
 @pytest.mark.skip_cleanup

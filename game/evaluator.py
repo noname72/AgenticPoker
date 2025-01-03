@@ -42,6 +42,14 @@ def evaluate_hand(cards: List[Card]) -> Tuple[int, List[int], str]:
     if len(cards) != 5:
         raise ValueError("Hand must contain exactly 5 cards")
 
+    # Check for duplicate cards
+    seen_cards = set()
+    for card in cards:
+        card_tuple = (card.rank, card.suit)
+        if card_tuple in seen_cards:
+            raise ValueError(f"Duplicate card found: {card}")
+        seen_cards.add(card_tuple)
+
     # Convert face cards to numeric values (J=11, Q=12, K=13, A=14)
     values = {
         "2": 2,
@@ -60,7 +68,7 @@ def evaluate_hand(cards: List[Card]) -> Tuple[int, List[int], str]:
     }
 
     # Convert all ranks to numeric values using the values dictionary
-    ranks = [values[str(card.rank)] for card in cards]
+    ranks = [values[str(card.rank).upper()] for card in cards]
     suits = [card.suit for card in cards]
 
     # Count occurrences of each rank

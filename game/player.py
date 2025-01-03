@@ -32,10 +32,16 @@ class Player:
             name (str): The player's display name
             chips (int, optional): Starting amount of chips. Defaults to 1000.
 
-        Side Effects:
-            - Creates a new empty Hand instance
-            - Initializes player state (bet=0, folded=False)
+        Raises:
+            ValueError: If name is empty or chips is negative
         """
+        if not name or name.isspace():
+            raise ValueError("Player name cannot be empty or whitespace")
+        if not isinstance(chips, int):
+            raise ValueError("Chips must be an integer value")
+        if chips < 0:
+            raise ValueError("Cannot initialize player with negative chips")
+
         self.name = name
         self.chips = chips
         self.bet = 0
@@ -104,3 +110,15 @@ class Player:
                  and whether they have folded
         """
         return f"{self.name} (chips: {self.chips}, folded: {self.folded})"
+
+    def decide_action(self, game_state: str) -> str:
+        """Decide what action to take based on current game state."""
+        # Get hand evaluation before making decision
+        hand_eval = self.hand.evaluate() if self.hand else None
+
+        if self.strategy_planner:
+            # Pass hand evaluation info to strategy planner
+            return self.strategy_planner.execute_action(game_state, hand_eval)
+
+        # Fallback to basic decision making if no strategy planner
+        return self._basic_decision(game_state)

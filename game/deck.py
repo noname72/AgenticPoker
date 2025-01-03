@@ -1,5 +1,7 @@
+import logging
 import random
 from typing import List
+
 from .card import Card
 
 
@@ -18,9 +20,14 @@ class Deck:
     def shuffle(self) -> None:
         """
         Shuffle the current deck.
-
-        If discarded cards exist, they can optionally be shuffled back in.
         """
+        # Reset tracking lists when shuffling a fresh deck
+        if len(self.cards) == 52:
+            self.dealt_cards = []
+            self.discarded_cards = []
+        else:
+            logging.info(f"Shuffling deck with {len(self.cards)} cards")
+
         random.shuffle(self.cards)
 
     def deal(self, num: int = 1) -> List[Card]:
@@ -47,23 +54,11 @@ class Deck:
         return dealt
 
     def add_discarded(self, cards: List[Card]) -> None:
-        """
-        Add discarded cards to the discard pile.
-
-        Args:
-            cards: List of cards to add to discard pile
-        """
+        """Add discarded cards to the discard pile."""
         self.discarded_cards.extend(cards)
 
     def reshuffle_discards(self) -> None:
-        """
-        Shuffle discarded cards back into the deck.
-
-        Side Effects:
-            - Moves all discarded cards back to main deck
-            - Shuffles entire deck
-            - Clears discard pile
-        """
+        """Shuffle discarded cards back into the deck."""
         self.cards.extend(self.discarded_cards)
         self.discarded_cards = []
         self.shuffle()
@@ -71,6 +66,23 @@ class Deck:
     def remaining(self) -> int:
         """Return number of cards remaining in deck."""
         return len(self.cards)
+
+    def remaining_cards(self) -> int:
+        """Get count of remaining cards in deck."""
+        return len(self.cards)
+
+    def needs_reshuffle(self, needed_cards: int) -> bool:
+        """Check if deck needs reshuffling based on needed cards."""
+        return len(self.cards) < needed_cards
+
+    def reshuffle_all(self) -> None:
+        """Reshuffle ALL cards (including dealt and discarded) back into deck."""
+        self.cards.extend(self.dealt_cards)
+        self.cards.extend(self.discarded_cards)
+        self.dealt_cards = []
+        self.discarded_cards = []
+        self.shuffle()
+        logging.info("Full deck reshuffle - all 52 cards back in play")
 
     def __str__(self) -> str:
         """Return string representation of current deck state."""
