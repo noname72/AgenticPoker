@@ -418,3 +418,68 @@ def test_log_chip_movements(mock_players, caplog):
     assert "Player0: $1000 → $1200 (+200)" in caplog.text
     assert "Player1: $1000 → $800 (-200)" in caplog.text
     assert "Player2" not in caplog.text  # No change, shouldn't be logged
+
+
+def test_handle_showdown_complex_side_pots(mock_players):
+    """Test showdown with complex side pot scenarios involving multiple all-ins."""
+    # Setup initial chips with varying amounts
+    mock_players[0].chips = 0  # Player0 has committed all 1000 chips
+    mock_players[1].chips = 0  # Player1 has committed all 500 chips
+    mock_players[2].chips = 0  # Player2 has committed all 200 chips
+    initial_chips = {mock_players[0]: 1000, mock_players[1]: 500, mock_players[2]: 200}
+
+    # Setup mock pot manager with multiple side pots
+    mock_pot_manager = MagicMock()
+    mock_pot_manager.pot = 1700  # Total pot (1000 + 500 + 200)
+
+    # Create side pots:
+    # 1. Main pot (600): All players contribute 200 each
+    # 2. Middle pot (600): Player0 and Player1 contribute 300 each
+    # 3. High pot (500): Only Player0 contributes remaining 500
+    side_pots = [
+        SidePot(amount=600, eligible_players=mock_players),  # 200 x 3
+        SidePot(amount=600, eligible_players=mock_players[:2]),  # 300 x 2
+        SidePot(amount=500, eligible_players=[mock_players[0]]),  # 500 x 1
+    ]
+    mock_pot_manager.calculate_side_pots.return_value = side_pots
+
+    # Setup different hand strengths
+    mock_players[0].hand.evaluate = lambda: "Two Pair"  # Best hand
+    mock_players[1].hand.evaluate = lambda: "Pair"  # Medium hand
+    mock_players[2].hand.evaluate = lambda: "High Card"  # Worst hand
+
+    def make_hand_comparison(rank_index):
+        def compare_to(other):
+            ranks = ["High Card", "Pair", "Two Pair"]
+            my_rank = ranks.index(rank_index)
+            other_rank = ranks.index(other.evaluate())
+            return 1 if my_rank > other_rank else -1 if my_rank < other_rank else 0
+
+        return compare_to
+
+    for player in mock_players:
+        player.hand.compare_to = make_hand_comparison(player.hand.evaluate())
+
+    # Run showdown
+    handle_showdown(
+        players=mock_players,
+        initial_chips=initial_chips,
+        pot_manager=mock_pot_manager,
+    )
+
+    # Verify final chip counts:
+    # Player0 should win all pots (600 + 600 + 500 = 1700)
+    assert (
+        mock_players[0].chips == 1700
+    ), f"Player0 should have won all pots (1700), but has {mock_players[0].chips}"
+    # Other players should have 0 chips (all-in and lost)
+    assert (
+        mock_players[1].chips == 0
+    ), f"Player1 should have lost all chips, but has {mock_players[1].chips}"
+    assert (
+        mock_players[2].chips == 0
+    ), f"Player2 should have lost all chips, but has {mock_players[2].chips}"
+
+    # Verify total chips in play remains constant
+    total_chips = sum(p.chips for p in mock_players)
+    assert total_chips == 1700, f"Total chips should be 1700, but got {total_chips}"
