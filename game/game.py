@@ -83,7 +83,6 @@ class AgenticPoker:
         small_blind (int): Required small blind bet amount
         big_blind (int): Required big blind bet amount
         dealer_index (int): Position of current dealer (0-based, moves clockwise)
-        round_count (int): Number of completed game rounds
         round_number (int): Current round number (increments at start of each round)
         max_rounds (Optional[int]): Maximum number of rounds to play, or None for unlimited
         ante (int): Mandatory bet required from all players at start of each hand
@@ -106,7 +105,6 @@ class AgenticPoker:
     small_blind: int
     big_blind: int
     dealer_index: int
-    round_count: int
     round_number: int
     max_rounds: Optional[int]
     ante: int
@@ -162,8 +160,7 @@ class AgenticPoker:
         self.small_blind = self.config.small_blind
         self.big_blind = self.config.big_blind
         self.dealer_index = 0
-        self.round_count = 0
-        self.round_number = 0
+        self.round_number = 0  # Initialize only round_number
         self.max_rounds = self.config.max_rounds
         self.ante = self.config.ante
 
@@ -184,44 +181,23 @@ class AgenticPoker:
     def start_game(self) -> None:
         """
         Execute the main game loop until a winner is determined or max rounds reached.
-
-        This method controls the overall game flow, including:
-        - Round initialization and progression
-        - Player elimination handling
-        - Pre-draw betting phase
-        - Draw phase for card exchanges
-        - Post-draw betting and showdown
-        - Pot distribution and winner determination
-
-        The game continues until one of these conditions is met:
-        - Only one player remains with chips
-        - Maximum number of rounds is reached (if configured)
-        - All players are eliminated
-
-        Side Effects:
-            - Updates player chip counts
-            - Modifies deck composition
-            - Updates game state variables
-            - Logs game progress and results
         """
         eliminated_players = []
-        self.round_number = 0  # Initialize round counter
 
         while len(self.players) > 1:
             self.round_number += 1
+            logging.info(f"\nStarting Round {self.round_number}")
 
-            # Combined elimination check
-            if not self._handle_player_eliminations(eliminated_players):
-                break
-
-            # Check end conditions
-            if len([p for p in self.players if p.chips > 0]) <= 1:
-                break
-            if self.max_rounds and self.round_count >= self.max_rounds:
+            # Check max rounds before starting new round
+            if self.max_rounds and self.round_number > self.max_rounds:
                 logging.info(f"\nGame ended after {self.max_rounds} rounds!")
                 break
 
-            # Start new round
+            # Handle eliminations and check if game should end
+            if not self._handle_player_eliminations(eliminated_players):
+                break
+
+            # Start new round with remaining players
             self.players = [p for p in self.players if p.chips > 0]
 
             # Store initial chips before starting round
@@ -237,8 +213,12 @@ class AgenticPoker:
                 game_state=game_state,
             )
 
+            # Update pot manager with new pot and side pots
+            if side_pots:
+                self.pot_manager.side_pots = side_pots
+            self.pot_manager.pot = new_pot
+
             if not should_continue:
-                self.round_count += 1
                 self._reset_round()
                 continue
 
@@ -252,7 +232,6 @@ class AgenticPoker:
                 pot_manager=self.pot_manager,
             )
 
-            self.round_count += 1
             self._reset_round()
 
         self._log_game_summary(eliminated_players)
@@ -461,8 +440,8 @@ class AgenticPoker:
     def _log_game_summary(self, eliminated_players: List[Player]) -> None:
         """Log the final game summary and standings."""
         logging.info("\n=== Game Summary ===")
-        logging.info(f"Total rounds played: {self.round_count}")
-        if self.max_rounds and self.round_count >= self.max_rounds:
+        logging.info(f"Total rounds played: {self.round_number}")
+        if self.max_rounds and self.round_number >= self.max_rounds:
             logging.info("Game ended due to maximum rounds limit")
 
         # Use a set to ensure unique players
@@ -479,9 +458,6 @@ class AgenticPoker:
         """
         Initialize the state for a new round of poker.
         """
-        # Rotate dealer button first
-        self.dealer_index = (self.dealer_index + 1) % len(self.players)
-
         # Reset round state
         self.pot_manager.reset_pot()
 
@@ -505,8 +481,11 @@ class AgenticPoker:
             if hasattr(player, "hand"):
                 player.hand = None
 
-        # Reset pot in pot_manager as well
+        # Reset pot in pot_manager
         self.pot_manager.reset_pot()
+
+        # Rotate dealer position for next round
+        self.dealer_index = (self.dealer_index + 1) % len(self.players)
 
     def _deal_cards(self) -> None:
         """Reset the deck and deal new hands to all players."""

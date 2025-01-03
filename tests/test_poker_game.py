@@ -91,8 +91,8 @@ def test_dealer_rotation(game, mock_players):
     """Test dealer button rotation between rounds."""
     initial_dealer = game.dealer_index
 
-    # Initialize round which rotates dealer
-    game._initialize_round()
+    # Reset round which rotates dealer
+    game._reset_round()
 
     # Verify dealer rotated
     expected_dealer = (initial_dealer + 1) % len(mock_players)
