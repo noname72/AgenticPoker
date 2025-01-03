@@ -434,6 +434,10 @@ class AgenticPoker:
 
     def _create_game_state(self) -> dict:
         """Create a dictionary containing the current game state."""
+        # Calculate big blind position (2 seats after dealer)
+        big_blind_pos = (self.dealer_index + 2) % len(self.players)
+        big_blind_player = self.players[big_blind_pos]
+
         return {
             "pot": self.pot_manager.pot,
             "players": [
@@ -450,6 +454,7 @@ class AgenticPoker:
             "small_blind": self.small_blind,
             "big_blind": self.big_blind,
             "dealer_index": self.dealer_index,
+            "big_blind_position": big_blind_player,  # Add big blind player to game state
         }
 
     def _log_chip_movements(self, initial_chips: Dict[Player, int]) -> None:

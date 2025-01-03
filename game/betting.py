@@ -71,8 +71,9 @@ def betting_round(
     # Create a copy of game state at the start
     current_game_state = {} if game_state is None else game_state.copy()
 
-    # Get current bet from game state if provided
+    # Get current bet and big blind position from game state
     current_bet = current_game_state.get("current_bet", 0)
+    big_blind_position = current_game_state.get("big_blind_position")
 
     # If there is no current bet, define a minimum bet (e.g., 10)
     if current_bet <= 0:
@@ -242,17 +243,25 @@ def _get_action_and_amount(
         return "call", current_bet
 
 
-def validate_bet_to_call(current_bet: int, player_bet: int) -> int:
+def validate_bet_to_call(
+    current_bet: int, player_bet: int, is_big_blind: bool = False
+) -> int:
     """Calculates the amount a player needs to add to call the current bet.
 
     Args:
         current_bet: The current bet amount that needs to be matched
         player_bet: The amount the player has already bet in this round
+        is_big_blind: Whether the player is in the big blind position
 
     Returns:
         int: The additional amount the player needs to bet to call.
-            Always returns non-negative value.
+            Returns 0 for big blind when no raises have occurred.
     """
+    # If player is big blind and no raises have occurred (current_bet equals BB amount),
+    # they don't need to call anything
+    if is_big_blind and current_bet == player_bet:
+        return 0
+
     bet_to_call = max(0, current_bet - player_bet)  # Can't be negative
     return bet_to_call
 
@@ -305,8 +314,9 @@ def _process_player_action(
     )
     raise_count = game_state.get("raise_count", 0) if game_state else 0
 
-    # Calculate how much player needs to call
-    to_call = validate_bet_to_call(current_bet, player.bet)
+    # Calculate how much player needs to call, accounting for big blind position
+    is_big_blind = game_state and game_state.get("big_blind_position") == player
+    to_call = validate_bet_to_call(current_bet, player.bet, is_big_blind)
 
     # Add validation for minimum raise amount based on last raiser's bet
     min_raise_amount = 0

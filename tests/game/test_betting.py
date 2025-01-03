@@ -1008,3 +1008,46 @@ def test_betting_round_after_antes(basic_players):
     print(f"Final pot: {final_pot}")
     for i, p in enumerate(basic_players):
         print(f"Player {i}: chips={p.chips}, bet={p.bet}")
+
+
+def test_big_blind_betting_behavior():
+    """Test that big blind player doesn't have to call their own blind amount."""
+    players = [
+        Player("Dealer", 1000),
+        Player("Small Blind", 1000),
+        Player("Big Blind", 1000),  # BB posts 100
+        Player("UTG", 1000),
+    ]
+
+    # Setup game state with BB=100
+    game_state = {
+        "current_bet": 100,  # Current bet is BB amount
+        "big_blind": 100,
+        "small_blind": 50,
+        "dealer_index": 0,
+        "big_blind_position": players[2],  # Player "Big Blind" is BB
+    }
+
+    # Mock player decisions
+    players[0].decide_action = lambda x: ("call", 100)  # Dealer calls
+    players[1].decide_action = lambda x: ("call", 100)  # SB calls
+    players[2].decide_action = lambda x: ("check", 0)  # BB checks (no additional bet)
+    players[3].decide_action = lambda x: ("call", 100)  # UTG calls
+
+    # Simulate betting round
+    # Initial pot should be 160 (BB:100 + SB:50 + antes:10*4)
+    result = betting_round(players, 160, game_state)
+
+    # Verify BB didn't have to call their own blind
+    assert players[2].bet == 100, "BB should only have their original blind bet"
+    assert players[2].chips == 900, "BB should only have lost their blind amount"
+
+    # Other players should have called the BB amount
+    assert players[0].bet == 100, "Dealer should have called full BB amount"
+    assert players[1].bet == 100, "SB should have called full BB amount"
+    assert players[3].bet == 100, "UTG should have called full BB amount"
+
+    # Final pot should be 560:
+    # Initial 160 (BB:100 + SB:50 + antes:10*4) +
+    # New bets 400 (100 each from Dealer, SB, UTG, BB already counted in initial pot)
+    assert result == 560, "Final pot should be 560"
