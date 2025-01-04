@@ -1,4 +1,7 @@
 import logging
+from typing import Optional
+
+from .base_types import PlayerPosition, PlayerState
 from .hand import Hand
 
 
@@ -64,7 +67,19 @@ class Player:
         if amount < 0:
             raise ValueError("Cannot place negative bet")
 
-        amount = min(amount, self.chips)  # Can't bet more than you have
+        # Ensure we don't bet more than available chips
+        amount = min(amount, self.chips)
+
+        # If this is a raise, ensure it's at least double the current bet
+        if hasattr(self, "current_bet") and amount <= self.current_bet:
+            logging.debug(
+                f"Raise amount {amount} too small compared to current bet {self.current_bet}"
+            )
+            amount = self.current_bet * 2
+            amount = min(
+                amount, self.chips
+            )  # Still ensure we don't exceed available chips
+
         self.chips -= amount
         self.bet += amount
         logging.debug(
@@ -99,6 +114,15 @@ class Player:
         """Reset player state for a new round."""
         self.bet = 0
         self.folded = False
+        self.has_acted = False
+        self.total_bet_this_round = 0
+        self.last_action = None
+        self.last_raise_amount = None
+        self.is_all_in = False
+        self.is_dealer = False
+        self.is_small_blind = False
+        self.is_big_blind = False
+        self.chips_at_start_of_hand = self.chips
         logging.debug(f"{self.name}'s state reset for new round")
 
     def __str__(self) -> str:
@@ -122,3 +146,59 @@ class Player:
 
         # Fallback to basic decision making if no strategy planner
         return self._basic_decision(game_state)
+
+    def get_state(self) -> PlayerState:
+        """Get the current state of this player."""
+        return PlayerState(
+            name=self.name,
+            chips=self.chips,
+            bet=self.bet,
+            folded=self.folded,
+            position=PlayerPosition.OTHER,  # Default position
+            seat_number=getattr(self, "seat_number", None),
+            is_dealer=getattr(self, "is_dealer", False),
+            is_small_blind=getattr(self, "is_small_blind", False),
+            is_big_blind=getattr(self, "is_big_blind", False),
+            hand=str(self.hand) if hasattr(self, "hand") else None,
+            hand_rank=getattr(self, "hand_rank", None),
+            has_acted=getattr(self, "has_acted", False),
+            total_bet_this_round=getattr(self, "total_bet_this_round", 0),
+            last_action=getattr(self, "last_action", None),
+            last_raise_amount=getattr(self, "last_raise_amount", None),
+            is_all_in=getattr(self, "is_all_in", False),
+            is_active=not self.folded and self.chips > 0,
+            chips_at_start_of_hand=getattr(self, "chips_at_start_of_hand", None),
+            hands_played=getattr(self, "hands_played", 0),
+            hands_won=getattr(self, "hands_won", 0),
+            total_winnings=getattr(self, "total_winnings", 0),
+            biggest_pot_won=getattr(self, "biggest_pot_won", 0),
+        )
+
+    def update_from_state(self, state: PlayerState) -> None:
+        """Update this player's attributes from a PlayerState."""
+        self.name = state.name
+        self.chips = state.chips
+        self.bet = state.bet
+        self.folded = state.folded
+
+        # Update position and role attributes
+        self.seat_number = state.seat_number
+        self.is_dealer = state.is_dealer
+        self.is_small_blind = state.is_small_blind
+        self.is_big_blind = state.is_big_blind
+
+        # Update betting state
+        self.has_acted = state.has_acted
+        self.total_bet_this_round = state.total_bet_this_round
+        self.last_action = state.last_action
+        self.last_raise_amount = state.last_raise_amount
+
+        # Update game status
+        self.is_all_in = state.is_all_in
+        self.chips_at_start_of_hand = state.chips_at_start_of_hand
+
+        # Update historical stats
+        self.hands_played = state.hands_played
+        self.hands_won = state.hands_won
+        self.total_winnings = state.total_winnings
+        self.biggest_pot_won = state.biggest_pot_won

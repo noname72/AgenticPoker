@@ -24,6 +24,7 @@ from agents.strategy_cards import StrategyManager
 from agents.strategy_planner import StrategyPlanner
 from data.memory import ChromaMemoryStore
 from exceptions import LLMError, OpenAIError
+from game.types import GameState
 
 # Load environment variables
 load_dotenv()
@@ -320,53 +321,42 @@ class LLMAgent(BaseAgent):
             game_state=game_state,
         )
 
-    def decide_action(
-        self, 
-        game_state: Dict[str, Any], 
-        opponent_message: Optional[str] = None
-    ) -> str:
-        """Make a decision based on game state and memory."""
+    def decide_action(self, game_state: str) -> str:
+        """Decide what action to take based on current game state."""
         try:
-            # Format game state for decision making
-            formatted_state = self._format_game_state(game_state)
-            
-            # Try to get memories, but continue if it fails
-            memories = []
-            try:
-                query = self._create_memory_query(game_state)
-                memories = self.get_relevant_memories(query)
-            except Exception as e:
-                self.logger.warning(f"Memory retrieval failed: {str(e)}")
-            
-            if self.use_planning:
-                self.logger.info("[%s] Using strategy planner for decision", self.name)
-                return self._get_strategic_action(formatted_state)
-            else:
-                self.logger.info("[%s] Using basic decision making", self.name)
-                return self._get_basic_action(formatted_state)
-                
+            # Get hand evaluation before making decision
+            hand_eval = self.hand.evaluate() if self.hand else None
+
+            if self.strategy_planner:
+                action = self.strategy_planner.execute_action(game_state, hand_eval)
+
+                # Parse raise amount if present
+                if action.startswith("raise"):
+                    try:
+                        _, amount = action.split()
+                        return f"raise {amount}"
+                    except (ValueError, IndexError):
+                        self.logger.warning(
+                            "Invalid raise format received from strategy planner"
+                        )
+                        return "call"  # Safe fallback for invalid raise format
+                return action
+
+            # Fallback to basic decision making if no strategy planner
+            return self._basic_decision(game_state)
+
         except Exception as e:
             self.logger.error(f"Decision error: {str(e)}")
-            return "fold"  # Safe default action
+            return "call"  # Changed from "fold" to "call" for consistent safe fallback
 
-    def _format_game_state(self, game_state: Dict[str, Any]) -> str:
-        """Format game state dictionary into a string representation."""
+    def _format_game_state(self, game_state: GameState) -> Dict[str, Any]:
+        """Format game state into a dictionary representation."""
         try:
-            players_info = []
-            for p in game_state.get('players', []):
-                players_info.append(
-                    f"{p['name']}(${p['chips']}, bet:${p.get('bet', 0)})"
-                )
-            
-            return (
-                f"Game state - "
-                f"pot: ${game_state.get('pot', 0)}, "
-                f"current bet: ${game_state.get('current_bet', 0)}, "
-                f"players: [{', '.join(players_info)}]"
-            )
+            # GameState now has a to_dict method that returns a structured dictionary
+            return game_state.to_dict()
         except Exception as e:
             self.logger.error(f"Error formatting game state: {str(e)}")
-            return str(game_state)  # Fallback to basic string conversion
+            return {"error": "Failed to format game state", "raw": str(game_state)}
 
     def _extract_bet_amount(self, game_state: str) -> Optional[int]:
         """Extract current bet amount from game state."""
@@ -817,14 +807,14 @@ class LLMAgent(BaseAgent):
 
     def _query_llm(self, prompt: str, max_retries: int = 3) -> str:
         """Query LLM with retry logic and better error handling.
-        
+
         Args:
             prompt: Formatted prompt string
             max_retries: Maximum number of retry attempts
-            
+
         Returns:
             str: LLM response text
-            
+
         Raises:
             LLMError: If all retries fail
         """
@@ -834,14 +824,16 @@ class LLMAgent(BaseAgent):
                     model="gpt-3.5-turbo",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.7,
-                    max_tokens=150  # Limit response length
+                    max_tokens=150,  # Limit response length
                 )
                 return response.choices[0].message.content
 
             except Exception as e:
                 self.logger.warning(f"LLM query attempt {attempt + 1} failed: {str(e)}")
                 if attempt == max_retries - 1:
-                    raise LLMError(f"All {max_retries} LLM query attempts failed") from e
+                    raise LLMError(
+                        f"All {max_retries} LLM query attempts failed"
+                    ) from e
                 time.sleep(1)  # Wait before retry
 
     def update_strategy(self, game_outcome: Dict[str, Any]) -> None:
@@ -1481,21 +1473,21 @@ class LLMAgent(BaseAgent):
                     memories = self.memory_store.get_relevant_memories(game_state, k=1)
                 except:
                     memories = []
-            
+
             # Format prompt with game state and memories
             prompt = self._format_decision_prompt(game_state, memories)
-            
+
             # Query LLM for decision
             response = self._query_llm(prompt)
-            
+
             # Parse and validate response
             action = self._parse_action(response)
-            
+
             # Store decision in memory
             self._store_decision_memory(game_state, action)
-            
+
             return action
-            
+
         except Exception as e:
             self.logger.error(f"Basic decision error: {str(e)}")
             return "fold"  # Safe default
@@ -1505,20 +1497,22 @@ class LLMAgent(BaseAgent):
         try:
             # Get or create strategic plan
             plan = self.strategy_planner.plan_strategy(game_state, self.chips)
-            
+
             # Execute plan to get concrete action
             action = self.strategy_planner.execute_action(game_state)
-            
+
             self.logger.info(
                 f"[{self.name}] Strategy plan: {plan['approach']} -> Action: {action}"
             )
             return action
-            
+
         except Exception as e:
             self.logger.error(f"Strategic action error: {str(e)}")
             return "call"  # Safe default
 
-    def _format_decision_prompt(self, game_state: str, memories: List[Dict[str, Any]]) -> str:
+    def _format_decision_prompt(
+        self, game_state: str, memories: List[Dict[str, Any]]
+    ) -> str:
         """Format prompt for basic decision making."""
         # Format memories for context
         memory_context = ""
@@ -1561,55 +1555,62 @@ Example: "DECISION: call"
                 "type": "decision",
                 "action": action,
                 "timestamp": time.time(),
-                "strategy_style": self.strategy_style
-            }
+                "strategy_style": self.strategy_style,
+            },
         )
 
     def _parse_action(self, response: str) -> str:
         """Parse and validate action from LLM response.
-        
+
         Args:
             response: Raw response string from LLM
-            
+
         Returns:
             str: Normalized action ('fold', 'call', or 'raise')
         """
         try:
             # Look for DECISION: line with more flexible parsing
             if "DECISION:" not in response:
-                self.logger.warning(f"No DECISION: found in response: {response[:100]}...")
+                self.logger.warning(
+                    f"No DECISION: found in response: {response[:100]}..."
+                )
                 return "call"
-            
+
             # Extract everything after DECISION: and before next newline
-            decision_line = [line for line in response.split('\n') 
-                            if 'DECISION:' in line][0]
-            action = decision_line.split('DECISION:')[1].strip().split()[0].lower()
-            
+            decision_line = [
+                line for line in response.split("\n") if "DECISION:" in line
+            ][0]
+            action = decision_line.split("DECISION:")[1].strip().split()[0].lower()
+
             # Validate action
-            valid_actions = ["fold", "call", "raise"] 
+            valid_actions = ["fold", "call", "raise"]
             if action not in valid_actions:
-                self.logger.warning(f"Invalid action '{action}' in response: {response[:100]}...")
+                self.logger.warning(
+                    f"Invalid action '{action}' in response: {response[:100]}..."
+                )
                 return "call"
-            
+
             return action
-            
+
         except Exception as e:
-            self.logger.error(f"Error parsing action: {str(e)}\nResponse: {response[:100]}...")
+            self.logger.error(
+                f"Error parsing action: {str(e)}\nResponse: {response[:100]}..."
+            )
             return "call"  # Safe default
 
     def get_relevant_memories(self, query: str) -> List[Dict[str, Any]]:
         """Get relevant memories for decision making.
-        
+
         Args:
             query: Query string to search memories
-            
+
         Returns:
             List[Dict[str, Any]]: List of relevant memories, may be empty
         """
         try:
             # First check how many memories we have available
             all_memories = self.memory_store.get_relevant_memories(query, k=1)
-            
+
             # If we have memories, try getting more
             if all_memories:
                 try:
@@ -1619,19 +1620,19 @@ Example: "DECISION: call"
                 except Exception:
                     # Fall back to the single memory we know exists
                     return all_memories
-            
+
             return []  # No memories found
-            
+
         except Exception as e:
             self.logger.debug(f"Memory retrieval failed: {str(e)}")
             return []  # Return empty list on error
 
     def _create_memory_query(self, game_state: Dict[str, Any]) -> str:
         """Create a query string from game state for memory retrieval.
-        
+
         Args:
             game_state: Dictionary containing current game state
-            
+
         Returns:
             str: Formatted query string for memory retrieval
         """
@@ -1639,26 +1640,26 @@ Example: "DECISION: call"
             # Extract key information from game state
             current_bet = game_state.get("current_bet", 0)
             pot = game_state.get("pot", 0)
-            
+
             # Get player information
             players_info = []
-            for p in game_state.get('players', []):
+            for p in game_state.get("players", []):
                 players_info.append(
                     f"{p['name']}(${p['chips']}, bet:${p.get('bet', 0)})"
                 )
-            
+
             # Create query combining key game state elements
             query = (
                 f"Game situation with pot ${pot}, current bet ${current_bet}, "
                 f"players: {', '.join(players_info)}"
             )
-            
+
             # Add position context if available
             if "position" in game_state:
                 query += f", position: {game_state['position']}"
-            
+
             return query
-            
+
         except Exception as e:
             self.logger.error(f"Error creating memory query: {str(e)}")
             return str(game_state)  # Fallback to basic string conversion

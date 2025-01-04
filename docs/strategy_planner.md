@@ -34,16 +34,18 @@ action = planner.execute_action(game_state)  # returns 'fold', 'call', or 'raise
 
 ## Strategic Plans
 
-Plans are generated in a structured format:
+Plans are generated through LLM queries and follow this format:
 ```python
 {
     "approach": "aggressive/balanced/defensive",
     "reasoning": "Brief explanation of strategy",
     "bet_sizing": "small/medium/large",
-    "bluff_threshold": 0.0-1.0,
-    "fold_threshold": 0.0-1.0
+    "bluff_threshold": 0.0-1.0,  # Probability threshold for bluffing
+    "fold_threshold": 0.0-1.0    # Probability threshold for folding
 }
 ```
+
+The plan includes specific thresholds used to guide decision-making and is automatically renewed after expiration (default 30 seconds) or when significant game state changes occur.
 
 ## Replanning Triggers
 
@@ -85,8 +87,12 @@ Key configuration options:
 ### plan_strategy(game_state: str, chips: int) -> Dict[str, Any]
 Generates a new strategic plan based on current game state and chip stack.
 
-### execute_action(game_state: str) -> str
-Executes the current plan to determine specific poker action.
+### execute_action(game_state: str, hand_eval: Optional[Tuple[int, List[int], str]] = None) -> str
+Executes the current plan to determine specific poker action. Takes into account:
+- Current game state
+- Hand evaluation (rank, tiebreakers, description)
+- Plan thresholds and approach
+- Premium hand overrides for straights or better
 
 ### _requires_replanning(game_state: str) -> bool
 Internal method to check if current situation requires new plan.
@@ -115,3 +121,17 @@ Internal method to parse numerical values from game state.
    - Tournament-specific planning
    - Team game coordination
    - Real-time strategy updates
+
+## LLM Integration
+
+The planner uses OpenAI's GPT-3.5-turbo model with:
+- Temperature: 0.7 for controlled variability
+- Structured prompt formats for planning and execution
+- Error handling for API failures
+
+## Strategic Overrides
+
+The planner includes automatic overrides for premium hands:
+- Prevents folding with strong hands (straight or better) unless pot odds are terrible
+- Upgrades calls to raises with premium hands when using aggressive approach
+- Considers pot odds when making override decisions

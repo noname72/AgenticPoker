@@ -3,6 +3,7 @@ import random
 from typing import List
 
 from .card import Card
+from .base_types import DeckState
 
 
 class Deck:
@@ -29,6 +30,7 @@ class Deck:
             logging.info(f"Shuffling deck with {len(self.cards)} cards")
 
         random.shuffle(self.cards)
+        self.last_action = "shuffle"
 
     def deal(self, num: int = 1) -> List[Card]:
         """
@@ -51,6 +53,7 @@ class Deck:
         dealt = self.cards[:num]
         self.cards = self.cards[num:]
         self.dealt_cards.extend(dealt)
+        self.last_action = f"deal_{num}"
         return dealt
 
     def add_discarded(self, cards: List[Card]) -> None:
@@ -90,4 +93,16 @@ class Deck:
             f"Deck: {len(self.cards)} cards remaining, "
             f"{len(self.dealt_cards)} dealt, "
             f"{len(self.discarded_cards)} discarded"
+        )
+
+    def get_state(self) -> DeckState:
+        """Get the current state of the deck."""
+        return DeckState(
+            cards_remaining=len(self.cards),
+            cards_dealt=len(self.dealt_cards),
+            cards_discarded=len(self.discarded_cards),
+            needs_shuffle=self.needs_reshuffle(
+                5
+            ),  # Check if we need shuffle for a 5-card deal
+            last_action=getattr(self, "last_action", None),
         )

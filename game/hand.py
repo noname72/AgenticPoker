@@ -2,6 +2,7 @@ from typing import List, Optional, Tuple
 
 from .card import Card
 from .evaluator import evaluate_hand
+from .base_types import HandState
 
 
 class Hand:
@@ -132,3 +133,20 @@ class Hand:
             raise ValueError("Cannot evaluate hand: incorrect number of cards")
 
         return evaluate_hand(self.cards)
+
+    def get_state(self) -> HandState:
+        """Get the current state of the hand."""
+        if not self.cards:
+            return HandState(cards=[])
+
+        # Get evaluation if needed
+        if self._rank is None and len(self.cards) == 5:
+            self._rank = self.evaluate()
+
+        return HandState(
+            cards=[str(card) for card in self.cards],
+            rank=self._rank[2] if self._rank else None,  # Description
+            rank_value=self._rank[0] if self._rank else None,  # Numerical rank
+            tiebreakers=list(self._rank[1]) if self._rank else [],  # Tiebreakers
+            is_evaluated=self._rank is not None,
+        )
