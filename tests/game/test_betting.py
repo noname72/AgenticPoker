@@ -6,6 +6,7 @@ from game.betting import (
     calculate_side_pots,
     collect_blinds_and_antes,
     handle_betting_round,
+    validate_bet_to_call,
 )
 from game.player import Player
 from game.types import GameState, SidePot
@@ -906,11 +907,21 @@ def test_betting_round_after_antes(basic_players, mock_game_state):
     final_pot = betting_round(basic_players, initial_pot, mock_game_state)
 
     # Verify final state
-    assert final_pot == 480  # Initial 180 + (100 × 3 new bets)
-    expected_chips = [890, 840, 790]  # Updated chip counts for each player
+    # Initial pot: 180
+    # Player 0 (Dealer): Pays 100 to call
+    # Player 1 (SB): Already paid 50, pays 50 more to call
+    # Player 2 (BB): Already paid 100, no additional payment needed
+    assert final_pot == 330  # Initial 180 + 100 (Dealer) + 50 (SB completing)
+
+    # Expected chip counts:
+    # Player 0 (Dealer): 1000 - 10 (ante) - 100 (call) = 890
+    # Player 1 (SB): 1000 - 10 (ante) - 50 (SB) - 50 (complete) = 890
+    # Player 2 (BB): 1000 - 10 (ante) - 100 (BB) = 890
+    expected_chips = [890, 890, 890]
+
     for i, player in enumerate(basic_players):
-        assert player.chips == expected_chips[i]
-        assert player.bet == 100
+        assert player.chips == expected_chips[i], f"Player {i} has wrong chip count"
+        assert player.bet == 100, f"Player {i} has wrong bet amount"
 
 
 def test_big_blind_betting_behavior(mock_game_state):
@@ -939,3 +950,198 @@ def test_big_blind_betting_behavior(mock_game_state):
     assert players[2].bet == 100
     assert players[2].chips == 900
     assert result == 560
+
+
+def test_small_blind_calling_big_blind():
+    """Test that small blind only needs to pay the difference to call big blind."""
+    # Create players with 1000 chips each
+    players = [
+        Player("Dealer", 1000),
+        Player("Small Blind", 1000),  # Will be in small blind position
+        Player("Big Blind", 1000),  # Will be in big blind position
+        Player("UTG", 1000),  # Under the gun
+    ]
+
+    # Create game state with blinds configuration
+    game_state = GameState(
+        players=[],
+        dealer_position=0,
+        small_blind=50,
+        big_blind=100,
+        ante=0,
+        min_bet=100,
+        round_state=RoundState(
+            round_number=1,
+            phase="pre_draw",
+            current_bet=100,  # Current bet is big blind amount
+            raise_count=0,
+            big_blind_position=2,  # Position 2 is BB
+            small_blind_position=1,  # Position 1 is SB
+        ),
+        pot_state=PotState(main_pot=0),
+        deck_state=DeckState(cards_remaining=52),
+    )
+
+    # First collect blinds
+    collected = collect_blinds_and_antes(
+        players=players, dealer_index=0, small_blind=50, big_blind=100, ante=0
+    )
+
+    # Verify initial blind postings
+    assert collected == 150  # SB(50) + BB(100)
+    assert players[1].bet == 50  # Small blind posted
+    assert players[1].chips == 950  # 1000 - 50
+    assert players[2].bet == 100  # Big blind posted
+    assert players[2].chips == 900  # 1000 - 100
+
+    # Mock player decisions
+    # UTG calls
+    players[3].decide_action = lambda x: ("call", 100)
+    # Dealer calls
+    players[0].decide_action = lambda x: ("call", 100)
+    # Small blind calls (should only need to pay 50 more)
+    players[1].decide_action = lambda x: ("call", 100)
+    # Big blind checks
+    players[2].decide_action = lambda x: ("check", 0)
+
+    # Run betting round
+    result = betting_round(players, collected, game_state)
+
+    # Verify final state
+    assert (
+        players[1].chips == 900
+    ), f"Small blind should have 900 chips left (1000 - 50 - 50), but has {players[1].chips}"
+    assert (
+        players[1].bet == 100
+    ), f"Small blind's total bet should be 100, but is {players[1].bet}"
+
+    # Verify other players
+    assert players[0].chips == 900  # Dealer paid full 100
+    assert players[2].chips == 900  # BB only paid initial 100
+    assert players[3].chips == 900  # UTG paid full 100
+
+    # Verify pot
+    assert result == 400, f"Pot should be 400 (4 players × 100), but is {result}"
+
+
+def test_validate_bet_to_call():
+    """Test that validate_bet_to_call correctly calculates amounts for different scenarios."""
+    # Test cases:
+    # 1. Regular player with no prior bet
+    assert validate_bet_to_call(100, 0) == 100, "Regular player should pay full amount"
+
+    # 2. Small blind completing to big blind
+    assert (
+        validate_bet_to_call(100, 50) == 50
+    ), "Small blind should only pay the difference"
+
+    # 3. Big blind when no raises (current_bet equals their posted amount)
+    assert (
+        validate_bet_to_call(100, 100, is_big_blind=True) == 0
+    ), "Big blind shouldn't need to call their own bet"
+
+    # 4. Big blind when there's a raise
+    assert (
+        validate_bet_to_call(200, 100, is_big_blind=True) == 100
+    ), "Big blind should pay difference after raise"
+
+    # 5. Player who has already bet some amount
+    assert (
+        validate_bet_to_call(300, 200) == 100
+    ), "Player should only pay the difference from their current bet"
+
+    # 6. Edge case: current bet less than player's bet (shouldn't happen, but should handle gracefully)
+    assert (
+        validate_bet_to_call(50, 100) == 0
+    ), "Should return 0 if current bet is less than player bet"
+
+
+def test_betting_round_with_posted_blinds(mock_game_state):
+    """Test that betting round correctly handles players who have already posted blinds."""
+    # Create players with 1000 chips each
+    players = [
+        Player("Dealer", 1000),
+        Player("Small Blind", 1000),
+        Player("Big Blind", 1000),
+        Player("UTG", 1000),
+    ]
+
+    print("\nInitial state:")
+    for p in players:
+        print(f"{p.name}: chips={p.chips}, bet={p.bet}")
+
+    # First simulate blind postings
+    # Small blind posts 50
+    players[1].chips -= 50
+    players[1].bet = 50
+    # Big blind posts 100
+    players[2].chips -= 100
+    players[2].bet = 100
+    # Also simulate antes of 10 each
+    for player in players:
+        player.chips -= 10
+
+    print("\nAfter blinds and antes:")
+    for p in players:
+        print(f"{p.name}: chips={p.chips}, bet={p.bet}")
+
+    # Update game state
+    mock_game_state.round_state.current_bet = 100  # Current bet is BB amount
+    mock_game_state.round_state.big_blind_position = 2
+    mock_game_state.round_state.small_blind_position = 1
+
+    # Track initial chip counts
+    initial_chips = {p: p.chips for p in players}
+
+    print("\nGame state:")
+    print(f"Current bet: {mock_game_state.round_state.current_bet}")
+    print(f"BB position: {mock_game_state.round_state.big_blind_position}")
+    print(f"SB position: {mock_game_state.round_state.small_blind_position}")
+
+    # Define player actions
+    players[0].decide_action = lambda x: ("call", 100)  # Dealer calls
+    players[1].decide_action = lambda x: ("call", 100)  # SB completes
+    players[2].decide_action = lambda x: ("check", 0)  # BB checks
+    players[3].decide_action = lambda x: ("call", 100)  # UTG calls
+
+    # Run betting round
+    initial_pot = 170  # Antes (40) + SB (50) + BB (100)
+    print(f"\nStarting betting round with initial pot: {initial_pot}")
+    
+    result = betting_round(players, initial_pot, mock_game_state)
+
+    print("\nAfter betting round:")
+    print(f"Final pot: {result}")
+    for p in players:
+        print(
+            f"{p.name}: chips={p.chips}, bet={p.bet}, "
+            f"total paid={1000 - p.chips}, "
+            f"folded={p.folded}"
+        )
+
+    # Update expected pot value to 420
+    assert result == 420, f"Expected pot of 420, got {result}"
+
+    # Verify each player's chips and bets
+    # Dealer should have paid: 10 (ante) + 100 (call) = 110
+    assert players[0].chips == 890, f"Dealer should have 890 chips, has {players[0].chips}"
+    assert players[0].bet == 100, f"Dealer's bet should be 100, is {players[0].bet}"
+
+    # Small Blind should have paid: 10 (ante) + 50 (SB) + 50 (complete) = 110
+    assert players[1].chips == 890, f"SB should have 890 chips, has {players[1].chips}"
+    assert players[1].bet == 100, f"SB's bet should be 100, is {players[1].bet}"
+
+    # Big Blind should have paid: 10 (ante) + 100 (BB) = 110
+    assert players[2].chips == 890, f"BB should have 890 chips, has {players[2].chips}"
+    assert players[2].bet == 100, f"BB's bet should be 100, is {players[2].bet}"
+
+    # UTG should have paid: 10 (ante) + 100 (call) = 110
+    assert players[3].chips == 890, f"UTG should have 890 chips, has {players[3].chips}"
+    assert players[3].bet == 100, f"UTG's bet should be 100, is {players[3].bet}"
+
+    print("\nExpected vs Actual:")
+    print("Expected: Each player should have paid 110 total (ante + bet)")
+    print("Expected: Final pot should be 420 (initial 170 + 3 calls of 100)")
+    print(f"Actual pot: {result}")
+    for p in players:
+        print(f"{p.name} paid total: {1000 - p.chips}")

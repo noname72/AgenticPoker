@@ -71,13 +71,9 @@ def betting_round(
     if current_bet <= 0:
         current_bet = game_state.min_bet if game_state else 10
 
-    # Reset has_acted flag for all players at start of round
+    # Reset has_acted flag at start, but **do not** zero-out the player.bet
     for player in players:
         player.has_acted = False
-        player.bet = 0  # Reset bets at start of round
-        # Set big blind status on player
-        if big_blind_player:
-            player.is_big_blind = player == big_blind_player
 
     # Track who needs to act and who has acted since last raise
     needs_to_act = set(active_players)
@@ -209,7 +205,7 @@ def _get_action_and_amount(
     try:
         if hasattr(player, "decide_action"):
             decision = player.decide_action(game_state)
-            # If the player returns just 'fold'/'call'/'raise', default the amount
+            # If the player returns just 'fold'/'call'/'raise'/'check', default the amount
             if isinstance(decision, tuple):
                 action, amount = decision
             else:
@@ -218,9 +214,21 @@ def _get_action_and_amount(
             # Fallback to calling if no custom logic is provided
             action, amount = "call", current_bet
 
-        # If action is invalid, default to "call" for safety
-        if action not in ("fold", "call", "raise"):
+        # Recognize 'check' as a valid action
+        valid_actions = ("fold", "call", "raise", "check")
+        if action not in valid_actions:
+            # Default to call if unrecognized action
             action, amount = "call", current_bet
+
+        if action == "check":
+            # If player hasn't posted at least current_bet, they can't truly check
+            if player.bet < current_bet:
+                # Convert to call
+                action = "call"
+                amount = current_bet
+            else:
+                # Enough chips already posted; no additional amount needed
+                amount = player.bet
 
         # For raises, amount represents the total bet they want to make
         if action == "raise":
@@ -253,12 +261,9 @@ def validate_bet_to_call(
         int: The additional amount the player needs to bet to call.
             Returns 0 for big blind when no raises have occurred.
     """
-    # If player is big blind and no raises have occurred (current_bet equals BB amount),
-    # they don't need to call anything
-    if is_big_blind and current_bet == player_bet:
-        return 0
-
-    bet_to_call = max(0, current_bet - player_bet)  # Can't be negative
+    bet_to_call = max(
+        0, current_bet - player_bet
+    )  # Works for both blinds and everyone else
     return bet_to_call
 
 
@@ -316,20 +321,19 @@ def _process_player_action(
         min_raise_amount = last_raiser.bet * 2  # Double the last raise
 
     # Log initial state with active player context
-    # logging.info(f"\n{player.name}'s turn:") #!
-    logging.info(
-        f"  Active players: {[p.name for p in active_players if not p.folded]}"
-    )
+    logging.info(f"  Active players: {[p.name for p in active_players if not p.folded]}")
     logging.info(f"  Last raiser: {last_raiser.name if last_raiser else 'None'}")
-    logging.info(
-        f"  Hand: {player.hand.show() if hasattr(player, 'hand') else 'Unknown'}"
-    )
+    logging.info(f"  Hand: {player.hand.show() if hasattr(player, 'hand') else 'Unknown'}")
     logging.info(f"  Current bet to call: ${to_call}")
     logging.info(f"  Player chips: ${player.chips}")
     logging.info(f"  Player current bet: ${player.bet}")
     logging.info(f"  Current pot: ${pot}")
 
-    if action == "fold":
+    if action == "check":
+        logging.info(f"{player.name} checks")
+        return pot, current_bet, None
+
+    elif action == "fold":
         player.folded = True
         logging.info(f"{player.name} folds")
 
@@ -337,6 +341,8 @@ def _process_player_action(
         # Player can only bet what they have
         bet_amount = min(to_call, player.chips)
         actual_bet = player.place_bet(bet_amount)
+        
+        # Add the bet to the pot
         pot += actual_bet
 
         # If they went all-in trying to call, count it as a raise
@@ -345,6 +351,7 @@ def _process_player_action(
 
         status = " (all in)" if player.chips == 0 else ""
         logging.info(f"{player.name} calls ${bet_amount}{status}")
+        logging.info(f"  Pot after call: ${pot}")
 
     elif action == "raise":
         # Get current raise count
