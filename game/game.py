@@ -439,6 +439,10 @@ class AgenticPoker:
         players_count = len(self.players)
         player_states = []
 
+        # Calculate blind positions
+        sb_pos = (self.dealer_index + 1) % players_count
+        bb_pos = (self.dealer_index + 2) % players_count
+
         for i, player in enumerate(self.players):
             # Calculate position relative to dealer
             position_index = (i - self.dealer_index) % players_count
@@ -467,6 +471,12 @@ class AgenticPoker:
         # Create or update round state
         if not hasattr(self, "round_state"):
             self.round_state = RoundState.new_round(self.round_number)
+
+        # Set positions in round state
+        self.round_state.dealer_position = self.dealer_index
+        self.round_state.small_blind_position = sb_pos
+        self.round_state.big_blind_position = bb_pos
+        self.round_state.first_bettor_index = (bb_pos + 1) % players_count
 
         # Update round state with current pot info
         self.round_state.main_pot = self.pot_manager.pot

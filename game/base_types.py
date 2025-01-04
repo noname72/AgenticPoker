@@ -122,6 +122,26 @@ class PlayerState:
     total_winnings: int = 0
     biggest_pot_won: int = 0
 
+    def __getitem__(self, key: str) -> Any:
+        """Enable dictionary-style access to player state attributes."""
+        if hasattr(self, key):
+            return getattr(self, key)
+        # Convert to dict for legacy dictionary access
+        return self.to_dict()[key]
+
+    def __contains__(self, key: str) -> bool:
+        """Support 'in' operator for checking if attributes exist."""
+        if hasattr(self, key):
+            return True
+        return key in self.to_dict()
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Implement dict-style .get() method."""
+        try:
+            return self[key]
+        except (KeyError, AttributeError):
+            return default
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert player state to dictionary representation."""
         return {
@@ -132,7 +152,7 @@ class PlayerState:
                 "folded": self.folded,
             },
             "position": {
-                "type": self.position.value,
+                "type": str(self.position.value),
                 "seat": self.seat_number,
                 "is_dealer": self.is_dealer,
                 "is_small_blind": self.is_small_blind,
@@ -156,6 +176,17 @@ class PlayerState:
                 "total_winnings": self.total_winnings,
                 "biggest_pot": self.biggest_pot_won,
             },
+            # Add flattened access to common attributes
+            "name": self.name,
+            "chips": self.chips,
+            "bet": self.bet,
+            "folded": self.folded,
+            "position": str(self.position.value),
+            "hand": str(self.hand) if self.hand else None,
+            "hand_rank": str(self.hand_rank) if self.hand_rank else None,
+            "has_acted": self.has_acted,
+            "is_all_in": self.is_all_in,
+            "is_active": self.is_active,
         }
 
 
@@ -182,6 +213,12 @@ class RoundState:
     acted_this_phase: List[str] = field(
         default_factory=list
     )  # Names of players who have acted
+
+    # Position tracking
+    dealer_position: Optional[int] = None
+    small_blind_position: Optional[int] = None
+    big_blind_position: Optional[int] = None
+    first_bettor_index: Optional[int] = None
 
     # Pot tracking
     main_pot: int = 0
@@ -212,6 +249,12 @@ class RoundState:
                 "last_aggressor": self.last_aggressor,
                 "needs_to_act": self.needs_to_act,
                 "acted_this_phase": self.acted_this_phase,
+            },
+            "positions": {
+                "dealer": self.dealer_position,
+                "small_blind": self.small_blind_position,
+                "big_blind": self.big_blind_position,
+                "first_bettor": self.first_bettor_index,
             },
             "pot": {"main": self.main_pot, "side_pots": self.side_pots},
             "draw_phase": {"cards_drawn": self.cards_drawn},

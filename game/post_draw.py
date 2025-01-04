@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Tuple
 from . import betting
 from .player import Player
 from .pot_manager import PotManager
-from .types import SidePot
+from .types import SidePot, GameState
 from .utils import log_chip_movements
 
 
@@ -12,13 +12,30 @@ def handle_post_draw_betting(
     players: List[Player],
     pot: int,
     dealer_index: int,
-    game_state: Optional[dict] = None,
+    game_state: Optional[GameState] = None,
 ) -> Tuple[int, Optional[List[SidePot]], bool]:
-    """Handle the post-draw betting round."""
-    # Add dealer_index to game_state if not already present
-    if game_state is None:
-        game_state = {}
-    game_state["dealer_index"] = dealer_index
+    """
+    Handle the post-draw betting round.
+
+    Args:
+        players: List of players in the game
+        pot: Current pot amount
+        dealer_index: Index of the dealer
+        game_state: Optional GameState object containing game state information
+
+    Returns:
+        Tuple containing:
+        - int: New pot amount after betting
+        - Optional[List[SidePot]]: List of side pots if any were created
+        - bool: True if the game should continue to showdown
+    """
+    game_state = betting.create_or_update_betting_state(
+        players=players,
+        pot=pot,
+        dealer_index=dealer_index,
+        game_state=game_state,
+        phase="post_draw",
+    )
 
     return betting.handle_betting_round(
         players=players,

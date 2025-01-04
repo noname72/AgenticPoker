@@ -30,32 +30,21 @@ Key features:
 """
 
 import logging
-from typing import List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 from .player import Player
-from .types import SidePot
+from .types import GameState, SidePot
 
 
 def betting_round(
-    players: List[Player], current_pot: int, game_state: Optional[dict] = None
+    players: List[Player], current_pot: int, game_state: Optional[GameState] = None
 ) -> Union[int, Tuple[int, List[SidePot]]]:
     """Manages a complete round of betting among active players.
-
-    Handles the full betting sequence including:
-    - Processing each player's actions (fold/call/raise)
-    - Tracking betting order and amounts
-    - Managing all-in situations
-    - Creating side pots when necessary
-    - Enforcing betting rules and limits
 
     Args:
         players: List of active players in the game
         current_pot: The current amount in the pot
-        game_state: Optional dictionary containing game state information like:
-            - current_bet: Current bet amount
-            - max_raise_multiplier: Maximum raise multiplier (default 3)
-            - max_raises_per_round: Maximum raises allowed per round (default 4)
-            - raise_count: Current number of raises in this round
+        game_state: Optional GameState object containing game state information
 
     Returns:
         Either:
@@ -68,21 +57,27 @@ def betting_round(
     round_complete = False
     last_raiser = None
 
-    # Create a copy of game state at the start
-    current_game_state = {} if game_state is None else game_state.copy()
-
     # Get current bet and big blind position from game state
-    current_bet = current_game_state.get("current_bet", 0)
-    big_blind_position = current_game_state.get("big_blind_position")
+    current_bet = game_state.round_state.current_bet if game_state else 0
 
-    # If there is no current bet, define a minimum bet (e.g., 10)
+    # Get big blind player based on position
+    big_blind_player = None
+    if game_state and game_state.round_state.big_blind_position is not None:
+        bb_index = game_state.round_state.big_blind_position
+        if 0 <= bb_index < len(players):
+            big_blind_player = players[bb_index]
+
+    # If there is no current bet, use minimum bet from game state or default
     if current_bet <= 0:
-        current_bet = 10
+        current_bet = game_state.min_bet if game_state else 10
 
     # Reset has_acted flag for all players at start of round
     for player in players:
         player.has_acted = False
         player.bet = 0  # Reset bets at start of round
+        # Set big blind status on player
+        if big_blind_player:
+            player.is_big_blind = player == big_blind_player
 
     # Track who needs to act and who has acted since last raise
     needs_to_act = set(active_players)
@@ -193,7 +188,7 @@ def betting_round(
 
 
 def _get_action_and_amount(
-    player: Player, current_bet: int, game_state: Optional[dict]
+    player: Player, current_bet: int, game_state: Optional[GameState]
 ) -> Tuple[str, int]:
     """Retrieves and validates a player's betting action and amount.
 
@@ -276,7 +271,7 @@ def _process_player_action(
     last_raiser: Optional[Player],
     active_players: List[Player],
     all_in_players: List[Player],
-    game_state: Optional[dict] = None,
+    game_state: Optional[GameState] = None,
 ) -> Tuple[int, int, Optional[Player]]:
     """Processes a player's betting action and updates game state accordingly.
 
@@ -307,16 +302,12 @@ def _process_player_action(
     new_last_raiser = None
 
     # Get max raise settings from game state
-    max_raise_multiplier = (
-        game_state.get("max_raise_multiplier", 3) if game_state else 3
-    )
-    max_raises_per_round = (
-        game_state.get("max_raises_per_round", 4) if game_state else 4
-    )
-    raise_count = game_state.get("raise_count", 0) if game_state else 0
+    max_raise_multiplier = game_state.max_raise_multiplier if game_state else 3
+    max_raises_per_round = game_state.max_raises_per_round if game_state else 4
+    raise_count = game_state.round_state.raise_count if game_state else 0
 
     # Calculate how much player needs to call, accounting for big blind position
-    is_big_blind = game_state and game_state.get("big_blind_position") == player
+    is_big_blind = player.is_big_blind if hasattr(player, "is_big_blind") else False
     to_call = validate_bet_to_call(current_bet, player.bet, is_big_blind)
 
     # Add validation for minimum raise amount based on last raiser's bet
@@ -356,69 +347,56 @@ def _process_player_action(
         logging.info(f"{player.name} calls ${bet_amount}{status}")
 
     elif action == "raise":
-        # Validate raise against minimum raise amount
-        if amount < min_raise_amount:
-            action = "call"
-            amount = current_bet
-            logging.info(
-                f"Raise amount ${amount} below minimum (${min_raise_amount}), converting to call"
-            )
-        else:
-            # Check if this player is allowed to raise based on position and active players
-            can_raise = True
-            if last_raiser:
-                # Prevent same player from raising twice in a row unless they're the only active player
-                active_non_folded = [
-                    p for p in active_players if not p.folded and p.chips > 0
-                ]
-                if player == last_raiser and len(active_non_folded) > 1:
-                    can_raise = False
-                    logging.info(f"{player.name} cannot raise twice in a row")
+        # Get current raise count
+        raise_count = game_state.round_state.raise_count if game_state else 0
+        min_bet = game_state.min_bet if game_state else 10
 
-            if not can_raise:
-                action = "call"
-                amount = current_bet
-
-        # For raises, amount represents the total bet they want to make
-        total_wanted_bet = amount
-
-        # Calculate the actual amount they can bet
-        max_raise = current_bet * max_raise_multiplier
-        max_possible_bet = min(player.chips + player.bet, max_raise)
-        actual_total_bet = min(total_wanted_bet, max_possible_bet)
-
-        # If we've already hit the max raises, treat as a call
+        # Check if we've hit max raises
         if raise_count >= max_raises_per_round:
+            logging.info(
+                f"Max raises ({max_raises_per_round}) reached, converting raise to call"
+            )
             bet_amount = min(to_call, player.chips)
             actual_bet = player.place_bet(bet_amount)
             pot += actual_bet
             logging.info(f"{player.name} calls ${bet_amount} (max raises reached)")
-        else:
-            # Valid raise or all-in
-            to_add = min(actual_total_bet - player.bet, player.chips)
-            actual_bet = player.place_bet(to_add)
+            return pot, current_bet, None
+
+        # Calculate minimum raise amount
+        min_raise = current_bet + min_bet
+
+        # Validate raise amount
+        if amount < min_raise:
+            logging.info(
+                f"Raise amount ${amount} below minimum (${min_raise}), converting to call"
+            )
+            bet_amount = min(to_call, player.chips)
+            actual_bet = player.place_bet(bet_amount)
             pot += actual_bet
+            return pot, current_bet, None
 
-            # For raises, update current bet if it's higher
-            if actual_total_bet > current_bet:
-                current_bet = actual_total_bet
-                new_last_raiser = player
-                # Increment raise count in the game state
-                if game_state is not None:
-                    game_state["raise_count"] = raise_count + 1
-            elif player.chips == 0:
-                # All-in below current bet still counts as a raise
-                new_last_raiser = player
-                if game_state is not None:
-                    game_state["raise_count"] = raise_count + 1
+        # Process valid raise
+        total_wanted_bet = amount
+        max_raise = current_bet * max_raise_multiplier
+        max_possible_bet = min(player.chips + player.bet, max_raise)
+        actual_total_bet = min(total_wanted_bet, max_possible_bet)
 
-            status = " (all in)" if player.chips == 0 else ""
-            if actual_total_bet < total_wanted_bet:
+        to_add = min(actual_total_bet - player.bet, player.chips)
+        actual_bet = player.place_bet(to_add)
+        pot += actual_bet
+
+        # Update current bet and raise count for valid raises only
+        if actual_total_bet > current_bet:
+            current_bet = actual_total_bet
+            new_last_raiser = player
+            if game_state is not None:
+                game_state.round_state.raise_count += 1
                 logging.info(
-                    f"{player.name} raises to ${actual_total_bet}{status} (capped at {max_raise_multiplier}x)"
+                    f"Raise count increased to {game_state.round_state.raise_count}"
                 )
-            else:
-                logging.info(f"{player.name} raises to ${actual_total_bet}{status}")
+
+        status = " (all in)" if player.chips == 0 else ""
+        logging.info(f"{player.name} raises to ${actual_total_bet}{status}")
 
     # Update all-in status considering active players
     if player.chips == 0 and not player.folded:
@@ -435,6 +413,14 @@ def _process_player_action(
     logging.info(f"  Pot after action: ${pot}")
     logging.info(f"  {player.name}'s remaining chips: ${player.chips}")
     logging.info("")
+
+    # Update game state if provided, but DON'T increment raise count here
+    if game_state:
+        game_state.round_state.current_bet = current_bet
+        if new_last_raiser:
+            game_state.round_state.last_raiser = new_last_raiser.name
+            # Remove this line to prevent double-counting raises
+            # game_state.round_state.raise_count += 1
 
     return pot, current_bet, new_last_raiser
 
@@ -588,25 +574,20 @@ def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante
 def handle_betting_round(
     players: List[Player],
     pot: int,
-    game_state: Optional[dict],
+    game_state: Optional[Union[Dict, GameState]],
 ) -> Tuple[int, Optional[List[SidePot]], bool]:
     """Manages a complete betting round and determines if the game should continue.
-
-    Coordinates the entire betting process including:
-    - Running the betting round
-    - Managing side pots
-    - Determining if the game should continue
 
     Args:
         players: List of active players
         pot: Current pot amount
-        game_state: Optional game state information
+        game_state: GameState object or legacy dict containing game state
 
     Returns:
         Tuple containing:
         - int: New pot amount
         - Optional[List[SidePot]]: Any side pots created
-        - bool: Whether the game should continue (False if only one player remains)
+        - bool: Whether the game should continue
     """
     if not players:
         raise ValueError("Cannot run betting round with no players")
@@ -615,9 +596,13 @@ def handle_betting_round(
     if any(not isinstance(p, Player) for p in players):
         raise TypeError("All elements in players list must be Player instances")
 
+    # Convert to proper GameState if needed
+    dealer_index = getattr(game_state, "dealer_position", 0) if game_state else 0
+    game_state = _ensure_game_state(game_state, pot, dealer_index)
+
     active_players = [p for p in players if not p.folded]
 
-    # Run betting round
+    # Run betting round with validated GameState
     result = betting_round(active_players, pot, game_state)
 
     # Handle return value based on whether side pots were created
@@ -627,8 +612,113 @@ def handle_betting_round(
         new_pot = result
         side_pots = None
 
+    # Update game state
+    game_state.pot_state.main_pot = new_pot
+    if side_pots:
+        game_state.pot_state.side_pots = [
+            {
+                "amount": pot.amount,
+                "eligible_players": [p.name for p in pot.eligible_players],
+            }
+            for pot in side_pots
+        ]
+
     # Determine if game should continue
     active_count = sum(1 for p in players if not p.folded)
     should_continue = active_count > 1
 
     return new_pot, side_pots, should_continue
+
+
+def create_or_update_betting_state(
+    players: List[Player],
+    pot: int,
+    dealer_index: int,
+    game_state: Optional[GameState] = None,
+    phase: str = "pre_draw",
+) -> GameState:
+    """
+    Create a new game state or update an existing one for betting rounds.
+
+    Args:
+        players: List of players in the game
+        pot: Current pot amount
+        dealer_index: Index of the dealer
+        game_state: Optional existing game state to update
+        phase: Current game phase ("pre_draw" or "post_draw")
+
+    Returns:
+        GameState: New or updated game state
+    """
+    if game_state is None:
+        # Import here to avoid circular import
+        from .base_types import DeckState, PotState, RoundState
+
+        game_state = GameState(
+            players=[],  # Will be populated by betting module
+            dealer_position=dealer_index,
+            small_blind=0,  # Will be set by betting module
+            big_blind=0,  # Will be set by betting module
+            ante=0,  # Will be set by betting module
+            min_bet=0,  # Will be set by betting module
+            round_state=RoundState.new_round(1),
+            pot_state=PotState(main_pot=pot),
+            deck_state=DeckState(cards_remaining=0),  # Placeholder
+        )
+    else:
+        # Use the existing game state, but ensure dealer position is set
+        game_state.dealer_position = dealer_index
+        game_state.round_state.phase = phase
+
+    # Set first bettor position in round state
+    game_state.round_state.first_bettor_index = (dealer_index + 1) % len(players)
+
+    return game_state
+
+
+def _ensure_game_state(
+    game_state: Optional[Union[Dict, GameState]], pot: int, dealer_index: int
+) -> GameState:
+    """Ensures we have a proper GameState object.
+
+    Converts legacy dict format if needed or creates new GameState.
+    """
+    if game_state is None:
+        # Create new GameState
+        from .base_types import DeckState, PotState, RoundState
+
+        return GameState(
+            players=[],  # Will be populated later
+            dealer_position=dealer_index,
+            small_blind=0,
+            big_blind=0,
+            ante=0,
+            min_bet=0,
+            round_state=RoundState.new_round(1),
+            pot_state=PotState(main_pot=pot),
+            deck_state=DeckState(cards_remaining=0),
+        )
+    elif isinstance(game_state, dict):
+        # Convert legacy dict to GameState
+        from .base_types import DeckState, PotState, RoundState
+
+        return GameState(
+            players=[],  # Will be populated from players list
+            dealer_position=game_state.get("dealer_index", dealer_index),
+            small_blind=game_state.get("small_blind", 0),
+            big_blind=game_state.get("big_blind", 0),
+            ante=game_state.get("ante", 0),
+            min_bet=game_state.get("min_bet", 0),
+            round_state=RoundState(
+                round_number=1,
+                phase=game_state.get("phase", "pre_draw"),
+                current_bet=game_state.get("current_bet", 0),
+                raise_count=game_state.get("raise_count", 0),
+            ),
+            pot_state=PotState(main_pot=pot),
+            deck_state=DeckState(cards_remaining=0),
+        )
+    elif isinstance(game_state, GameState):
+        return game_state
+    else:
+        raise TypeError("game_state must be None, dict, or GameState")

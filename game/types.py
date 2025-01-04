@@ -46,7 +46,10 @@ class GameState:
                 "dealer": self.dealer_position,
                 "active_player": self.active_player_position,
             },
-            "round_state": self.round_state.to_dict(),
+            "round_state": {
+                **self.round_state.to_dict(),
+                "phase": str(self.round_state.phase),
+            },
             "pot_state": self.pot_state.to_dict(),
             "deck_state": self.deck_state.to_dict(),
             # Add pot directly at top level for backward compatibility
@@ -70,6 +73,13 @@ class GameState:
         if hasattr(self, key):
             return True
         return key in self.to_dict()
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Implement dict-style .get() method."""
+        try:
+            return self[key]
+        except (KeyError, AttributeError):
+            return default
 
 
 @dataclass
