@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import Mock, patch
 from agents.llm_agent import LLMAgent
+import os
 
 
 @pytest.fixture(autouse=True)
@@ -41,3 +42,11 @@ def mock_memory_store():
             pass
 
     return MockMemoryStore()
+
+
+@pytest.fixture(autouse=True)
+def setup_test_env():
+    """Set up test environment variables"""
+    os.environ['PYTEST_RUNNING'] = 'true'
+    yield
+    os.environ.pop('PYTEST_RUNNING', None)

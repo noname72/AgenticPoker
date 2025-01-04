@@ -12,7 +12,7 @@ def agent(mock_memory_store):
     agent = LLMAgent(
         name="TestAgent",
         chips=1000,
-        strategy_style=StrategyStyle.AGGRESSIVE,
+        strategy_style="Aggressive Bluffer",
         use_reasoning=True,
         use_reflection=True,
         use_planning=True,
@@ -87,12 +87,12 @@ def test_update_strategy(mock_query, agent):
         "reasoning": "Opponent shows high aggression, need to adapt"
     }
     """
-    
+
     initial_style = agent.strategy_style
-    
+
     # Test strategy update
     agent.update_strategy({"chips": 100, "opponent_aggression": 0.8})
-    
+
     # Strategy should be updated based on mock response
     assert agent.strategy_style == StrategyStyle.AGGRESSIVE
     assert agent.strategy_style == initial_style  # Since mock returns same style
@@ -100,7 +100,9 @@ def test_update_strategy(mock_query, agent):
     # Test error handling
     mock_query.return_value = "invalid json"
     agent.update_strategy({"chips": 100, "opponent_aggression": 0.8})
-    assert agent.strategy_style == initial_style  # Should maintain current strategy if update fails
+    assert (
+        agent.strategy_style == initial_style
+    )  # Should maintain current strategy if update fails
 
 
 @patch("agents.llm_agent.LLMAgent._query_llm")
@@ -535,7 +537,7 @@ def test_strategy_manager_integration(agent):
     """Test integration with strategy manager."""
     # Test strategy prompt generation
     prompt = agent._get_decision_prompt("pot: $100")
-    assert "StrategyStyle.AGGRESSIVE" in prompt  # Check for actual string in prompt
+    assert "Aggressive Bluffer" in prompt  # Check for actual string in prompt
     assert "pot: $100" in prompt
 
     # Test strategy module activation
