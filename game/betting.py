@@ -96,6 +96,7 @@ def betting_round(
         round_complete = True
 
         for player in active_players:
+            logging.info(f"---- {player.name} is active ----")
             # Skip if player can't act
             if player.folded or player.chips == 0:
                 continue
@@ -324,7 +325,7 @@ def _process_player_action(
         min_raise_amount = last_raiser.bet * 2  # Double the last raise
 
     # Log initial state with active player context
-    logging.info(f"\n{player.name}'s turn:")
+    # logging.info(f"\n{player.name}'s turn:") #!
     logging.info(
         f"  Active players: {[p.name for p in active_players if not p.folded]}"
     )
@@ -433,6 +434,7 @@ def _process_player_action(
     # Log updated state
     logging.info(f"  Pot after action: ${pot}")
     logging.info(f"  {player.name}'s remaining chips: ${player.chips}")
+    logging.info("")
 
     return pot, current_bet, new_last_raiser
 

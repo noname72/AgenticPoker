@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
 from game.player import Player
 

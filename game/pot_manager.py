@@ -3,6 +3,7 @@ from typing import Dict, List, Optional
 
 from exceptions import InvalidGameStateError
 
+from .base_types import PotState
 from .player import Player
 from .types import SidePot, SidePotView
 
@@ -93,9 +94,7 @@ class PotManager:
         self.pot = 0
         self.side_pots = None
 
-        logging.debug(
-            f"Pot reset: Main {old_pot}->0, " f"Side pots {old_side_pots}->None"
-        )
+        logging.debug(f"Pot reset: Main {old_pot}->0, Side pots {old_side_pots}->None")
 
     def calculate_side_pots(self, active_players: List[Player]) -> List[SidePot]:
         """
@@ -375,3 +374,21 @@ class PotManager:
 
         # Log for debugging
         logging.debug(f"End of betting round - New pot total: {self.pot}")
+
+    def get_state(self) -> PotState:
+        """Get the current state of the pot manager."""
+        total_chips = self.pot
+        if self.side_pots:  # Only add if there are side pots
+            total_chips += sum(pot.amount for pot in self.side_pots)
+
+        return PotState(
+            main_pot=self.pot,
+            side_pots=[
+                {
+                    "amount": pot.amount,
+                    "eligible_players": [p.name for p in pot.eligible_players],
+                }
+                for pot in (self.side_pots or [])
+            ],  # Will be empty list if no side pots
+            total_chips_in_play=total_chips,
+        )

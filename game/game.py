@@ -3,10 +3,12 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
 
 from . import betting, draw, post_draw, pre_draw
+from .base_types import PlayerPosition, PlayerState, RoundState
 from .deck import Deck
 from .hand import Hand
 from .player import Player
 from .pot_manager import PotManager
+from .types import GameState, SidePot
 from .utils import log_chip_movements
 
 
@@ -431,30 +433,69 @@ class AgenticPoker:
 
         return True
 
-    def _create_game_state(self) -> dict:
-        """Create a dictionary containing the current game state."""
-        # Calculate big blind position (2 seats after dealer)
-        big_blind_pos = (self.dealer_index + 2) % len(self.players)
-        big_blind_player = self.players[big_blind_pos]
+    def _create_game_state(self) -> GameState:
+        """Create a structured game state object."""
+        # Calculate positions
+        players_count = len(self.players)
+        player_states = []
 
-        return {
-            "pot": self.pot_manager.pot,
-            "players": [
-                {
-                    "name": p.name,
-                    "chips": p.chips,
-                    "bet": p.bet,
-                    "folded": p.folded,
-                    "position": i,
-                }
-                for i, p in enumerate(self.players)
-            ],
-            "current_bet": max(p.bet for p in self.players) if self.players else 0,
-            "small_blind": self.small_blind,
-            "big_blind": self.big_blind,
-            "dealer_index": self.dealer_index,
-            "big_blind_position": big_blind_player,  # Add big blind player to game state
-        }
+        for i, player in enumerate(self.players):
+            # Calculate position relative to dealer
+            position_index = (i - self.dealer_index) % players_count
+            position = {
+                0: PlayerPosition.DEALER,
+                1: PlayerPosition.SMALL_BLIND,
+                2: PlayerPosition.BIG_BLIND,
+                3: PlayerPosition.UNDER_THE_GUN,
+                -1: PlayerPosition.CUTOFF,  # Second to last position
+            }.get(position_index, PlayerPosition.MIDDLE)
+
+            # Get player's current state
+            player_state = player.get_state()
+
+            # Update position-specific information
+            player_state.position = position
+            player_state.is_dealer = position == PlayerPosition.DEALER
+            player_state.is_small_blind = position == PlayerPosition.SMALL_BLIND
+            player_state.is_big_blind = position == PlayerPosition.BIG_BLIND
+
+            player_states.append(player_state)
+
+            # Update the player with their new state
+            player.update_from_state(player_state)
+
+        # Create or update round state
+        if not hasattr(self, "round_state"):
+            self.round_state = RoundState.new_round(self.round_number)
+
+        # Update round state with current pot info
+        self.round_state.main_pot = self.pot_manager.pot
+        self.round_state.side_pots = [
+            {
+                "amount": pot.amount,
+                "eligible_players": [p.name for p in pot.eligible_players],
+            }
+            for pot in (self.pot_manager.side_pots or [])
+        ]
+
+        return GameState(
+            small_blind=self.small_blind,
+            big_blind=self.big_blind,
+            ante=self.ante,
+            min_bet=self.config.min_bet,
+            max_raise_multiplier=self.config.max_raise_multiplier,
+            max_raises_per_round=self.config.max_raises_per_round,
+            players=player_states,
+            dealer_position=self.dealer_index,
+            active_player_position=(
+                self.active_player_position
+                if hasattr(self, "active_player_position")
+                else None
+            ),
+            round_state=self.round_state,
+            pot_state=self.pot_manager.get_state(),
+            deck_state=self.deck.get_state(),
+        )
 
     def _log_chip_movements(self, initial_chips: Dict[Player, int]) -> None:
         """Log the chip movements for each player from their initial amounts."""
@@ -502,6 +543,9 @@ class AgenticPoker:
         logging.info(
             f"Cards remaining after initial deal: {self.deck.remaining_cards()}"
         )
+
+        # Create new round state
+        self.round_state = RoundState.new_round(self.round_number)
 
     def _reset_round(self) -> None:
         """Reset the state after a round is complete."""
