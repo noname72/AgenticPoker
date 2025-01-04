@@ -6,6 +6,7 @@ from openai.types.chat import ChatCompletion, ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
 
 from agents.strategy_planner import StrategyPlanner
+from agents.types import Approach, BetSizing, Plan
 
 
 @pytest.fixture
@@ -56,14 +57,16 @@ def test_init(planner):
 
 
 def test_plan_strategy_success(planner):
+    """Test strategic planning functionality."""
     game_state = "pot: $200, chips: $1000, position: BB"
     plan = planner.plan_strategy(game_state, chips=1000)
 
-    assert isinstance(plan, dict)
-    assert plan["approach"] == "aggressive"
-    assert plan["bet_sizing"] == "large"
-    assert plan["bluff_threshold"] == 0.7
-    assert plan["fold_threshold"] == 0.2
+    # Update assertions to check Plan object instead of dict
+    assert isinstance(plan, Plan)
+    assert plan.approach == Approach.AGGRESSIVE
+    assert plan.bet_sizing == BetSizing.LARGE
+    assert plan.bluff_threshold == 0.7
+    assert plan.fold_threshold == 0.2
 
 
 def test_plan_strategy_reuse_existing(planner):
@@ -78,12 +81,12 @@ def test_plan_strategy_reuse_existing(planner):
     first_plan = planner.plan_strategy(game_state, chips=1000)
     print(f"First plan: {first_plan}")
 
-    # Ensure plan expiry is in the future
+    # Check plan expiry through Plan object
     current_time = time.time()
-    print(f"\nPlan expiry: {planner.plan_expiry}")
+    print(f"\nPlan expiry: {first_plan.expiry}")
     print(f"Current time: {current_time}")
-    print(f"Time until expiry: {planner.plan_expiry - current_time} seconds")
-    assert planner.plan_expiry > current_time
+    print(f"Time until expiry: {first_plan.expiry - current_time} seconds")
+    assert first_plan.expiry > current_time
 
     # Print replanning check info
     print("\nChecking if replanning needed:")
@@ -94,9 +97,9 @@ def test_plan_strategy_reuse_existing(planner):
 
     # Second call with similar state should reuse plan
     print("\nTrying second plan...")
-    with patch.object(planner, "_query_llm") as mock_query:
+    with patch.object(planner.llm_client, "generate_plan") as mock_generate:
         second_plan = planner.plan_strategy(game_state, chips=1000)
-        mock_query.assert_not_called()
+        mock_generate.assert_not_called()
         assert second_plan == first_plan
         print("Successfully reused plan without LLM query")
 
@@ -107,10 +110,10 @@ def test_plan_strategy_error_fallback(planner, mock_openai_client):
 
     plan = planner.plan_strategy("game_state", chips=1000)
 
-    assert plan["approach"] == "balanced"
-    assert plan["bet_sizing"] == "medium"
-    assert plan["bluff_threshold"] == 0.5
-    assert plan["fold_threshold"] == 0.3
+    assert plan.approach == Approach.BALANCED
+    assert plan.bet_sizing == BetSizing.MEDIUM
+    assert plan.bluff_threshold == 0.5
+    assert plan.fold_threshold == 0.3
 
 
 @pytest.mark.parametrize(
@@ -175,66 +178,73 @@ def test_execute_action_no_plan(planner):
 
 
 def test_requires_replanning(planner):
+    """Test replanning trigger conditions"""
     # Test with no current plan
-    assert planner._requires_replanning("game_state") is True
+    assert planner.requires_replanning("game_state") is True
 
-    # Create a plan
-    planner.plan_strategy("game_state", chips=1000)
+    # Create initial plan and metrics
+    game_state = {"pot": 100, "position": "BB", "stack_size": 1000, "phase": "preflop"}
+    planner.plan_strategy(game_state, chips=1000)
+    planner.last_metrics = {"stack_size": 1000, "position": "BB"}
 
-    # Test significant changes
-    assert planner._requires_replanning("pot: $5000, chips: $200") is True  # Low chips
-    assert planner._requires_replanning("normal state") is False
+    # Test position change triggers replanning
+    position_change_state = {
+        "pot": 100,
+        "position": "SB",  # Changed position
+        "stack_size": 1000,
+        "phase": "preflop",
+    }
+    assert planner.requires_replanning(position_change_state) is True
 
+    # Test significant stack change triggers replanning
+    stack_change_state = {
+        "pot": 100,
+        "position": "BB",
+        "stack_size": 800,  # Changed by more than REPLAN_STACK_THRESHOLD
+        "phase": "preflop",
+    }
+    assert planner.requires_replanning(stack_change_state) is True
 
-@pytest.mark.parametrize(
-    "game_state,expected",
-    [
-        (
-            "pot: $200, chips: $1000, current bet: $50",
-            {"pot": 200, "chips": 1000, "current_bet": 50},
-        ),
-        ("pot: $1,000, chips: $5,000", {"pot": 1000, "chips": 5000}),
-        ("invalid state", {}),
-    ],
-)
-def test_extract_game_metrics(planner, game_state, expected):
-    metrics = planner._extract_game_metrics(game_state)
-    assert metrics == expected
-
-
-@pytest.mark.parametrize(
-    "action,expected",
-    [
-        ("fold", "fold"),
-        ("FOLD", "fold"),
-        ("  call  ", "call"),
-        ("RAISE", "raise"),
-        ("raise with strong hand", "raise"),  # Add this test case
-        ("raise 200", "raise 200"),  # Add this test case
-        ("invalid", "call"),
-        ("", "call"),
-    ],
-)
-def test_normalize_action(planner, action, expected):
-    print(f"\nTesting normalize_action:")
-    print(f"Input: '{action}'")
-    result = planner._normalize_action(action)
-    print(f"Output: '{result}'")
-    assert result == expected, f"\nExpected: {expected}\nGot: {result}"
+    # Test no significant changes doesn't trigger replanning
+    no_change_state = {
+        "pot": 100,
+        "position": "BB",
+        "stack_size": 950,  # Small change, less than threshold
+        "phase": "preflop",
+    }
+    assert planner.requires_replanning(no_change_state) is False
 
 
 def test_strategy_planner_planning():
-    mock_llm = Mock()
-    mock_llm.generate_plan.return_value = {
-        "approach": "aggressive",
+    """Test strategy planning with mocked LLM client"""
+    # Create mock LLM client
+    mock_llm_client = Mock()
+    mock_llm_client.generate_plan.return_value = {
+        "approach": "aggressive",  # String value that will be converted to enum
         "reasoning": "Test plan",
-        "bet_sizing": "large",
+        "bet_sizing": "large",  # String value that will be converted to enum
         "bluff_threshold": 0.7,
         "fold_threshold": 0.2,
     }
 
-    planner = StrategyPlanner(strategy_style="Aggressive", client=mock_llm)
+    # Create planner with mocked OpenAI client
+    mock_openai = Mock()
+    planner = StrategyPlanner(strategy_style="Aggressive", client=mock_openai)
+
+    # Replace the LLM client with our mock
+    planner.llm_client = mock_llm_client
+
+    # Test plan generation
     plan = planner.plan_strategy(game_state={}, chips=1000)
 
-    assert plan.approach == "aggressive"
-    assert mock_llm.generate_plan.called
+    # Verify the plan was created correctly
+    assert plan.approach == Approach.AGGRESSIVE
+    assert plan.bet_sizing == BetSizing.LARGE
+    assert plan.bluff_threshold == 0.7
+    assert plan.fold_threshold == 0.2
+    assert mock_llm_client.generate_plan.called
+
+    # Verify the arguments passed to generate_plan
+    mock_llm_client.generate_plan.assert_called_once()
+    args = mock_llm_client.generate_plan.call_args
+    assert args[1]["strategy_style"] == "Aggressive"  # Check kwargs
