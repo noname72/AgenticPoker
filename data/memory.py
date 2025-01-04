@@ -2,13 +2,20 @@ import logging
 import os
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Union
 
 import chromadb
 from chromadb.config import Settings
 from chromadb.errors import InvalidCollectionException
 
 logger = logging.getLogger(__name__)
+
+try:
+    # Python 3.10+ type annotation
+    QueryType = str | Dict
+except TypeError:
+    # Fallback for older Python versions
+    QueryType = Union[str, Dict]
 
 
 class MemoryStore(ABC):
@@ -81,23 +88,22 @@ class ChromaMemoryStore(MemoryStore):
                 break
             except Exception as e:
                 if attempt == max_retries - 1:
-                    logger.error(f"Failed to initialize ChromaDB after {max_retries} attempts: {str(e)}")
+                    logger.error(
+                        f"Failed to initialize ChromaDB after {max_retries} attempts: {str(e)}"
+                    )
                     raise
                 time.sleep(1)  # Wait before retry
 
     def _initialize_client(self):
         """Initialize or reinitialize the ChromaDB client and collection."""
         settings = Settings(
-            anonymized_telemetry=False,
-            allow_reset=True,
-            is_persistent=True
+            anonymized_telemetry=False, allow_reset=True, is_persistent=True
         )
 
         try:
             # Create persistent client
             self.client = chromadb.PersistentClient(
-                path=self.persist_dir,
-                settings=settings
+                path=self.persist_dir, settings=settings
             )
 
             # Add retry logic for collection initialization
@@ -107,36 +113,37 @@ class ChromaMemoryStore(MemoryStore):
                     # Try to get existing collection
                     self.collection = self.client.get_collection(name=self.safe_name)
                     logger.info(f"Using existing collection: {self.safe_name}")
-                    
+
                     # Verify collection is working
                     try:
                         self.collection.count()
                         break  # Collection is working
                     except Exception:
                         # Collection exists but may be corrupted
-                        logger.warning("Collection exists but may be corrupted, recreating...")
+                        logger.warning(
+                            "Collection exists but may be corrupted, recreating..."
+                        )
                         self.client.delete_collection(name=self.safe_name)
                         raise InvalidCollectionException()
-                        
+
                 except InvalidCollectionException:
                     # Create new collection if it doesn't exist or is corrupted
                     self.collection = self.client.create_collection(
-                        name=self.safe_name,
-                        metadata={"hnsw:space": "cosine"}
+                        name=self.safe_name, metadata={"hnsw:space": "cosine"}
                     )
                     logger.info(f"Created new collection: {self.safe_name}")
                     break
-                    
+
                 except Exception as e:
                     if attempt == max_retries - 1:
                         raise
                     time.sleep(0.5)  # Wait before retry
-                    
+
             # Get the current highest ID to continue counting
             try:
                 results = self.collection.get()
                 if results and results["ids"]:
-                    max_id = max(int(id.split('_')[1]) for id in results["ids"])
+                    max_id = max(int(id.split("_")[1]) for id in results["ids"])
                     self.id_counter = max_id
             except Exception as e:
                 logger.warning(f"Could not determine max ID: {e}")
@@ -163,15 +170,15 @@ class ChromaMemoryStore(MemoryStore):
                 if self.collection is None:
                     logger.warning("Collection is None, reinitializing...")
                     self._initialize_client()
-                
+
                 self.id_counter += 1
                 self.collection.add(
-                    documents=[text], 
-                    metadatas=[metadata], 
-                    ids=[f"mem_{self.id_counter}"]
+                    documents=[text],
+                    metadatas=[metadata],
+                    ids=[f"mem_{self.id_counter}"],
                 )
                 break
-                
+
             except (InvalidCollectionException, AttributeError) as e:
                 logger.warning(f"Collection error (attempt {attempt + 1}): {str(e)}")
                 if attempt < max_retries - 1:
@@ -180,12 +187,14 @@ class ChromaMemoryStore(MemoryStore):
                 else:
                     logger.error("Failed to recover collection after multiple attempts")
                     raise
-                
+
             except Exception as e:
                 logger.error(f"Failed to add memory: {str(e)}")
                 raise
 
-    def get_relevant_memories(self, query: str | Dict, k: int = 2) -> List[Dict[str, Any]]:
+    def get_relevant_memories(
+        self, query: Union[str, Dict], k: int = 2
+    ) -> List[Dict[str, Any]]:
         """Get relevant memories based on query."""
         max_retries = 3
         for attempt in range(max_retries):
@@ -193,50 +202,54 @@ class ChromaMemoryStore(MemoryStore):
                 if self.collection is None:
                     logger.warning("Collection is None, reinitializing...")
                     self._initialize_client()
-                
+
                 # Handle dictionary queries by converting to string
                 if isinstance(query, dict):
                     query = str(query)  # Convert dict to string representation
-                
+
                 # Get total count of memories
-                total_memories = len(self.collection.get()['ids'])
-                
+                total_memories = len(self.collection.get()["ids"])
+
                 # Adjust k if it exceeds available memories
                 k = min(k, total_memories)
-                
+
                 if k == 0:
                     return []
-                
+
                 # Query with adjusted k
                 results = self.collection.query(
                     query_texts=[query],
                     n_results=k,
-                    include=['documents', 'metadatas']  # Explicitly request all data
+                    include=["documents", "metadatas"],  # Explicitly request all data
                 )
-                
+
                 # Check if we got valid results
-                if not results or not results['ids'][0]:
+                if not results or not results["ids"][0]:
                     logger.warning(f"No results found for query: {query}")
                     return []
-                
+
                 memories = []
-                for i in range(len(results['ids'][0])):
-                    memories.append({
-                        'text': results['documents'][0][i],
-                        'metadata': results['metadatas'][0][i]
-                    })
-                
+                for i in range(len(results["ids"][0])):
+                    memories.append(
+                        {
+                            "text": results["documents"][0][i],
+                            "metadata": results["metadatas"][0][i],
+                        }
+                    )
+
                 return memories
-                
+
             except (InvalidCollectionException, AttributeError) as e:
-                logger.warning(f"Collection error during query (attempt {attempt + 1}): {str(e)}")
+                logger.warning(
+                    f"Collection error during query (attempt {attempt + 1}): {str(e)}"
+                )
                 if attempt < max_retries - 1:
                     self._initialize_client()
                     time.sleep(0.2)  # Give time for initialization
                 else:
                     logger.error("Failed to recover collection after multiple attempts")
                     return []
-                
+
             except Exception as e:
                 logger.error(f"Error retrieving memories: {str(e)}")
                 return []
@@ -263,7 +276,7 @@ class ChromaMemoryStore(MemoryStore):
         try:
             if hasattr(self, "collection"):
                 self.collection = None
-            
+
             if hasattr(self, "client"):
                 try:
                     # Don't reset the client on close to maintain persistence
