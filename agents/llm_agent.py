@@ -321,32 +321,33 @@ class LLMAgent(BaseAgent):
             game_state=game_state,
         )
 
-    def decide_action(
-        self, game_state: Dict[str, Any], opponent_message: Optional[str] = None
-    ) -> str:
-        """Make a decision based on game state and memory."""
+    def decide_action(self, game_state: str) -> str:
+        """Decide what action to take based on current game state."""
         try:
-            # Format game state for decision making
-            formatted_state = self._format_game_state(game_state)
+            # Get hand evaluation before making decision
+            hand_eval = self.hand.evaluate() if self.hand else None
 
-            # Try to get memories, but continue if it fails
-            memories = []
-            try:
-                query = self._create_memory_query(game_state)
-                memories = self.get_relevant_memories(query)
-            except Exception as e:
-                self.logger.warning(f"Memory retrieval failed: {str(e)}")
+            if self.strategy_planner:
+                action = self.strategy_planner.execute_action(game_state, hand_eval)
 
-            if self.use_planning:
-                self.logger.info("[%s] Using strategy planner for decision", self.name)
-                return self._get_strategic_action(formatted_state)
-            else:
-                self.logger.info("[%s] Using basic decision making", self.name)
-                return self._get_basic_action(formatted_state)
+                # Parse raise amount if present
+                if action.startswith("raise"):
+                    try:
+                        _, amount = action.split()
+                        return f"raise {amount}"
+                    except (ValueError, IndexError):
+                        self.logger.warning(
+                            "Invalid raise format received from strategy planner"
+                        )
+                        return "call"  # Safe fallback for invalid raise format
+                return action
+
+            # Fallback to basic decision making if no strategy planner
+            return self._basic_decision(game_state)
 
         except Exception as e:
             self.logger.error(f"Decision error: {str(e)}")
-            return "fold"  # Safe default action
+            return "call"  # Changed from "fold" to "call" for consistent safe fallback
 
     def _format_game_state(self, game_state: GameState) -> Dict[str, Any]:
         """Format game state into a dictionary representation."""

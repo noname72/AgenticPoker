@@ -67,7 +67,19 @@ class Player:
         if amount < 0:
             raise ValueError("Cannot place negative bet")
 
-        amount = min(amount, self.chips)  # Can't bet more than you have
+        # Ensure we don't bet more than available chips
+        amount = min(amount, self.chips)
+
+        # If this is a raise, ensure it's at least double the current bet
+        if hasattr(self, "current_bet") and amount <= self.current_bet:
+            logging.debug(
+                f"Raise amount {amount} too small compared to current bet {self.current_bet}"
+            )
+            amount = self.current_bet * 2
+            amount = min(
+                amount, self.chips
+            )  # Still ensure we don't exceed available chips
+
         self.chips -= amount
         self.bet += amount
         logging.debug(
