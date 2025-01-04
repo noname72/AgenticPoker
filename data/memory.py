@@ -1,5 +1,6 @@
 import logging
 import os
+import tempfile
 import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Union
@@ -71,9 +72,14 @@ class ChromaMemoryStore(MemoryStore):
     """
 
     def __init__(self, collection_name: str):
-        # Ensure results directory exists
-        results_dir = os.path.join(os.getcwd(), "results")
-        self.persist_dir = os.path.join(results_dir, "chroma_db")
+        # Use temporary directory for tests
+        if os.environ.get("PYTEST_RUNNING"):
+            temp_dir = tempfile.gettempdir()
+            self.persist_dir = os.path.join(temp_dir, "chroma_db")
+        else:
+            # Ensure results directory exists
+            results_dir = os.path.join(os.getcwd(), "results")
+            self.persist_dir = os.path.join(results_dir, "chroma_db")
         os.makedirs(self.persist_dir, exist_ok=True)
 
         # Sanitize collection name and ensure uniqueness
