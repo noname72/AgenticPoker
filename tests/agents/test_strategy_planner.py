@@ -221,3 +221,20 @@ def test_normalize_action(planner, action, expected):
     result = planner._normalize_action(action)
     print(f"Output: '{result}'")
     assert result == expected, f"\nExpected: {expected}\nGot: {result}"
+
+
+def test_strategy_planner_planning():
+    mock_llm = Mock()
+    mock_llm.generate_plan.return_value = {
+        "approach": "aggressive",
+        "reasoning": "Test plan",
+        "bet_sizing": "large",
+        "bluff_threshold": 0.7,
+        "fold_threshold": 0.2,
+    }
+
+    planner = StrategyPlanner(strategy_style="Aggressive", client=mock_llm)
+    plan = planner.plan_strategy(game_state={}, chips=1000)
+
+    assert plan.approach == "aggressive"
+    assert mock_llm.generate_plan.called
