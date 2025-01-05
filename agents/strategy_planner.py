@@ -1,6 +1,6 @@
-import json
 import logging
 import time
+from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from openai import OpenAI
@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_PLAN_DURATION = 30.0
 REPLAN_STACK_THRESHOLD = 100
-DEFAULT_TEMPERATURE = 0.7
 
 
 class StrategyPlanner:
@@ -92,6 +91,71 @@ class StrategyPlanner:
         self.last_metrics: Dict[str, Any] = {}
         self.llm_client = LLMClient(client)
 
+    def _validate_plan_data(self, plan_dict: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate and normalize plan data from LLM response.
+
+        Args:
+            plan_dict: Raw plan dictionary from LLM
+
+        Returns:
+            Dict[str, Any]: Validated and normalized plan data
+
+        Raises:
+            ValueError: If required fields are missing or invalid
+        """
+        # Required fields and their types/allowed values
+        required_fields = {
+            "approach": {"type": str, "values": [a.value for a in Approach]},
+            "bet_sizing": {"type": str, "values": [b.value for b in BetSizing]},
+            "bluff_threshold": {"type": (int, float), "min": 0.0, "max": 1.0},
+            "fold_threshold": {"type": (int, float), "min": 0.0, "max": 1.0},
+            "reasoning": {"type": str},
+        }
+
+        validated = {}
+
+        try:
+            # Check required fields exist and have correct types
+            for field, rules in required_fields.items():
+                if field not in plan_dict:
+                    raise ValueError(f"Missing required field: {field}")
+
+                value = plan_dict[field]
+                if not isinstance(value, rules["type"]):
+                    raise ValueError(
+                        f"Invalid type for {field}: expected {rules['type']}, got {type(value)}"
+                    )
+
+                # Validate enum values
+                if "values" in rules and value not in rules["values"]:
+                    raise ValueError(
+                        f"Invalid value for {field}: {value}. Must be one of {rules['values']}"
+                    )
+
+                # Validate numeric ranges
+                if "min" in rules and (value < rules["min"] or value > rules["max"]):
+                    raise ValueError(
+                        f"Invalid range for {field}: {value}. Must be between {rules['min']} and {rules['max']}"
+                    )
+
+                # Normalize enum values
+                if field == "approach":
+                    validated[field] = Approach(value)
+                elif field == "bet_sizing":
+                    validated[field] = BetSizing(value)
+                else:
+                    validated[field] = value
+
+            # Optional fields
+            validated["adjustments"] = plan_dict.get("adjustments", [])
+            validated["target_opponent"] = plan_dict.get("target_opponent")
+
+            return validated
+
+        except Exception as e:
+            logger.error(f"Plan validation failed: {str(e)}")
+            raise ValueError(f"Invalid plan data: {str(e)}")
+
     def plan_strategy(self, game_state: "GameState", chips: int) -> Plan:
         """Generate or retrieve a strategic plan based on current game state.
 
@@ -124,55 +188,87 @@ class StrategyPlanner:
             # Create fallback plan if no position found
             if not metrics["position"]:
                 logger.warning("[Strategy] No position found - using fallback plan")
-                fallback_plan = Plan(
-                    approach=Approach.BALANCED,
-                    reasoning="No position information available - using balanced approach",
-                    bet_sizing=BetSizing.MEDIUM,
-                    bluff_threshold=0.5,
-                    fold_threshold=0.3,
-                    expiry=current_time + self.plan_duration,
-                    adjustments=[],
-                    target_opponent=None,
+                return self._create_fallback_plan(
+                    current_time, reason="No position information available"
                 )
-                self.current_plan = fallback_plan
-                return fallback_plan
 
             logger.info(
                 "[Strategy] Generating new plan for position: %s", metrics["position"]
             )
 
-            # Generate new plan
-            plan_dict = self.llm_client.generate_plan(
-                strategy_style=self.strategy_style,
-                game_state=self._format_state_summary(game_state),
-            )
+            # Generate new plan with retries
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    # Generate raw plan from LLM
+                    plan_dict = self.llm_client.generate_plan(
+                        strategy_style=self.strategy_style,
+                        game_state=self._format_state_summary(game_state),
+                    )
 
-            # Validate and create plan
-            plan = Plan(**plan_dict, expiry=current_time + self.plan_duration)
-            self.current_plan = plan
+                    # Validate and normalize plan data
+                    validated_plan = self._validate_plan_data(plan_dict)
 
-            logger.info(
-                "[Strategy] Created new %s plan: %s",
-                plan.approach.value,
-                plan.reasoning,
-            )
-            return plan
+                    # Create Plan instance with validated data
+                    plan = Plan(
+                        **validated_plan, expiry=current_time + self.plan_duration
+                    )
+
+                    self.current_plan = plan
+                    logger.info(
+                        "[Strategy] Created new %s plan: %s",
+                        plan.approach.value,
+                        plan.reasoning,
+                    )
+                    return plan
+
+                except ValueError as e:
+                    if attempt < max_retries - 1:
+                        logger.warning(
+                            f"Plan generation attempt {attempt + 1} failed: {str(e)}. Retrying..."
+                        )
+                        continue
+                    else:
+                        logger.error(f"All plan generation attempts failed: {str(e)}")
+                        return self._create_fallback_plan(
+                            current_time,
+                            reason=f"Plan validation failed after {max_retries} attempts",
+                        )
+
+                except Exception as e:
+                    logger.error(f"Unexpected error in plan generation: {str(e)}")
+                    return self._create_fallback_plan(
+                        current_time, reason=f"Unexpected error: {str(e)}"
+                    )
 
         except Exception as e:
             logger.error("[Strategy] Plan generation failed: %s", str(e))
-            # Fallback plan
-            fallback_plan = Plan(
-                approach=Approach.BALANCED,
-                reasoning=f"Error in planning: {str(e)}",
-                bet_sizing=BetSizing.MEDIUM,
-                bluff_threshold=0.5,
-                fold_threshold=0.3,
-                expiry=current_time + self.plan_duration,
-                adjustments=[],
-                target_opponent=None,
+            return self._create_fallback_plan(
+                current_time, reason=f"General error: {str(e)}"
             )
-            self.current_plan = fallback_plan
-            return fallback_plan
+
+    def _create_fallback_plan(
+        self, current_time: float, reason: str = "Unknown error"
+    ) -> Plan:
+        """Create a fallback plan with balanced strategy.
+
+        Args:
+            current_time: Current Unix timestamp
+            reason: Reason for falling back to this plan
+
+        Returns:
+            Plan: A balanced fallback plan
+        """
+        return Plan(
+            approach=Approach.BALANCED,
+            reasoning=f"Fallback plan created: {reason}",
+            bet_sizing=BetSizing.MEDIUM,
+            bluff_threshold=0.5,
+            fold_threshold=0.3,
+            expiry=current_time + self.plan_duration,
+            adjustments=[],
+            target_opponent=None,
+        )
 
     def execute_action(
         self,
@@ -205,7 +301,7 @@ class StrategyPlanner:
                 )
                 return "call"
 
-            # Pass hand_eval to LLMClient for better decision making
+            # Get action from LLM client
             action = self.llm_client.decide_action(
                 strategy_style=self.strategy_style,
                 game_state=self._format_state_summary(game_state),
@@ -267,9 +363,6 @@ class StrategyPlanner:
             old_stack = self.last_metrics.get("stack_size", 0)
             stack_changed = abs(new_stack - old_stack) > self.REPLAN_STACK_THRESHOLD
 
-            # Store current metrics for next comparison
-            self.last_metrics = current_metrics
-
             # Log significant changes
             if position_changed:
                 logger.info(
@@ -284,7 +377,13 @@ class StrategyPlanner:
                     self.REPLAN_STACK_THRESHOLD,
                 )
 
-            return position_changed or stack_changed
+            needs_replanning = position_changed or stack_changed
+
+            # Only update metrics if we're not replanning
+            if not needs_replanning:
+                self.last_metrics = current_metrics
+
+            return needs_replanning
 
         except Exception as e:
             logger.error(
