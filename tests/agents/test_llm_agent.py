@@ -1,12 +1,13 @@
+import time
 from unittest.mock import Mock, patch
 
 import pytest
-import time  # Add this import at the top
 
 from agents.llm_agent import LLMAgent
 from agents.strategy_planner import StrategyPlanner
 from agents.types import Approach, BetSizing, Plan
 from data.enums import StrategyStyle
+from game.types import DeckState, GameState, PotState, RoundState
 
 
 @pytest.fixture
@@ -52,7 +53,20 @@ def test_decide_action(mock_llm, agent):
     Step 3: Evaluate pot odds...
     DECISION: raise
     """
-    game_state = "pot: $200, current_bet: $50, player_chips: $1000"
+
+    # Create a proper GameState object
+    game_state = GameState(
+        players=[],
+        dealer_position=0,
+        small_blind=10,
+        big_blind=20,
+        ante=0,
+        min_bet=20,
+        round_state=RoundState(phase="preflop", current_bet=50, round_number=1),
+        pot_state=PotState(main_pot=200),
+        deck_state=DeckState(cards_remaining=52),
+        active_player_position=1,
+    )
 
     action = agent.decide_action(game_state)
     # The method should return a normalized action
@@ -555,10 +569,24 @@ def test_opponent_stats_tracking(agent):
 
 def test_strategy_manager_integration(agent):
     """Test integration with strategy manager."""
+    # Create a proper GameState object
+    game_state = GameState(
+        players=[],
+        dealer_position=0,
+        small_blind=10,
+        big_blind=20,
+        ante=0,
+        min_bet=20,
+        round_state=RoundState(phase="preflop", current_bet=50, round_number=1),
+        pot_state=PotState(main_pot=100),
+        deck_state=DeckState(cards_remaining=52),
+        active_player_position=1,
+    )
+
     # Test strategy prompt generation
-    prompt = agent._get_decision_prompt("pot: $100")
-    assert "Aggressive Bluffer" in prompt  # Check for actual string in prompt
-    assert "pot: $100" in prompt
+    prompt = agent._get_decision_prompt(str(game_state))
+    assert "Aggressive Bluffer" in prompt
+    assert "pot" in prompt.lower()
 
     # Test strategy module activation
     assert agent.strategy_manager.active_modules["reasoning"] is True

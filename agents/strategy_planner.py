@@ -12,6 +12,10 @@ from .types import Approach, BetSizing, Plan
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_PLAN_DURATION = 30.0
+REPLAN_STACK_THRESHOLD = 100
+DEFAULT_TEMPERATURE = 0.7
+
 
 class StrategyPlanner:
     """Strategic planning and execution engine for poker agents.
@@ -66,7 +70,11 @@ class StrategyPlanner:
     """
 
     def __init__(
-        self, strategy_style: str, client: OpenAI, plan_duration: float = 30.0
+        self,
+        strategy_style: str,
+        client: OpenAI,
+        plan_duration: float = DEFAULT_PLAN_DURATION,
+        replan_threshold: int = REPLAN_STACK_THRESHOLD,
     ) -> None:
         """Initialize the strategy planner.
 
@@ -74,89 +82,88 @@ class StrategyPlanner:
             strategy_style: Playing style to use for planning
             client: OpenAI client for LLM queries
             plan_duration: How long plans remain valid (seconds)
+            replan_threshold: Stack change threshold that triggers replanning
         """
         self.strategy_style = strategy_style
         self.client = client
         self.plan_duration = plan_duration
+        self.REPLAN_STACK_THRESHOLD = replan_threshold
         self.current_plan: Optional[Plan] = None
-        self.plan_expiry: float = 0
         self.last_metrics: Dict[str, Any] = {}
-        self.REPLAN_STACK_THRESHOLD = 100
         self.llm_client = LLMClient(client)
 
-    def plan_strategy(self, game_state: Union[Dict, "GameState"], chips: int) -> Plan:
+    def plan_strategy(self, game_state: "GameState", chips: int) -> Plan:
         """Generate or retrieve a strategic plan based on current game state.
 
-        This method either returns the current valid plan or generates a new one if:
-        - No current plan exists
-        - Current plan has expired
-        - Game state changes require replanning
-
         Args:
-            game_state: Current game state either as a dict or GameState object
+            game_state: Current game state as GameState object
             chips: Current chip count for the player
 
         Returns:
-            Plan: A valid strategic plan containing approach, bet sizing, and thresholds
-
-        Raises:
-            None: Uses fallback plan on errors instead of raising exceptions
-
-        Notes:
-            - Plans include approach, bet sizing, bluff/fold thresholds
-            - Plans automatically expire after plan_duration seconds
-            - Fallback to balanced strategy on planning failures
+            Plan: A valid strategic plan
         """
         current_time = time.time()
 
-        # Check if current plan is still valid
-        if (
-            self.current_plan
-            and not self.current_plan.is_expired(current_time)
-            and not self.requires_replanning(game_state)
-        ):
-            logger.debug(
-                "[Strategy] Using existing valid plan '%s' (expires in %.1f seconds)",
-                self.current_plan.approach.value,
-                self.current_plan.expiry - current_time,
-            )
-            return self.current_plan
-
-        logger.info("[Strategy] Initiating new strategic plan generation")
-
         try:
-            # Extract metrics using unified method
-            metrics = self.extract_metrics(game_state)
-            logger.debug("[Strategy] Extracted metrics: %s", metrics)
+            # Check if current plan is still valid
+            if (
+                self.current_plan
+                and not self.current_plan.is_expired(current_time)
+                and not self.requires_replanning(game_state)
+            ):
+                logger.debug(
+                    "[Strategy] Using existing plan '%s' (expires in %.1f seconds)",
+                    self.current_plan.approach.value,
+                    self.current_plan.expiry - current_time,
+                )
+                return self.current_plan
 
-            # Use LLMClient to generate plan
+            # Extract metrics first to validate game state
+            metrics = self.extract_metrics(game_state)
+
+            # Create fallback plan if no position found
+            if not metrics["position"]:
+                logger.warning("[Strategy] No position found - using fallback plan")
+                fallback_plan = Plan(
+                    approach=Approach.BALANCED,
+                    reasoning="No position information available - using balanced approach",
+                    bet_sizing=BetSizing.MEDIUM,
+                    bluff_threshold=0.5,
+                    fold_threshold=0.3,
+                    expiry=current_time + self.plan_duration,
+                    adjustments=[],
+                    target_opponent=None,
+                )
+                self.current_plan = fallback_plan
+                return fallback_plan
+
+            logger.info(
+                "[Strategy] Generating new plan for position: %s", metrics["position"]
+            )
+
+            # Generate new plan
             plan_dict = self.llm_client.generate_plan(
                 strategy_style=self.strategy_style,
-                game_state=self._format_state_summary(metrics),
+                game_state=self._format_state_summary(game_state),
             )
 
-            # Use Pydantic model for validation
+            # Validate and create plan
             plan = Plan(**plan_dict, expiry=current_time + self.plan_duration)
-
-            # Update plan tracking
             self.current_plan = plan
 
             logger.info(
-                "[Strategy] Successfully adopted %s approach: %s",
+                "[Strategy] Created new %s plan: %s",
                 plan.approach.value,
                 plan.reasoning,
             )
             return plan
 
         except Exception as e:
-            logger.error(
-                "[Strategy] Failed to generate new plan: %s. Using fallback balanced plan.",
-                str(e),
-            )
+            logger.error("[Strategy] Plan generation failed: %s", str(e))
             # Fallback plan
-            return Plan(
+            fallback_plan = Plan(
                 approach=Approach.BALANCED,
-                reasoning="Error in planning - using balanced fallback",
+                reasoning=f"Error in planning: {str(e)}",
                 bet_sizing=BetSizing.MEDIUM,
                 bluff_threshold=0.5,
                 fold_threshold=0.3,
@@ -164,48 +171,53 @@ class StrategyPlanner:
                 adjustments=[],
                 target_opponent=None,
             )
+            self.current_plan = fallback_plan
+            return fallback_plan
 
     def execute_action(
-        self, game_state: str, hand_eval: Optional[Tuple[int, List[int], str]] = None
+        self,
+        game_state: "GameState",
+        hand_eval: Optional[Tuple[int, List[int], str]] = None,
     ) -> str:
         """Execute an action based on current plan and game state.
 
-        Determines the optimal action to take based on:
-        - Current strategic plan
-        - Game state
-        - Optional hand evaluation data
-
         Args:
-            game_state: Current game state as a string
-            hand_eval: Optional tuple of (hand_rank, card_ranks, hand_name)
+            game_state: Current game state as GameState object
+            hand_eval: Tuple of (hand_rank, card_ranks, hand_name) representing hand strength
 
         Returns:
             str: Action to take ('fold', 'call', 'raise', or 'raise X')
-
-        Notes:
-            - Generates new plan if none exists
-            - Uses LLM for action decision making
-            - Falls back to 'call' on execution errors
-            - Logs decision reasoning and errors
         """
-        if not self.current_plan:
-            logger.info("[Action] No active plan - generating new plan before action")
-            self.plan_strategy(
-                game_state, self.extract_metrics(game_state).get("stack_size", 0)
-            )
-
         try:
-            # Use LLMClient to get action
+            # Ensure we have a valid plan
+            if not self.current_plan:
+                logger.info(
+                    "[Action] No active plan - generating new plan before action"
+                )
+                self.plan_strategy(
+                    game_state, self.extract_metrics(game_state).get("stack_size", 0)
+                )
+
+            # Ensure we still have a valid plan after attempting to generate one
+            if not self.current_plan:
+                logger.warning(
+                    "[Action] Failed to generate plan - using default action"
+                )
+                return "call"
+
+            # Pass hand_eval to LLMClient for better decision making
             action = self.llm_client.decide_action(
                 strategy_style=self.strategy_style,
-                game_state=game_state,
+                game_state=self._format_state_summary(game_state),
                 plan=self.current_plan.dict(),
+                hand_eval=hand_eval,
             )
 
             logger.info(
-                "[Action] Decided on '%s' based on %s strategy",
+                "[Action] Decided on '%s' based on %s strategy with hand %s",
                 action,
                 self.current_plan.approach.value,
+                hand_eval[2] if hand_eval else "unknown",
             )
             return action
 
@@ -281,184 +293,149 @@ class StrategyPlanner:
             )
             return False  # Safe fallback - keep current plan on error
 
-    def _query_llm(self, prompt: str) -> str:
-        #! keep this in client
-        """Send query to LLM and get response.
-
-        Handles communication with the OpenAI API, including error handling
-        and response validation.
-
-        Args:
-            prompt: Formatted prompt string for the LLM
-
-        Returns:
-            str: LLM's response text
-
-        Raises:
-            Exception: If LLM query fails or returns invalid response
-
-        Note:
-            - Uses GPT-4 model by default
-            - Sets temperature=0.7 for some variability
-            - Raises exceptions rather than returning fallbacks
-        """
-        try:
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.7,
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            logger.error(f"LLM query failed: {str(e)}")
-            raise
-
-    def _normalize_action(self, action: str) -> str:
-        #! is this needed???
-        """Normalize action string to valid poker action.
-
-        Args:
-            action: Raw action string from LLM response
-
-        Returns:
-            str: Normalized action ('fold', 'call', 'raise', or 'raise X')
-
-        Examples:
-            >>> _normalize_action("fold because weak hand")
-            'fold'
-            >>> _normalize_action("raise with strong hand")
-            'raise'
-            >>> _normalize_action("raise 200")
-            'raise 200'
-        """
-        action = action.lower().strip()
-
-        # First check for exact matches
-        if action in ["fold", "call", "raise"]:
-            return action
-
-        # Handle raise amounts (e.g., "raise 200")
-        if action.startswith("raise "):
-            try:
-                # Try to extract raise amount
-                _, amount = action.split(maxsplit=1)
-                if amount.isdigit():
-                    return f"raise {amount}"
-            except (ValueError, IndexError):
-                pass
-            # If we couldn't extract a valid amount, return just "raise"
-            return "raise"
-
-        # Extract basic action word if embedded in a phrase
-        if "fold" in action:
-            return "fold"
-        if "raise" in action:
-            return "raise"
-        if "call" in action or "check" in action:
-            return "call"
-
-        return "call"  # Safe default
-
-    def extract_metrics(self, game_state: Union[Dict, "GameState"]) -> Dict[str, Any]:
+    def extract_metrics(self, game_state: "GameState") -> Dict[str, Any]:
         """Extract and normalize key metrics from the game state.
 
-        Processes raw game state into standardized metrics used for strategy decisions.
-        Handles both dictionary and GameState object inputs.
-
         Args:
-            game_state: Current game state as dict or GameState object
+            game_state: Current game state as GameState object
 
         Returns:
             Dict[str, Any]: Normalized metrics including:
-                - stack_size: Current stack size
+                - stack_size: Current player's chip count
                 - pot_size: Current pot size
-                - position: Player's position
-                - phase: Game phase
-                - current_bet: Current bet amount
-                - is_preflop: Boolean for preflop phase
-                - is_late_position: Boolean for late position
-
-        Notes:
-            - Handles missing data gracefully
-            - Returns safe defaults on extraction errors
-            - Normalizes position and phase names
-            - Adds derived metrics for common checks
+                - position: Player's position (dealer/small_blind/big_blind/etc)
+                - phase: Current game phase
+                - players_remaining: Number of active players
+                - pot_odds: Ratio of current bet to pot size
+                - stack_to_pot: Ratio of stack size to pot
+                - relative_position: Position relative to dealer (0=dealer)
+                - min_bet: Minimum bet amount
+                - current_bet: Current bet to call
         """
         try:
-            # Convert GameState to dictionary if needed
-            if not isinstance(game_state, dict):
-                state_dict = game_state.to_dict()
-            else:
-                state_dict = game_state
+            # Find the active player's state
+            active_player_state = None
+            active_position = game_state.active_player_position
+            if active_position is not None:
+                active_player_state = game_state.players[active_position]
 
+            # Extract basic metrics
             metrics = {
-                "stack_size": state_dict.get("current_bet", 0),
-                "pot_size": state_dict.get("pot", 0),
-                "current_bet": state_dict.get("current_bet", 0),
+                "stack_size": active_player_state.chips if active_player_state else 0,
+                "pot_size": game_state.pot_state.main_pot,
+                "position": (
+                    active_player_state.position.value if active_player_state else None
+                ),
+                "phase": game_state.round_state.phase,
+                "players_remaining": len(
+                    [p for p in game_state.players if not p.folded]
+                ),
+                "min_bet": game_state.min_bet,
+                "current_bet": getattr(game_state.round_state, "current_bet", 0),
             }
 
-            # Extract position with consistent format
-            if "positions" in state_dict:
-                metrics["position"] = state_dict["positions"].get("active_player", "")
-            elif "position" in state_dict:
-                metrics["position"] = state_dict["position"]
+            # Calculate derived metrics
+            if metrics["current_bet"] > 0 and metrics["pot_size"] > 0:
+                metrics["pot_odds"] = metrics["current_bet"] / metrics["pot_size"]
             else:
-                metrics["position"] = ""
+                metrics["pot_odds"] = 0.0
 
-            # Extract phase with consistent format
-            if "round_state" in state_dict:
-                metrics["phase"] = state_dict["round_state"].get("phase", "unknown")
-            elif "phase" in state_dict:
-                metrics["phase"] = state_dict["phase"]
+            if metrics["pot_size"] > 0:
+                metrics["stack_to_pot"] = metrics["stack_size"] / metrics["pot_size"]
             else:
-                metrics["phase"] = "unknown"
+                metrics["stack_to_pot"] = float("inf")
 
-            # Add derived metrics
-            metrics["is_preflop"] = metrics["phase"].lower() == "preflop"
-            metrics["is_late_position"] = metrics["position"].lower() in [
-                "dealer",
-                "cutoff",
-            ]
+            # Calculate relative position (0 = dealer, 1 = SB, 2 = BB, etc)
+            if active_position is not None:
+                metrics["relative_position"] = (
+                    active_position - game_state.dealer_position
+                ) % len(game_state.players)
+            else:
+                metrics["relative_position"] = None
 
-            logger.debug("[Metrics] Successfully extracted game metrics: %s", metrics)
+            # Add side pot information if any exists
+            if game_state.pot_state.side_pots:
+                metrics["side_pots"] = [
+                    {
+                        "amount": pot.amount,
+                        "eligible_players": len(pot.eligible_players),
+                    }
+                    for pot in game_state.pot_state.side_pots
+                ]
+
             return metrics
 
         except Exception as e:
-            logger.error(
-                "[Metrics] Failed to extract metrics: %s. Using safe defaults.", str(e)
-            )
+            logger.error(f"Error extracting metrics: {str(e)}")
+            # Return basic metrics as fallback
             return {
                 "stack_size": 0,
                 "pot_size": 0,
-                "position": "",
+                "position": None,
                 "phase": "unknown",
+                "players_remaining": 0,
+                "pot_odds": 0.0,
+                "stack_to_pot": 0.0,
+                "relative_position": None,
+                "min_bet": game_state.min_bet,
                 "current_bet": 0,
-                "is_preflop": False,
-                "is_late_position": False,
             }
 
-    def _format_state_summary(self, game_state: Union[Dict, "GameState"]) -> str:
+    def _format_state_summary(self, game_state: "GameState") -> str:
         """Format game state into a string summary.
 
         Args:
-            game_state: Current game state as dict or GameState object
+            game_state: Current game state as GameState object
 
         Returns:
             str: Formatted summary of game state
         """
         try:
-            if isinstance(game_state, dict):
-                state_dict = game_state
-            else:
-                # Assume GameState object
-                state_dict = game_state.to_dict()
-
             return (
-                f"Pot: ${state_dict.get('pot', 0)}, "
-                f"Current bet: ${state_dict.get('current_bet', 0)}, "
-                f"Position: {state_dict.get('positions', {}).get('active_player', 'Unknown')}, "
-                f"Phase: {state_dict.get('round_state', {}).get('phase', 'Unknown')}"
+                f"Pot: ${game_state.pot_state.main_pot}, "
+                f"Current bet: ${getattr(game_state.round_state, 'current_bet', 0)}, "
+                f"Position: {self._get_position_name(game_state.active_player_position, len(game_state.players), game_state.dealer_position)}, "
+                f"Phase: {game_state.round_state.phase}"
             )
         except Exception as e:
             logger.error(f"Error formatting game state: {str(e)}")
-            return str(game_state)
+            raise
+
+    def _get_position_name(
+        self, active_position: Optional[int], num_players: int, dealer_position: int
+    ) -> str:
+        """Get the position name relative to the dealer.
+
+        Args:
+            active_position: Current active player's position (0-based index)
+            num_players: Total number of players
+            dealer_position: Dealer's position (0-based index)
+
+        Returns:
+            str: Position name (dealer/small_blind/big_blind/under_the_gun/middle/cutoff)
+        """
+        try:
+            if active_position is None:
+                return "unknown"
+
+            # Calculate relative position from dealer (0 = dealer, 1 = SB, 2 = BB, etc)
+            relative_pos = (active_position - dealer_position) % num_players
+
+            # Map relative positions to names
+            position_names = {
+                0: "dealer",
+                1: "small_blind",
+                2: "big_blind",
+                3: "under_the_gun",
+            }
+
+            # Special case for cutoff (second to last to act)
+            if relative_pos == num_players - 1:
+                return "cutoff"
+
+            # Return mapped position or "middle" for other positions
+            return position_names.get(relative_pos, "middle")
+
+        except Exception as e:
+            logger.error(f"Error determining position name: {str(e)}")
+            return "unknown"
