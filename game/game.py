@@ -182,7 +182,7 @@ class AgenticPoker:
 
     def start_game(self) -> None:
         """
-        Execute the main game loop until a winner is determined or max rounds reached.
+        Execute the main game loop until a winner is determined.
         """
         eliminated_players = []
 
@@ -207,6 +207,7 @@ class AgenticPoker:
             self.start_round()
 
             # Pre-draw betting round
+            logging.info(f"====== Pre-draw betting ======\n")
             game_state = self._create_game_state()
             new_pot, side_pots, should_continue = pre_draw.handle_pre_draw_betting(
                 players=self.players,
@@ -225,6 +226,7 @@ class AgenticPoker:
                 continue
 
             # Draw phase
+            logging.info(f"====== Draw Phase ======\n")
             draw.handle_draw_phase(players=self.players, deck=self.deck)
 
             # Post-draw betting round
@@ -246,6 +248,7 @@ class AgenticPoker:
                 continue
 
             # Showdown
+            logging.info(f"====== Showdown ======\n")
             post_draw.handle_showdown(
                 players=self.players,
                 initial_chips=initial_chips,
@@ -275,7 +278,6 @@ class AgenticPoker:
         """
         self._initialize_round()
 
-        # Log round info BEFORE collecting antes/blinds
         self._log_round_info()
 
         # Collect blinds and antes AFTER logging initial state

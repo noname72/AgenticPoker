@@ -1,11 +1,14 @@
 import time
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 import pytest
 from openai.types.chat import ChatCompletion, ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
 
 from agents.strategy_planner import StrategyPlanner
+from agents.types import Approach, BetSizing, Plan
+from game.base_types import DeckState, PlayerPosition, PlayerState, PotState, RoundState
+from game.types import GameState
 
 
 @pytest.fixture
@@ -49,56 +52,165 @@ def planner(mock_openai_client):
 
 
 def test_init(planner):
+    """Test initialization of StrategyPlanner"""
     assert planner.strategy_style == "Aggressive"
     assert planner.plan_duration == 30.0
     assert planner.current_plan is None
-    assert planner.plan_expiry == 0
 
 
 def test_plan_strategy_success(planner):
-    game_state = "pot: $200, chips: $1000, position: BB"
-    plan = planner.plan_strategy(game_state, chips=1000)
+    """Test strategic planning functionality."""
+    print("\nTesting plan strategy success:")
 
-    assert isinstance(plan, dict)
-    assert plan["approach"] == "aggressive"
-    assert plan["bet_sizing"] == "large"
-    assert plan["bluff_threshold"] == 0.7
-    assert plan["fold_threshold"] == 0.2
+    # Mock the LLM client's generate_plan method
+    with patch.object(planner.llm_client, "generate_plan") as mock_generate_plan:
+        mock_response = {
+            "approach": "aggressive",
+            "reasoning": "Strong hand position",
+            "bet_sizing": "large",
+            "bluff_threshold": 0.7,
+            "fold_threshold": 0.2,
+            "adjustments": [],
+            "target_opponent": None,
+        }
+        print(f"Mock response: {mock_response}")
+        mock_generate_plan.return_value = mock_response
+
+        # Create a proper GameState object with complete PlayerState objects
+        game_state = GameState(
+            players=[
+                PlayerState(
+                    name="Player1",
+                    chips=1000,
+                    position=PlayerPosition.DEALER,  # Use enum value
+                    bet=0,
+                    folded=False,
+                    is_dealer=True,
+                    is_small_blind=False,
+                    is_big_blind=False,
+                ),
+                PlayerState(
+                    name="Player2",
+                    chips=1000,
+                    position=PlayerPosition.SMALL_BLIND,  # Use enum value
+                    bet=10,
+                    folded=False,
+                    is_dealer=False,
+                    is_small_blind=True,
+                    is_big_blind=False,
+                ),
+                PlayerState(
+                    name="Player3",
+                    chips=1000,
+                    position=PlayerPosition.BIG_BLIND,  # Use enum value
+                    bet=20,
+                    folded=False,
+                    is_dealer=False,
+                    is_small_blind=False,
+                    is_big_blind=True,
+                ),
+            ],
+            dealer_position=0,
+            small_blind=10,
+            big_blind=20,
+            ante=0,
+            min_bet=20,
+            round_state=RoundState(
+                phase="preflop",
+                current_bet=20,
+                round_number=1,
+                dealer_position=0,
+                small_blind_position=1,
+                big_blind_position=2,
+                first_bettor_index=0,
+            ),
+            pot_state=PotState(main_pot=200),
+            deck_state=DeckState(cards_remaining=52),
+            active_player_position=1,
+        )
+        print(f"Game state: {game_state}")
+
+        plan = planner.plan_strategy(game_state, chips=1000)
+        print(f"Generated plan: {plan}")
+
+        # Verify the plan was created correctly
+        assert isinstance(plan, Plan)
+        assert (
+            plan.approach == Approach.AGGRESSIVE
+        ), f"Expected AGGRESSIVE but got {plan.approach}"
+        assert plan.bet_sizing == BetSizing.LARGE
+        assert plan.bluff_threshold == 0.7
+        assert plan.fold_threshold == 0.2
 
 
 def test_plan_strategy_reuse_existing(planner):
     """Test that valid existing plans are reused"""
     print("\nTesting plan strategy reuse:")
 
-    game_state = {"pot": 200, "chips": 1000, "position": "BB", "current_bet": 50}
-    print(f"Initial game state: {game_state}")
+    # Create base game state
+    game_state = GameState(
+        players=[
+            PlayerState(
+                name="Player1",
+                chips=1000,
+                position=PlayerPosition.DEALER,
+                bet=0,
+                folded=False,
+                is_dealer=True,
+                is_small_blind=False,
+                is_big_blind=False,
+            )
+        ],
+        dealer_position=0,
+        small_blind=10,
+        big_blind=20,
+        ante=0,
+        min_bet=20,
+        round_state=RoundState(phase="preflop", current_bet=50, round_number=1),
+        pot_state=PotState(main_pot=200),
+        deck_state=DeckState(cards_remaining=52),
+        active_player_position=0,
+    )
+    print(f"Game state: {game_state}")
 
-    # First call creates plan
-    print("\nCreating first plan...")
-    first_plan = planner.plan_strategy(game_state, chips=1000)
-    print(f"First plan: {first_plan}")
-
-    # Ensure plan expiry is in the future
+    # Create and set initial plan
     current_time = time.time()
-    print(f"\nPlan expiry: {planner.plan_expiry}")
-    print(f"Current time: {current_time}")
-    print(f"Time until expiry: {planner.plan_expiry - current_time} seconds")
-    assert planner.plan_expiry > current_time
+    initial_plan = Plan(
+        approach=Approach.AGGRESSIVE,
+        reasoning="Test plan",
+        bet_sizing=BetSizing.LARGE,
+        bluff_threshold=0.7,
+        fold_threshold=0.2,
+        expiry=current_time + 30.0,
+        adjustments=[],
+        target_opponent=None,
+    )
+    planner.current_plan = initial_plan
+    print(f"Initial plan: {initial_plan}")
 
-    # Print replanning check info
-    print("\nChecking if replanning needed:")
-    print(f"Current plan exists: {planner.current_plan is not None}")
-    print(f"Last metrics: {planner.last_metrics}")
-    needs_replan = planner.requires_replanning(game_state)
-    print(f"Needs replanning: {needs_replan}")
+    # Set initial metrics
+    initial_metrics = {
+        "stack_size": 1000,
+        "position": "dealer",
+        "phase": "preflop",
+        "pot_size": 200,
+    }
+    planner.last_metrics = initial_metrics.copy()
+    print(f"Initial metrics: {initial_metrics}")
 
-    # Second call with similar state should reuse plan
-    print("\nTrying second plan...")
-    with patch.object(planner, "_query_llm") as mock_query:
-        second_plan = planner.plan_strategy(game_state, chips=1000)
-        mock_query.assert_not_called()
-        assert second_plan == first_plan
-        print("Successfully reused plan without LLM query")
+    # Mock extract_metrics to return same metrics
+    with patch.object(planner, "extract_metrics") as mock_extract:
+        mock_extract.return_value = initial_metrics.copy()
+        print(f"Mocked metrics: {initial_metrics}")
+
+        # Second call should reuse plan without generating new one
+        with patch.object(planner.llm_client, "generate_plan") as mock_generate:
+            second_plan = planner.plan_strategy(game_state, chips=1000)
+            print(f"Second plan: {second_plan}")
+            
+            mock_generate.assert_not_called()
+            assert second_plan == initial_plan
+            print("Successfully reused plan without LLM query")
 
 
 def test_plan_strategy_error_fallback(planner, mock_openai_client):
@@ -107,10 +219,10 @@ def test_plan_strategy_error_fallback(planner, mock_openai_client):
 
     plan = planner.plan_strategy("game_state", chips=1000)
 
-    assert plan["approach"] == "balanced"
-    assert plan["bet_sizing"] == "medium"
-    assert plan["bluff_threshold"] == 0.5
-    assert plan["fold_threshold"] == 0.3
+    assert plan.approach == Approach.BALANCED
+    assert plan.bet_sizing == BetSizing.MEDIUM
+    assert plan.bluff_threshold == 0.5
+    assert plan.fold_threshold == 0.3
 
 
 @pytest.mark.parametrize(
@@ -119,105 +231,507 @@ def test_plan_strategy_error_fallback(planner, mock_openai_client):
         ("EXECUTE: fold because weak hand", "fold"),
         ("EXECUTE: call due to pot odds", "call"),
         ("EXECUTE: raise with strong hand", "raise"),
-        ("EXECUTE: invalid_action", "call"),  # Should normalize to call
+        ("EXECUTE: invalid_action", "call"),
     ],
 )
 def test_execute_action(planner, mock_openai_client, action_response, expected):
-    print("\nTesting execute_action:")
-    print(f"Input action_response: {action_response}")
-    print(f"Expected output: {expected}")
+    """Test action execution with different responses"""
+    print(f"\nTesting execute_action with response '{action_response}':")
 
-    # Set up the plan first
-    planner.plan_strategy("game_state", chips=1000)
-
-    # Create a game state with sufficient chips for raising
-    game_state = "pot: $200, chips: $1000, current bet: $50"
-
-    # Mock the LLM response for action execution
-    mock_response = ChatCompletion(
-        id="test_id",
-        model="gpt-3.5-turbo",
-        object="chat.completion",
-        created=1234567890,
-        choices=[
-            Choice(
-                finish_reason="stop",
-                index=0,
-                message=ChatCompletionMessage(
-                    content=action_response,
-                    role="assistant",
-                ),
+    # Create initial game state
+    game_state = GameState(
+        players=[
+            PlayerState(
+                name="Player1",
+                chips=1000,
+                position=PlayerPosition.DEALER,
+                bet=0,
+                folded=False,
+                is_dealer=True,
+                is_small_blind=False,
+                is_big_blind=False,
             )
         ],
-        usage={"total_tokens": 100, "prompt_tokens": 50, "completion_tokens": 50},
+        dealer_position=0,
+        small_blind=10,
+        big_blind=20,
+        ante=0,
+        min_bet=20,
+        round_state=RoundState(phase="preflop", current_bet=50, round_number=1),
+        pot_state=PotState(main_pot=200),
+        deck_state=DeckState(cards_remaining=52),
+        active_player_position=0,
     )
+    print(f"Game state: {game_state}")
 
-    mock_openai_client.chat.completions.create.return_value = mock_response
+    # Set up the plan first
+    current_time = time.time()
+    initial_plan = Plan(
+        approach=Approach.AGGRESSIVE,
+        reasoning="Test plan",
+        bet_sizing=BetSizing.LARGE,
+        bluff_threshold=0.7,
+        fold_threshold=0.2,
+        expiry=current_time + 30.0,
+        adjustments=[],
+        target_opponent=None,
+    )
+    planner.current_plan = initial_plan
+    print(f"Initial plan: {initial_plan}")
 
-    # Add debug prints for the normalization process
-    print("\nDebug normalization steps:")
-    action_line = action_response.split("EXECUTE:")[1].strip()
-    print(f"1. Extracted action_line: {action_line}")
+    # Mock the LLM client's decide_action method
+    with patch.object(
+        planner.llm_client, "decide_action", return_value=expected
+    ) as mock_decide:
+        print(f"Executing action with expected response: {expected}")
+        action = planner.execute_action(game_state)
+        print(f"Actual action: {action}")
 
-    normalized = planner._normalize_action(action_line)
-    print(f"2. After normalization: {normalized}")
-
-    action = planner.execute_action(game_state)
-    print(f"3. Final action: {action}")
-
-    assert action == expected, f"\nExpected: {expected}\nGot: {action}"
+        assert action == expected, f"Expected {expected} but got {action}"
+        mock_decide.assert_called_once()
+        args = mock_decide.call_args
+        print(f"decide_action called with args: {args}")
+        assert args[1]["strategy_style"] == planner.strategy_style
 
 
 def test_execute_action_no_plan(planner):
     """Test execute_action falls back to 'call' with no plan"""
-    action = planner.execute_action("game_state")
+    game_state = GameState(
+        players=[],
+        dealer_position=0,
+        small_blind=10,
+        big_blind=20,
+        ante=0,
+        min_bet=20,
+        round_state=RoundState(phase="preflop", current_bet=0, round_number=1),
+        pot_state=PotState(main_pot=0),
+        deck_state=DeckState(cards_remaining=52),
+        active_player_position=1,
+    )
+    action = planner.execute_action(game_state)
     assert action == "call"
 
 
 def test_requires_replanning(planner):
+    """Test replanning trigger conditions"""
+    print("\nTesting replanning conditions:")
+
+    # Create base game state
+    base_state = GameState(
+        players=[
+            PlayerState(
+                name="Player1",
+                chips=1000,
+                position=PlayerPosition.DEALER,
+                bet=0,
+                folded=False,
+                is_dealer=True,
+                is_small_blind=False,
+                is_big_blind=False,
+            )
+        ],
+        dealer_position=0,
+        small_blind=10,
+        big_blind=20,
+        ante=0,
+        min_bet=20,
+        round_state=RoundState(phase="preflop", current_bet=0, round_number=1),
+        pot_state=PotState(main_pot=0),
+        deck_state=DeckState(cards_remaining=52),
+        active_player_position=0,
+    )
+
     # Test with no current plan
-    assert planner._requires_replanning("game_state") is True
+    print("Testing with no current plan:")
+    with patch.object(planner, "extract_metrics") as mock_extract:
+        mock_extract.return_value = {
+            "stack_size": 1000,
+            "position": "dealer",  # Use string value
+            "phase": "preflop",
+            "pot_size": 0,
+        }
+        assert planner.requires_replanning(base_state) is True
+        print("Correctly requires replanning with no plan")
 
-    # Create a plan
-    planner.plan_strategy("game_state", chips=1000)
+    # Create and set initial plan
+    current_time = time.time()
+    initial_plan = Plan(
+        approach=Approach.AGGRESSIVE,
+        reasoning="Test plan",
+        bet_sizing=BetSizing.LARGE,
+        bluff_threshold=0.7,
+        fold_threshold=0.2,
+        expiry=current_time + 30.0,  # Set expiry in the future
+        adjustments=[],
+        target_opponent=None,
+    )
+    planner.current_plan = initial_plan
+    print(f"Created initial plan: {initial_plan}")
 
-    # Test significant changes
-    assert planner._requires_replanning("pot: $5000, chips: $200") is True  # Low chips
-    assert planner._requires_replanning("normal state") is False
+    # Set up initial metrics
+    initial_metrics = {
+        "stack_size": 1000,
+        "position": "dealer",  # Use string value
+        "phase": "preflop",
+        "pot_size": 0,
+    }
+    planner.last_metrics = initial_metrics.copy()
+    print(f"Initial metrics set: {initial_metrics}")
+
+    # Test no significant changes
+    with patch.object(planner, "extract_metrics") as mock_extract:
+        mock_extract.return_value = initial_metrics.copy()
+        result = planner.requires_replanning(base_state)
+        print(f"Current metrics: {mock_extract.return_value}")
+        print(f"Last metrics: {planner.last_metrics}")
+        print(f"Current plan expired: {planner.current_plan.is_expired()}")
+        assert result is False, "Should not replan when metrics haven't changed"
+        print("Correctly does not replan with no changes")
+
+    # Test position change
+    with patch.object(planner, "extract_metrics") as mock_extract:
+        changed_metrics = initial_metrics.copy()
+        changed_metrics["position"] = "big_blind"  # Use string value
+        mock_extract.return_value = changed_metrics
+        assert planner.requires_replanning(base_state) is True
+        print("Correctly requires replanning on position change")
+
+    # Test significant stack change
+    with patch.object(planner, "extract_metrics") as mock_extract:
+        changed_metrics = initial_metrics.copy()
+        changed_metrics["stack_size"] = 500  # Changed by more than threshold
+        mock_extract.return_value = changed_metrics
+        assert planner.requires_replanning(base_state) is True
+        print("Correctly requires replanning on significant stack change")
+
+    # Test small stack change (shouldn't trigger replan)
+    with patch.object(planner, "extract_metrics") as mock_extract:
+        changed_metrics = initial_metrics.copy()
+        changed_metrics["stack_size"] = 1050  # Small change
+        mock_extract.return_value = changed_metrics
+        assert planner.requires_replanning(base_state) is False
+        print("Correctly does not replan on small stack change")
 
 
-@pytest.mark.parametrize(
-    "game_state,expected",
-    [
-        (
-            "pot: $200, chips: $1000, current bet: $50",
-            {"pot": 200, "chips": 1000, "current_bet": 50},
+def test_strategy_planner_planning():
+    """Test strategy planning with mocked LLM client"""
+    print("\nTesting strategy planner planning:")
+
+    # Create mock LLM client and OpenAI client
+    mock_openai = Mock()
+    planner = StrategyPlanner(strategy_style="Aggressive", client=mock_openai)
+    print(f"Created planner with strategy style: {planner.strategy_style}")
+
+    # Create a proper GameState object with complete PlayerState objects
+    game_state = GameState(
+        players=[
+            PlayerState(
+                name="Player1",
+                chips=1000,
+                position=PlayerPosition.DEALER,
+                bet=0,
+                folded=False,
+                is_dealer=True,
+                is_small_blind=False,
+                is_big_blind=False,
+            ),
+            PlayerState(
+                name="Player2",
+                chips=1000,
+                position=PlayerPosition.SMALL_BLIND,
+                bet=10,
+                folded=False,
+                is_dealer=False,
+                is_small_blind=True,
+                is_big_blind=False,
+            ),
+            PlayerState(
+                name="Player3",
+                chips=1000,
+                position=PlayerPosition.BIG_BLIND,
+                bet=20,
+                folded=False,
+                is_dealer=False,
+                is_small_blind=False,
+                is_big_blind=True,
+            ),
+        ],
+        dealer_position=0,
+        small_blind=10,
+        big_blind=20,
+        ante=0,
+        min_bet=20,
+        round_state=RoundState(
+            phase="preflop",
+            current_bet=50,
+            round_number=1,
+            dealer_position=0,
+            small_blind_position=1,
+            big_blind_position=2,
+            first_bettor_index=0,
         ),
-        ("pot: $1,000, chips: $5,000", {"pot": 1000, "chips": 5000}),
-        ("invalid state", {}),
-    ],
-)
-def test_extract_game_metrics(planner, game_state, expected):
-    metrics = planner._extract_game_metrics(game_state)
-    assert metrics == expected
+        pot_state=PotState(main_pot=200),
+        deck_state=DeckState(cards_remaining=52),
+        active_player_position=1,
+    )
+    print(f"Game state: {game_state}")
+
+    # Mock both extract_metrics and generate_plan
+    with patch.object(planner, "extract_metrics") as mock_extract:
+        metrics = {
+            "position": PlayerPosition.BIG_BLIND.value,
+            "stack_size": 1000,
+            "phase": "preflop",
+            "pot_size": 100,
+            "current_bet": 50,
+        }
+        print(f"Mock metrics: {metrics}")
+        mock_extract.return_value = metrics
+
+        with patch.object(planner.llm_client, "generate_plan") as mock_generate_plan:
+            mock_plan = {
+                "approach": "aggressive",
+                "reasoning": "Test plan",
+                "bet_sizing": "large",
+                "bluff_threshold": 0.7,
+                "fold_threshold": 0.2,
+                "adjustments": [],
+                "target_opponent": None,
+            }
+            print(f"Mock plan: {mock_plan}")
+            mock_generate_plan.return_value = mock_plan
+
+            # Test plan generation
+            plan = planner.plan_strategy(game_state, chips=1000)
+            print(f"Generated plan: {plan}")
+
+            # Verify the plan was created correctly
+            assert isinstance(plan, Plan)
+            assert (
+                plan.approach == Approach.AGGRESSIVE
+            ), f"Expected AGGRESSIVE but got {plan.approach}"
+            assert plan.bet_sizing == BetSizing.LARGE
+            assert plan.bluff_threshold == 0.7
+            assert plan.fold_threshold == 0.2
 
 
-@pytest.mark.parametrize(
-    "action,expected",
-    [
-        ("fold", "fold"),
-        ("FOLD", "fold"),
-        ("  call  ", "call"),
-        ("RAISE", "raise"),
-        ("raise with strong hand", "raise"),  # Add this test case
-        ("raise 200", "raise 200"),  # Add this test case
-        ("invalid", "call"),
-        ("", "call"),
-    ],
-)
-def test_normalize_action(planner, action, expected):
-    print(f"\nTesting normalize_action:")
-    print(f"Input: '{action}'")
-    result = planner._normalize_action(action)
-    print(f"Output: '{result}'")
-    assert result == expected, f"\nExpected: {expected}\nGot: {result}"
+def test_validate_plan_data(planner):
+    """Test plan data validation"""
+    print("\nTesting plan data validation:")
+
+    # Test valid plan data
+    valid_plan = {
+        "approach": "aggressive",
+        "reasoning": "Test plan",
+        "bet_sizing": "large",
+        "bluff_threshold": 0.7,
+        "fold_threshold": 0.2,
+        "adjustments": [],
+        "target_opponent": None,
+    }
+    print(f"Testing valid plan: {valid_plan}")
+
+    validated = planner._validate_plan_data(valid_plan)
+    assert validated["approach"] == Approach.AGGRESSIVE
+    assert validated["bet_sizing"] == BetSizing.LARGE
+    assert validated["bluff_threshold"] == 0.7
+    print("Valid plan passed validation")
+
+    # Test missing required field
+    invalid_plan = valid_plan.copy()
+    del invalid_plan["approach"]
+    print(f"\nTesting plan with missing field: {invalid_plan}")
+
+    with pytest.raises(ValueError, match="Missing required field: approach"):
+        planner._validate_plan_data(invalid_plan)
+    print("Missing field correctly detected")
+
+    # Test invalid enum value
+    invalid_plan = valid_plan.copy()
+    invalid_plan["approach"] = "invalid_approach"
+    print(f"\nTesting plan with invalid enum: {invalid_plan}")
+
+    with pytest.raises(ValueError, match="Invalid value for approach"):
+        planner._validate_plan_data(invalid_plan)
+    print("Invalid enum value correctly detected")
+
+    # Test invalid threshold range
+    invalid_plan = valid_plan.copy()
+    invalid_plan["bluff_threshold"] = 1.5
+    print(f"\nTesting plan with invalid threshold: {invalid_plan}")
+
+    with pytest.raises(ValueError, match="Invalid range for bluff_threshold"):
+        planner._validate_plan_data(invalid_plan)
+    print("Invalid threshold range correctly detected")
+
+
+def test_plan_strategy_retries(planner, mock_openai_client):
+    """Test plan generation retry logic"""
+    print("\nTesting plan generation retries:")
+
+    game_state = GameState(
+        players=[
+            PlayerState(
+                name="Player1",
+                chips=1000,
+                position=PlayerPosition.DEALER,
+                bet=0,
+                folded=False,
+                is_dealer=True,
+                is_small_blind=False,
+                is_big_blind=False,
+            )
+        ],
+        dealer_position=0,
+        small_blind=10,
+        big_blind=20,
+        ante=0,
+        min_bet=20,
+        round_state=RoundState(phase="preflop", current_bet=0, round_number=1),
+        pot_state=PotState(main_pot=0),
+        deck_state=DeckState(cards_remaining=52),
+        active_player_position=0,
+    )
+
+    # Mock generate_plan to fail twice then succeed
+    with patch.object(planner.llm_client, "generate_plan") as mock_generate:
+        mock_generate.side_effect = [
+            {"invalid": "plan"},  # First attempt - invalid plan
+            ValueError("Bad plan"),  # Second attempt - error
+            {  # Third attempt - success
+                "approach": "aggressive",
+                "reasoning": "Test plan",
+                "bet_sizing": "large",
+                "bluff_threshold": 0.7,
+                "fold_threshold": 0.2,
+                "adjustments": [],
+                "target_opponent": None,
+            },
+        ]
+
+        plan = planner.plan_strategy(game_state, chips=1000)
+
+        # Verify retries occurred
+        assert mock_generate.call_count == 3
+        assert isinstance(plan, Plan)
+        assert plan.approach == Approach.AGGRESSIVE
+        print("Successfully retried and generated valid plan")
+
+
+def test_plan_strategy_all_retries_fail(planner, mock_openai_client):
+    """Test fallback when all retries fail"""
+    print("\nTesting all retries failing:")
+
+    game_state = GameState(
+        players=[
+            PlayerState(
+                name="Player1",
+                chips=1000,
+                position=PlayerPosition.DEALER,
+                bet=0,
+                folded=False,
+                is_dealer=True,
+                is_small_blind=False,
+                is_big_blind=False,
+            )
+        ],
+        dealer_position=0,
+        small_blind=10,
+        big_blind=20,
+        ante=0,
+        min_bet=20,
+        round_state=RoundState(phase="preflop", current_bet=0, round_number=1),
+        pot_state=PotState(main_pot=0),
+        deck_state=DeckState(cards_remaining=52),
+        active_player_position=0,
+    )
+
+    # Mock generate_plan to always fail
+    with patch.object(planner.llm_client, "generate_plan") as mock_generate:
+        mock_generate.side_effect = ValueError("Bad plan")
+
+        plan = planner.plan_strategy(game_state, chips=1000)
+
+        # Verify retries and fallback
+        assert mock_generate.call_count == 3
+        assert isinstance(plan, Plan)
+        assert plan.approach == Approach.BALANCED
+        assert "Plan validation failed after 3 attempts" in plan.reasoning
+        print("Correctly fell back to balanced strategy after all retries failed")
+
+
+def test_create_fallback_plan(planner):
+    """Test fallback plan creation"""
+    print("\nTesting fallback plan creation:")
+
+    current_time = time.time()
+    reason = "Test fallback reason"
+
+    plan = planner._create_fallback_plan(current_time, reason)
+
+    assert isinstance(plan, Plan)
+    assert plan.approach == Approach.BALANCED
+    assert plan.bet_sizing == BetSizing.MEDIUM
+    assert plan.bluff_threshold == 0.5
+    assert plan.fold_threshold == 0.3
+    assert reason in plan.reasoning
+    assert plan.expiry == current_time + planner.plan_duration
+    print("Fallback plan created with correct attributes")
+
+
+def test_plan_expiration(planner):
+    """Test plan expiration logic"""
+    print("\nTesting plan expiration:")
+
+    current_time = time.time()
+
+    # Create a plan that expires in 5 seconds
+    plan = Plan(
+        approach=Approach.AGGRESSIVE,
+        reasoning="Test plan",
+        bet_sizing=BetSizing.LARGE,
+        bluff_threshold=0.7,
+        fold_threshold=0.2,
+        expiry=current_time + 5.0,
+        adjustments=[],
+        target_opponent=None,
+    )
+    print(f"Created plan expiring in 5 seconds")
+
+    # Test not expired
+    assert not plan.is_expired(current_time)
+    assert not plan.is_expired(current_time + 4.9)
+    print("Plan correctly shows as not expired")
+
+    # Test expired
+    assert plan.is_expired(current_time + 5.1)
+    print("Plan correctly shows as expired")
+
+    # Test default current_time
+    time.sleep(0.1)  # Ensure some time has passed
+    not_expired_plan = Plan(
+        approach=Approach.AGGRESSIVE,
+        reasoning="Test plan",
+        bet_sizing=BetSizing.LARGE,
+        bluff_threshold=0.7,
+        fold_threshold=0.2,
+        expiry=time.time() + 1.0,  # Expires in 1 second
+        adjustments=[],
+        target_opponent=None,
+    )
+    assert not not_expired_plan.is_expired()  # Should use current time
+    print("Plan expiration works with default current_time")
+
+    # Test expired plan with default current_time
+    expired_plan = Plan(
+        approach=Approach.AGGRESSIVE,
+        reasoning="Test plan",
+        bet_sizing=BetSizing.LARGE,
+        bluff_threshold=0.7,
+        fold_threshold=0.2,
+        expiry=time.time() - 1.0,  # Expired 1 second ago
+        adjustments=[],
+        target_opponent=None,
+    )
+    assert expired_plan.is_expired()  # Should use current time
+    print("Expired plan detected with default current_time")

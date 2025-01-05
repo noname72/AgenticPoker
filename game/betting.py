@@ -321,9 +321,13 @@ def _process_player_action(
         min_raise_amount = last_raiser.bet * 2  # Double the last raise
 
     # Log initial state with active player context
-    logging.info(f"  Active players: {[p.name for p in active_players if not p.folded]}")
+    logging.info(
+        f"  Active players: {[p.name for p in active_players if not p.folded]}"
+    )
     logging.info(f"  Last raiser: {last_raiser.name if last_raiser else 'None'}")
-    logging.info(f"  Hand: {player.hand.show() if hasattr(player, 'hand') else 'Unknown'}")
+    logging.info(
+        f"  Hand: {player.hand.show() if hasattr(player, 'hand') else 'Unknown'}"
+    )
     logging.info(f"  Current bet to call: ${to_call}")
     logging.info(f"  Player chips: ${player.chips}")
     logging.info(f"  Player current bet: ${player.bet}")
@@ -341,7 +345,7 @@ def _process_player_action(
         # Player can only bet what they have
         bet_amount = min(to_call, player.chips)
         actual_bet = player.place_bet(bet_amount)
-        
+
         # Add the bet to the pot
         pot += actual_bet
 
@@ -525,7 +529,7 @@ def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante
 
     # Collect antes first
     if ante > 0:
-        logging.info("\nCollecting antes...")
+        logging.info("\nCollecting antes:")
         for player in players:
             ante_amount = min(ante, player.chips)
             player.chips -= ante_amount
@@ -534,10 +538,10 @@ def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante
             status = " (all in)" if player.chips == 0 else ""
             if ante_amount < ante:
                 logging.info(
-                    f"{player.name} posts partial ante of ${ante_amount}{status}"
+                    f"  {player.name} posts partial ante of ${ante_amount}{status}"
                 )
             else:
-                logging.info(f"{player.name} posts ante of ${ante_amount}{status}")
+                logging.info(f" {player.name} posts ante of ${ante_amount}{status}")
 
         # Add extra line break after antes
         logging.info("")
