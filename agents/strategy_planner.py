@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from openai import OpenAI
 
+from game.base_types import PlayerPosition
 from game.types import GameState
 
 from .llm_client import LLMClient
@@ -191,11 +192,6 @@ class StrategyPlanner:
                 return self._create_fallback_plan(
                     current_time, reason="No position information available"
                 )
-
-            logger.info(
-                "[Strategy] Generating new plan for position: %s", metrics["position"]
-            )
-
             # Generate new plan with retries
             max_retries = 3
             for attempt in range(max_retries):
@@ -215,11 +211,7 @@ class StrategyPlanner:
                     )
 
                     self.current_plan = plan
-                    logger.info(
-                        "[Strategy] Created new %s plan: %s",
-                        plan.approach.value,
-                        plan.reasoning,
-                    )
+                    logger.info(f"[Strategy] New Plan: {plan}")
                     return plan
 
                 except ValueError as e:
@@ -306,14 +298,10 @@ class StrategyPlanner:
                 strategy_style=self.strategy_style,
                 game_state=self._format_state_summary(game_state),
                 plan=self.current_plan.dict(),
-                hand_eval=hand_eval,
             )
 
             logger.info(
-                "[Action] Decided on '%s' based on %s strategy with hand %s",
-                action,
-                self.current_plan.approach.value,
-                hand_eval[2] if hand_eval else "unknown",
+                f"[Action] Decided on '{action}' based on {self.current_plan.approach.value} strategy"
             )
             return action
 
@@ -423,7 +411,9 @@ class StrategyPlanner:
                 "stack_size": active_player_state.chips if active_player_state else 0,
                 "pot_size": game_state.pot_state.main_pot,
                 "position": (
-                    active_player_state.position.value if active_player_state else None
+                    active_player_state.position.value
+                    if active_player_state
+                    else PlayerPosition.OTHER
                 ),
                 "phase": game_state.round_state.phase,
                 "players_remaining": len(
@@ -470,7 +460,7 @@ class StrategyPlanner:
             return {
                 "stack_size": 0,
                 "pot_size": 0,
-                "position": None,
+                "position": PlayerPosition.OTHER,
                 "phase": "unknown",
                 "players_remaining": 0,
                 "pot_odds": 0.0,

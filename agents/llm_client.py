@@ -2,7 +2,7 @@ import json
 import logging
 import re
 import time
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 from openai import OpenAI
 
@@ -107,13 +107,20 @@ class LLMClient:
 
         return eval(response.strip())  # Safe since we control LLM output format
 
-    def decide_action(self, strategy_style: str, game_state: str, plan: Dict) -> str:
+    def decide_action(
+        self,
+        strategy_style: str,
+        game_state: str,
+        plan: Dict,
+        hand_eval: Optional[Tuple[str, int, List[int]]] = None,
+    ) -> str:
         """Decide on a specific poker action using JSON-based response format.
 
         Args:
             strategy_style: Player's strategic style
             game_state: Current game state
             plan: Current strategic plan
+            hand_eval: Current hand evaluation
 
         Returns:
             str: Poker action ('fold', 'call', or 'raise X')
@@ -125,6 +132,9 @@ class LLMClient:
         You are a {strategy_style} poker player following this plan:
         Approach: {plan['approach']}
         Reasoning: {plan['reasoning']}
+        
+        Current hand evaluation:
+        {hand_eval}
         
         Current situation:
         {game_state}
