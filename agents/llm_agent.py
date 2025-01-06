@@ -22,6 +22,7 @@ from agents.prompts import (
 )
 from agents.strategy_cards import StrategyManager
 from agents.strategy_planner import StrategyPlanner
+from agents.types import Approach, BetSizing, Plan
 from data.memory import ChromaMemoryStore
 from exceptions import LLMError, OpenAIError
 from game.types import GameState
@@ -126,6 +127,11 @@ class LLMAgent(BaseAgent):
         if not api_key:
             raise ValueError("OPENAI_API_KEY environment variable not set")
         self.client = OpenAI(api_key=api_key)
+
+        # Initialize LLM client
+        from agents.llm_client import LLMClient
+
+        self.llm_client = LLMClient(self.client)
 
         # Add plan tracking (only if planning is enabled)
         if self.use_planning:
@@ -307,47 +313,71 @@ class LLMAgent(BaseAgent):
             pass  # Suppress errors during interpreter shutdown
 
     def _get_decision_prompt(self, game_state: str) -> str:
-        """Creates a decision prompt combining strategy and game state."""
-        strategy_prompt = self.strategy_manager.get_complete_prompt(
-            {
-                "chips": self.chips,
-                "is_bubble": self._is_bubble_situation(game_state),
-            }
-        )
+        """Format the decision prompt with current game state and strategy."""
+        # Get current plan if available
+        current_plan = None
+        if self.use_planning and hasattr(self, "strategy_planner"):
+            current_plan = self.strategy_planner.current_plan
+
+        # Format plan information if available
+        plan_info = ""
+        if current_plan:
+            plan_info = f"""
+Your current strategic plan:
+- Approach: {current_plan.approach}
+- Reasoning: {current_plan.reasoning}
+- Bet Sizing: {current_plan.bet_sizing}
+- Bluff Threshold: {current_plan.bluff_threshold}
+- Fold Threshold: {current_plan.fold_threshold}
+"""
+        else:
+            plan_info = "No active strategic plan."
 
         return DECISION_PROMPT.format(
             strategy_style=self.strategy_style,
-            strategy_prompt=strategy_prompt,
             game_state=game_state,
+            strategy_prompt=plan_info,
         )
 
-    def decide_action(self, game_state: str) -> str:
-        """Decide what action to take based on current game state."""
+    def decide_action(self, game_state: str) -> Tuple[str, int]:
+        """Decide on an action for the current game state.
+
+        Returns:
+            Tuple[str, int]: A tuple containing:
+                - action: 'fold', 'call', or 'raise'
+                - amount: Amount to bet (for raises) or 0 (for fold/call)
+        """
         try:
-            # Get hand evaluation before making decision
-            hand_eval = self.hand.evaluate() if self.hand else None
+            # Get the decision prompt
+            prompt = self._get_decision_prompt(game_state)
 
-            if self.strategy_planner:
-                action = self.strategy_planner.execute_action(game_state, hand_eval)
+            # Get raw action from LLM
+            raw_action = self.llm_client.decide_action(
+                strategy_style=self.strategy_style,
+                game_state=game_state,
+                plan=self.current_plan.dict() if self.current_plan else {},
+                min_raise=100,  # Default minimum raise
+            )
 
-                # Parse raise amount if present
-                if action.startswith("raise"):
-                    try:
-                        _, amount = action.split()
-                        return f"raise {amount}"
-                    except (ValueError, IndexError):
-                        self.logger.warning(
-                            "Invalid raise format received from strategy planner"
-                        )
-                        return "call"  # Safe fallback for invalid raise format
-                return action
+            # Parse the action and amount
+            if raw_action.startswith("raise"):
+                action = "raise"
+                try:
+                    amount = int(raw_action.split()[1])
+                except (IndexError, ValueError):
+                    amount = 100  # Default raise amount
+            elif raw_action == "fold":
+                action = "fold"
+                amount = 0
+            else:  # Default to call
+                action = "call"
+                amount = 0
 
-            # Fallback to basic decision making if no strategy planner
-            return self._basic_decision(game_state)
+            return action, amount
 
         except Exception as e:
             self.logger.error(f"Decision error: {str(e)}")
-            return "call"  # Changed from "fold" to "call" for consistent safe fallback
+            return "call", 0  # Safe default
 
     def _format_game_state(self, game_state: GameState) -> Dict[str, Any]:
         """Format game state into a dictionary representation."""
@@ -1078,12 +1108,12 @@ class LLMAgent(BaseAgent):
         }
         if self.use_planning and self.current_plan:
             stats["current_plan"] = {
-                "approach": self.current_plan["approach"],
+                "approach": self.current_plan.approach,
                 "expires_in": max(0, self.plan_expiry - time.time()),
             }
         return stats
 
-    def plan_strategy(self, game_state: str) -> Dict[str, Any]:
+    def plan_strategy(self, game_state: str) -> Plan:
         """Generate or update the agent's strategic plan.
 
         Creates a short-term strategic plan considering the agent's traits, current
@@ -1094,15 +1124,7 @@ class LLMAgent(BaseAgent):
             game_state: Current state of the game
 
         Returns:
-            dict: Strategic plan containing:
-                - approach: Overall strategy (aggressive/defensive/deceptive/balanced)
-                - reasoning: Explanation of the chosen approach
-                - bet_sizing: Preferred bet size (small/medium/large)
-                - bluff_threshold: Probability threshold for bluffing
-                - fold_threshold: Probability threshold for folding
-
-        Note:
-            Plans expire after a set duration or when significant game changes occur.
+            Plan: Strategic plan containing approach, bet sizing, thresholds, etc.
         """
         # Check if we have a valid current plan
         current_time = time.time()
@@ -1120,27 +1142,46 @@ class LLMAgent(BaseAgent):
 
         try:
             response = self._query_llm(planning_prompt)
-            plan = eval(response.strip())  # Safe since we control LLM output format
+            plan_data = eval(
+                response.strip()
+            )  # Safe since we control LLM output format
+
+            # Create Plan instance with proper expiry time
+            plan = Plan(
+                approach=Approach(plan_data.get("approach", "balanced")),
+                reasoning=plan_data.get(
+                    "reasoning", "Error in planning, using balanced approach"
+                ),
+                bet_sizing=BetSizing(plan_data.get("bet_sizing", "medium")),
+                bluff_threshold=float(plan_data.get("bluff_threshold", 0.7)),
+                fold_threshold=float(plan_data.get("fold_threshold", 0.3)),
+                expiry=current_time + 300,  # 5 minute expiry
+                adjustments=[],
+                target_opponent=None,
+            )
 
             # Update plan tracking
             self.current_plan = plan
-            self.plan_expiry = current_time + self.plan_duration
+            self.plan_expiry = plan.expiry
 
             self.logger.info(
-                f"[Planning] {self.name} adopted {plan['approach']} approach: {plan['reasoning']}"
+                f"[Planning] {self.name} adopted {plan.approach} approach: {plan.reasoning}"
             )
             return plan
 
         except Exception as e:
             self.logger.error(f"Planning failed: {str(e)}")
-            # Fallback plan
-            return {
-                "approach": "balanced",
-                "reasoning": "Error in planning, falling back to balanced approach",
-                "bet_sizing": "medium",
-                "bluff_threshold": 0.5,
-                "fold_threshold": 0.3,
-            }
+            # Return fallback Plan object instead of dictionary
+            return Plan(
+                approach=Approach.BALANCED,
+                reasoning="Error in planning, falling back to balanced approach",
+                bet_sizing=BetSizing.MEDIUM,
+                bluff_threshold=0.7,
+                fold_threshold=0.3,
+                expiry=current_time + 300,  # 5 minute expiry
+                adjustments=[],
+                target_opponent=None,
+            )
 
     def _should_replan(self, game_state: str) -> bool:
         """Determine if current plan should be abandoned for a new one.

@@ -15,6 +15,25 @@ Designed for realism and adaptability, AgenticPoker offers a comprehensive poker
 - **Customizable Parameters**: Configure blinds, antes, starting chips, and game modes.
 - **Session Tracking**: Unique session IDs for organized gameplay.
 - **Formats**: Supports both tournament and cash game styles.
+- **Game Flow Visualization**: Interactive visualization of game phases and transitions.
+
+### Game Flow
+Below is a visualization of the complete game flow, including all phases, available actions, and conditional transitions:
+
+![Poker Game Flow](docs/poker_game_flow.png)
+
+The diagram shows:
+- **Core Game Phases**: Pre-Draw, Draw, Post-Draw, and Showdown
+- **Available Actions**: Check, Bet, Call, Raise, Fold
+- **Phase Types**:
+  - **Collection**: Ante and blind collection (grey)
+  - **Dealing**: Card distribution phases (green)
+  - **Betting**: Player betting rounds (blue)
+  - **Decision**: Player choice phases (yellow)
+  - **Evaluation**: Hand evaluation and showdown (pink)
+- **Transitions**:
+  - **Normal Flow**: Solid lines showing standard game progression
+  - **Conditional**: Dashed lines showing special cases (timeouts, all-fold scenarios)
 
 ### AI Players
 AgenticPoker introduces intelligent LLM-powered agents with unique personalities and advanced decision-making capabilities.
@@ -92,6 +111,9 @@ poker-ai/
 │   ├── strategy_cards.py  # Strategy definitions
 │   ├── strategy_planner.py# Strategic planning
 │   └── prompts.py         # LLM prompt templates
+├── visualization/         # Game visualization
+│   ├── game_flow.py      # Game flow diagram generator
+│   └── styles.py         # Visualization styling
 ├── game/                  # Core poker game logic
 │   ├── betting.py         # Betting mechanics
 │   ├── card.py           # Card representation

@@ -19,6 +19,7 @@ class Player:
         bet (int): The amount of chips bet in the current betting round
         folded (bool): Whether the player has folded in the current hand
         hand (Hand): The player's current hand of cards
+        position (PlayerPosition): The player's current position in the game
     """
 
     name: str
@@ -26,6 +27,7 @@ class Player:
     bet: int
     folded: bool
     hand: Hand
+    position: PlayerPosition
 
     def __init__(self, name: str, chips: int = 1000) -> None:
         """
@@ -50,6 +52,7 @@ class Player:
         self.bet = 0
         self.folded = False
         self.hand = Hand()
+        self.position = PlayerPosition.OTHER
 
     def place_bet(self, amount: int) -> int:
         """

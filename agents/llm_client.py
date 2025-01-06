@@ -2,7 +2,7 @@ import json
 import logging
 import re
 import time
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, Any
 
 from openai import OpenAI
 
@@ -73,7 +73,7 @@ class LLMClient:
                     ) from e
                 time.sleep(self.retry_delay)
 
-    def generate_plan(self, strategy_style: str, game_state: str) -> Dict:
+    def generate_plan(self, strategy_style: str, game_state: str) -> Dict[str, Any]:
         """Generate a strategic plan using the LLM.
 
         Args:
@@ -81,169 +81,172 @@ class LLMClient:
             game_state: Current game state
 
         Returns:
-            Dict: Strategic plan containing approach, bet sizing, etc.
+            Dict[str, Any]: Strategic plan containing approach, bet sizing, etc.
         """
-        planning_prompt = f"""
-        You are a {strategy_style} poker player planning your strategy.
-        
-        Current situation:
-        {game_state}
-        
-        Create a strategic plan in valid JSON format:
-        {{
-            "approach": "aggressive|balanced|defensive",
-            "reasoning": "<brief explanation>",
-            "bet_sizing": "small|medium|large",
-            "bluff_threshold": <0.0-1.0>,
-            "fold_threshold": <0.0-1.0>
-        }}
-        """
-
-        response = self.query(
-            prompt=planning_prompt,
-            temperature=0.7,
-            system_message=f"You are a {strategy_style} poker strategist.",
-        )
-
-        return eval(response.strip())  # Safe since we control LLM output format
-
-    def decide_action(self, strategy_style: str, game_state: str, plan: Dict) -> str:
-        """Decide on a specific poker action using JSON-based response format.
-
-        Args:
-            strategy_style: Player's strategic style
-            game_state: Current game state
-            plan: Current strategic plan
-
-        Returns:
-            str: Poker action ('fold', 'call', or 'raise X')
-
-        Raises:
-            ValueError: If response cannot be parsed into valid action
-        """
-        execution_prompt = f"""
-        You are a {strategy_style} poker player following this plan:
-        Approach: {plan['approach']}
-        Reasoning: {plan['reasoning']}
-        
-        Current situation:
-        {game_state}
-        
-        Respond with a JSON object containing your action decision:
-        {{
-            "action": "fold" | "call" | "raise",
-            "raise_amount": <optional number if action is raise>,
-            "reasoning": "<brief explanation of decision>"
-        }}
-        """
-
-        response = self.query(
-            prompt=execution_prompt,
-            temperature=0.5,  # Lower temperature for more consistent decisions
-            system_message=f"You are a {strategy_style} poker player.",
-        )
-
         try:
-            # First try JSON parsing
-            action_data = self._parse_json_action(response)
-            if action_data:
-                return self._format_action(action_data)
+            planning_prompt = f"""You are a {strategy_style} poker player planning your strategy.
+            
+Current situation:
+{game_state}
 
-            # Fallback to regex parsing if JSON fails
-            action = self._parse_regex_action(response)
-            if action:
-                return action
+Create a strategic plan in valid JSON format:
+{{
+    "approach": "aggressive|balanced|defensive",
+    "reasoning": "<brief explanation>",
+    "bet_sizing": "small|medium|large",
+    "bluff_threshold": <0.0-1.0>,
+    "fold_threshold": <0.0-1.0>
+}}
 
-            # If both parsing methods fail, raise error
-            raise ValueError("Could not parse valid action from response")
+Example valid response:
+{{
+    "approach": "aggressive",
+    "reasoning": "Strong hand and good position",
+    "bet_sizing": "large",
+    "bluff_threshold": 0.8,
+    "fold_threshold": 0.2
+}}
+"""
+
+            response = self.query(
+                prompt=planning_prompt,
+                temperature=0.7,
+                system_message=f"You are a {strategy_style} poker strategist.",
+            )
+
+            # Try to parse JSON response
+            try:
+                import json
+                plan_data = json.loads(response.strip())
+                
+                # Validate required fields
+                required_fields = ['approach', 'reasoning', 'bet_sizing', 'bluff_threshold', 'fold_threshold']
+                for field in required_fields:
+                    if field not in plan_data:
+                        raise ValueError(f"Missing required field: {field}")
+                        
+                return plan_data
+                
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse plan JSON: {response}")
+                # Return default plan
+                return {
+                    "approach": "balanced",
+                    "reasoning": "Default plan due to parsing error",
+                    "bet_sizing": "medium",
+                    "bluff_threshold": 0.7,
+                    "fold_threshold": 0.3
+                }
 
         except Exception as e:
-            logger.error(f"Action parsing failed: {str(e)}")
-            return "call"  # Safe fallback
+            logger.error(f"Error generating plan: {str(e)}")
+            # Return default plan
+            return {
+                "approach": "balanced",
+                "reasoning": "Default plan due to error",
+                "bet_sizing": "medium",
+                "bluff_threshold": 0.7,
+                "fold_threshold": 0.3
+            }
 
-    def _parse_json_action(self, response: str) -> Optional[Dict]:
-        """Parse JSON action data from response.
-
-        Returns:
-            Optional[Dict]: Parsed action data or None if parsing fails
-        """
-        try:
-            # Find JSON-like structure in response
-            json_match = re.search(r"\{[^}]+\}", response)
-            if not json_match:
-                return None
-
-            action_data = json.loads(json_match.group())
-
-            # Validate required fields
-            if "action" not in action_data:
-                return None
-
-            # Normalize action
-            action_data["action"] = action_data["action"].lower().strip()
-
-            # Validate action value
-            if action_data["action"] not in ["fold", "call", "raise"]:
-                return None
-
-            return action_data
-
-        except json.JSONDecodeError:
-            return None
-
-    def _parse_regex_action(self, response: str) -> Optional[str]:
-        """Parse action using regex as fallback method.
-
-        Returns:
-            Optional[str]: Parsed action or None if parsing fails
-        """
-        try:
-            # Look for EXECUTE: format
-            execute_match = re.search(
-                r"EXECUTE:\s*(fold|call|raise(?:\s+\d+)?)", response, re.IGNORECASE
-            )
-            if execute_match:
-                return execute_match.group(1).lower().strip()
-
-            # Alternative: Look for action keywords in text
-            action_match = re.search(
-                r"\b(fold|call|raise(?:\s+\d+)?)\b", response.lower()
-            )
-            if action_match:
-                return action_match.group(1).strip()
-
-            return None
-
-        except Exception:
-            return None
-
-    def _format_action(self, action_data: Dict) -> str:
-        """Format parsed action data into final action string.
-
+    def decide_action(
+        self,
+        strategy_style: str,
+        game_state: str,
+        plan: Dict[str, Any],
+        min_raise: int,
+    ) -> str:
+        """Determine the next action based on strategy plan.
+        
         Args:
-            action_data: Parsed action data dictionary
-
+            strategy_style: Current strategy style being used
+            game_state: Current state of the game
+            plan: Strategic plan dictionary containing approach and parameters
+            min_raise: Minimum raise amount allowed
+            
         Returns:
-            str: Formatted action string
+            str: Action decision ('fold', 'call', or 'raise X')
         """
-        action = action_data["action"]
-        if action == "raise" and "raise_amount" in action_data:
-            return f"raise {action_data['raise_amount']}"
-        return action
+        # Create decision prompt with min_raise information
+        prompt = f"""You are a {strategy_style} poker player.
 
-    def _validate_raise_amount(self, amount: Union[int, str]) -> Optional[int]:
-        """Validate and normalize raise amount.
+Current game state:
+{game_state}
 
-        Returns:
-            Optional[int]: Valid raise amount or None if invalid
-        """
+Your current strategic plan:
+- Approach: {plan['approach']}
+- Reasoning: {plan['reasoning']}
+- Bet Sizing: {plan['bet_sizing']}
+- Bluff Threshold: {plan['bluff_threshold']}
+- Fold Threshold: {plan['fold_threshold']}
+
+Important betting rules:
+- Minimum raise amount: ${min_raise}
+- Any raise must be at least ${min_raise}
+- If you want to raise, it must be 'raise X' where X >= {min_raise}
+
+Based on your strategy and the minimum raise requirement, decide your action.
+Respond with exactly one line starting with 'ACTION: ' followed by either:
+- 'fold'
+- 'call'
+- 'raise X' (where X is your raise amount, must be >= {min_raise})
+
+Example responses:
+ACTION: fold
+ACTION: call
+ACTION: raise {min_raise}
+"""
+
         try:
-            amount = int(str(amount).strip())
-            if amount > 0:
-                return amount
-            return None
-        except (ValueError, TypeError):
-            return None
+            # Query LLM with retry logic
+            for attempt in range(3):  # 3 retries
+                try:
+                    response = self.client.chat.completions.create(
+                        model="gpt-3.5-turbo",
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.7,
+                        max_tokens=50,  # Short response needed
+                    )
+
+                    # Extract action from response
+                    action_line = None
+                    for line in response.choices[0].message.content.split('\n'):
+                        if line.startswith('ACTION:'):
+                            action_line = line.replace('ACTION:', '').strip().lower()
+                            break
+
+                    if action_line:
+                        # Validate raise amount if it's a raise
+                        if action_line.startswith('raise'):
+                            try:
+                                _, amount = action_line.split()
+                                amount = int(amount)
+                                if amount < min_raise:
+                                    self.logger.warning(
+                                        f"LLM suggested raise {amount} below minimum {min_raise}, adjusting to minimum"
+                                    )
+                                    return f"raise {min_raise}"
+                            except (ValueError, IndexError):
+                                self.logger.warning("Invalid raise format from LLM")
+                                return "call"  # Safe fallback
+                        return action_line
+                    
+                    self.logger.warning(f"No valid action found in response: {response.choices[0].message.content}")
+                    continue  # Try again
+
+                except Exception as e:
+                    if attempt < 2:  # Don't log on last attempt
+                        self.logger.warning(f"LLM query attempt {attempt + 1} failed: {str(e)}")
+                    time.sleep(1)  # Wait before retry
+                    continue
+
+            # If all retries failed, return safe default
+            self.logger.error("All LLM query attempts failed")
+            return "call"
+
+        except Exception as e:
+            self.logger.error(f"Error in decide_action: {str(e)}")
+            return "call"  # Safe fallback
 
     def generate_message(
         self,

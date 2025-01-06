@@ -436,7 +436,11 @@ class AgenticPoker:
         return True
 
     def _create_game_state(self) -> GameState:
-        """Create a structured game state object."""
+        """Create a structured game state object.
+        
+        Returns:
+            GameState: Complete game state including betting limits and current state
+        """
         # Calculate positions
         players_count = len(self.players)
         player_states = []
@@ -445,6 +449,7 @@ class AgenticPoker:
         sb_pos = (self.dealer_index + 1) % players_count
         bb_pos = (self.dealer_index + 2) % players_count
 
+        # Process player states
         for i, player in enumerate(self.players):
             # Calculate position relative to dealer
             position_index = (i - self.dealer_index) % players_count
@@ -480,6 +485,14 @@ class AgenticPoker:
         self.round_state.big_blind_position = bb_pos
         self.round_state.first_bettor_index = (bb_pos + 1) % players_count
 
+        # Calculate minimum raise based on current game state
+        current_bet = getattr(self.round_state, "current_bet", self.big_blind)
+        min_raise = max(
+            self.config.min_bet,  # Configured minimum bet
+            self.big_blind,       # Big blind amount
+            current_bet          # Current bet to match
+        )
+
         # Update round state with current pot info
         self.round_state.main_pot = self.pot_manager.pot
         self.round_state.side_pots = [
@@ -490,11 +503,12 @@ class AgenticPoker:
             for pot in (self.pot_manager.side_pots or [])
         ]
 
+        # Create complete game state
         return GameState(
             small_blind=self.small_blind,
             big_blind=self.big_blind,
             ante=self.ante,
-            min_bet=self.config.min_bet,
+            min_bet=min_raise,  # Use calculated minimum raise
             max_raise_multiplier=self.config.max_raise_multiplier,
             max_raises_per_round=self.config.max_raises_per_round,
             players=player_states,
