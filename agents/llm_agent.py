@@ -128,6 +128,11 @@ class LLMAgent(BaseAgent):
             raise ValueError("OPENAI_API_KEY environment variable not set")
         self.client = OpenAI(api_key=api_key)
 
+        # Initialize LLM client
+        from agents.llm_client import LLMClient
+
+        self.llm_client = LLMClient(self.client)
+
         # Add plan tracking (only if planning is enabled)
         if self.use_planning:
             self.strategy_planner = StrategyPlanner(
@@ -336,7 +341,7 @@ Your current strategic plan:
 
     def decide_action(self, game_state: str) -> Tuple[str, int]:
         """Decide on an action for the current game state.
-        
+
         Returns:
             Tuple[str, int]: A tuple containing:
                 - action: 'fold', 'call', or 'raise'
@@ -345,34 +350,34 @@ Your current strategic plan:
         try:
             # Get the decision prompt
             prompt = self._get_decision_prompt(game_state)
-            
+
             # Get raw action from LLM
             raw_action = self.llm_client.decide_action(
                 strategy_style=self.strategy_style,
                 game_state=game_state,
                 plan=self.current_plan.dict() if self.current_plan else {},
-                min_raise=100  # Default minimum raise
+                min_raise=100,  # Default minimum raise
             )
-            
+
             # Parse the action and amount
-            if raw_action.startswith('raise'):
-                action = 'raise'
+            if raw_action.startswith("raise"):
+                action = "raise"
                 try:
                     amount = int(raw_action.split()[1])
                 except (IndexError, ValueError):
                     amount = 100  # Default raise amount
-            elif raw_action == 'fold':
-                action = 'fold'
+            elif raw_action == "fold":
+                action = "fold"
                 amount = 0
             else:  # Default to call
-                action = 'call'
+                action = "call"
                 amount = 0
-                
+
             return action, amount
-            
+
         except Exception as e:
             self.logger.error(f"Decision error: {str(e)}")
-            return 'call', 0  # Safe default
+            return "call", 0  # Safe default
 
     def _format_game_state(self, game_state: GameState) -> Dict[str, Any]:
         """Format game state into a dictionary representation."""

@@ -24,8 +24,9 @@ echo "OPENAI_API_KEY=your_key_here" > .env
 The quickest way to start a game is using the default configuration:
 
 ```python
-from game import AgenticPoker
+from game import AgenticPoker, GameConfig
 from agents.llm_agent import LLMAgent
+from agents.random_agent import RandomAgent
 from datetime import datetime
 
 # Generate unique session ID
@@ -37,39 +38,68 @@ players = [
         "Alice", 
         chips=1000, 
         strategy_style="Aggressive Bluffer",
+        use_reasoning=True,
+        use_reflection=True,
+        use_planning=True,
+        use_opponent_modeling=True,
         session_id=session_id
     ),
     LLMAgent(
         "Bob", 
         chips=1000, 
         strategy_style="Calculated and Cautious",
+        use_planning=True,
         session_id=session_id
     ),
-    LLMAgent(
-        "Charlie", 
-        chips=1000, 
-        strategy_style="Chaotic and Unpredictable",
-        session_id=session_id
+    RandomAgent(  # Add a random baseline player
+        "Randy",
+        chips=1000
     )
 ]
 
-# Initialize and start the game
+# Initialize game with GameConfig
 game = AgenticPoker(
     players,
-    starting_chips=1000,
-    small_blind=50,
-    big_blind=100,
-    ante=10,
-    session_id=session_id
+    config=GameConfig(
+        starting_chips=1000,
+        small_blind=50,
+        big_blind=100,
+        ante=10,
+        session_id=session_id,
+        max_raise_multiplier=3,  # Maximum raise can be 3x the current bet
+        max_raises_per_round=4,  # Limit number of raises per betting round
+        min_bet=100,  # Minimum bet equal to big blind
+    )
 )
 
 game.start_game()
+```
+
+### Game Configuration
+Use GameConfig for detailed game setup:
+
+```python
+config = GameConfig(
+    starting_chips=1000,    # Initial chips for each player
+    small_blind=50,         # Small blind amount
+    big_blind=100,          # Big blind amount
+    ante=10,               # Ante amount (optional)
+    max_rounds=None,        # Optional limit on number of rounds
+    session_id=session_id,  # For logging and memory management
+    max_raise_multiplier=3, # Maximum raise as multiplier of current bet
+    max_raises_per_round=4, # Maximum raises allowed per betting round
+    min_bet=100            # Minimum bet amount (defaults to big blind)
+)
 ```
 
 ### Configuring AI Players
 You can customize AI players with different features:
 
 ```python
+# Load existing agent configurations
+from util import load_agent_configs
+agent_configs = load_agent_configs()
+
 player = LLMAgent(
     name="Alice",
     chips=1000,
@@ -81,6 +111,7 @@ player = LLMAgent(
     use_reward_learning=True,    # Enable reward-based learning
     learning_rate=0.1,          # Learning rate for reward updates
     communication_style="Intimidating",  # Communication approach
+    config=agent_configs.get("Alice"),  # Load existing config if available
     session_id=session_id       # For memory persistence
 )
 ```
@@ -95,52 +126,26 @@ player = LLMAgent(
 - "Analytical"
 - "Friendly"
 
-### Reward Learning Configuration
-Enable reward-based learning for adaptive gameplay:
+### Game State and Betting Management
+The game automatically manages betting limits and side pots:
 
 ```python
-# Create agent with reward learning
-learning_agent = LLMAgent(
-    "Alice",
-    chips=1000,
-    strategy_style="Aggressive Bluffer",
-    use_reward_learning=True,
-    learning_rate=0.1,
-    session_id=session_id
-)
+# Access current game state
+game_state = game._create_game_state()
 
-# Personality traits are automatically adjusted based on outcomes
-print(f"Initial traits: {learning_agent.personality_traits}")
-# {'aggression': 0.5, 'bluff_frequency': 0.5, 'risk_tolerance': 0.5}
+# Check betting limits
+print(f"Current bet: ${game_state.round_state.current_bet}")
+print(f"Minimum raise: ${game_state.min_bet}")
+print(f"Maximum raise: ${game_state.round_state.current_bet * game_state.max_raise_multiplier}")
+
+# Monitor side pots
+for side_pot in game_state.pot_state.side_pots:
+    print(f"Side pot amount: ${side_pot.amount}")
+    print(f"Eligible players: {side_pot.eligible_players}")
 ```
 
-## Game Configuration
+### Memory Management
 
-### Basic Settings
-```python
-game = AgenticPoker(
-    players,
-    starting_chips=1000,  # Starting chips for each player
-    small_blind=50,       # Small blind amount
-    big_blind=100,        # Big blind amount
-    ante=10,             # Ante amount
-    session_id=session_id # For logging and memory management
-)
-```
-
-### Logging Configuration
-The game automatically sets up logging with the session ID:
-
-```python
-from util import setup_logging
-
-# Set up logging with session ID
-setup_logging(session_id)
-```
-
-## Memory Management
-
-### Using ChromaDB for Persistent Memory
 The LLM Agent automatically manages memory using ChromaDB:
 
 ```python
@@ -155,6 +160,16 @@ relevant_memories = memory_store.get_relevant_memories(
 )
 ```
 
+### Logging Configuration
+The game automatically sets up logging with the session ID:
+
+```python
+from util import setup_logging
+
+# Set up logging with session ID
+setup_logging(session_id)
+```
+
 ## Common Patterns
 
 ### Analyzing Game Results
@@ -163,15 +178,19 @@ relevant_memories = memory_store.get_relevant_memories(
 for player in game.players:
     print(f"{player.name}:")
     print(f"  Final chips: ${player.chips}")
+    if hasattr(player, "strategy_planner"):
+        print(f"  Current strategy: {player.strategy_planner.current_plan}")
 ```
 
 ### Monitoring Agent Learning
 ```python
-# Check action probabilities
+# Check action probabilities and decisions
 print(f"Action probabilities: {player._get_action_probabilities()}")
-
-# Monitor personality trait changes
 print(f"Current traits: {player.personality_traits}")
+
+# Monitor strategic planning
+if player.use_planning:
+    print(f"Current plan: {player.strategy_planner.current_plan}")
 ```
 
 ## Next Steps
@@ -183,4 +202,4 @@ print(f"Current traits: {player.personality_traits}")
 - Ensure your OpenAI API key is properly set in `.env`
 - Check logs in the `logs/` directory for detailed error information
 - Verify ChromaDB is working properly for memory persistence
-- Review the error handling section in `docs/llm_agent.md` 
+- Review the error handling section in `docs/llm_agent.md`
