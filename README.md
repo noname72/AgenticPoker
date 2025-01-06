@@ -1,5 +1,7 @@
 # AgenticPoker
 
+![Project Status](https://img.shields.io/badge/status-in%20development-orange)
+
 AgenticPoker is a poker game simulation featuring AI players powered by Large Language Models (LLMs). The system simulates **5-card draw poker**, with intelligent agents capable of making strategic decisions, learning from past hands, and engaging in natural language table talk. 
 
 Designed for realism and adaptability, AgenticPoker offers a comprehensive poker experience, blending advanced AI capabilities with detailed game mechanics.
