@@ -24,6 +24,9 @@ def agent(mock_memory_store):
     )
     # Use mock memory store instead of real ChromaDB
     agent.memory_store = mock_memory_store
+    
+    # Ensure strategy planner is initialized
+    assert agent.strategy_planner is not None
 
     yield agent
 
@@ -45,32 +48,28 @@ def test_agent_initialization(agent):
 
 @patch("agents.llm_agent.LLMAgent._query_llm")
 def test_decide_action(mock_llm, agent):
-    """Test action generation with different cognitive mechanisms."""
-    # Mock the LLM response with the exact format expected by _normalize_action
-    mock_llm.return_value = """
-    Step 1: Analyze hand strength...
-    Step 2: Consider position...
-    Step 3: Evaluate pot odds...
-    DECISION: raise
-    """
-
-    # Create a proper GameState object
-    game_state = GameState(
-        players=[],
-        dealer_position=0,
-        small_blind=10,
-        big_blind=20,
-        ante=0,
-        min_bet=20,
-        round_state=RoundState(phase="preflop", current_bet=50, round_number=1),
-        pot_state=PotState(main_pot=200),
-        deck_state=DeckState(cards_remaining=52),
-        active_player_position=1,
-    )
-
-    action = agent.decide_action(game_state)
-    # The method should return a normalized action
+    """Test that decide_action returns valid action and amount."""
+    game_state = "Current game state with pot: $100"
+    
+    # Test normal decision
+    action, amount = agent.decide_action(game_state)
+    
+    # Verify action is valid
     assert action in ["fold", "call", "raise"]
+    
+    # Verify amount is an integer
+    assert isinstance(amount, int)
+    
+    # Verify amount is non-negative
+    assert amount >= 0
+    
+    # Verify raise amounts are at least 100 (min raise)
+    if action == "raise":
+        assert amount >= 100
+    
+    # Verify fold/call have 0 amount
+    if action in ["fold", "call"]:
+        assert amount == 0
 
 
 def test_perceive(agent):
@@ -204,8 +203,9 @@ def test_error_handling(mock_llm, agent):
 
     # Test LLM error handling for decide_action
     mock_llm.side_effect = Exception("LLM Error")
-    action = agent.decide_action("test state")
+    action, amount = agent.decide_action("test state")
     assert action == "call"  # Should use fallback action
+    assert amount == 0  # Amount should be 0 for fallback call
 
     # Reset mock for draw test
     mock_llm.side_effect = None
@@ -215,9 +215,9 @@ def test_error_handling(mock_llm, agent):
 
     # Reset mock for plan test
     mock_llm.reset_mock()
-    mock_llm.return_value = "invalid json"
+    mock_llm.side_effect = Exception("LLM Error")  # Simulate LLM error
     plan = agent.strategy_planner.plan_strategy("test state", agent.chips)
-    assert isinstance(plan, Plan)  # Changed to check for Plan type instead of dict
+    assert isinstance(plan, Plan)  # Check for Plan type
     assert plan.approach == Approach.BALANCED  # Check for fallback approach
     assert plan.bet_sizing == BetSizing.MEDIUM  # Check for fallback bet sizing
 

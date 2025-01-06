@@ -82,7 +82,7 @@ def test_plan_strategy_success(planner):
                 PlayerState(
                     name="Player1",
                     chips=1000,
-                    position=PlayerPosition.DEALER,  # Use enum value
+                    position=PlayerPosition.DEALER,
                     bet=0,
                     folded=False,
                     is_dealer=True,
@@ -92,7 +92,7 @@ def test_plan_strategy_success(planner):
                 PlayerState(
                     name="Player2",
                     chips=1000,
-                    position=PlayerPosition.SMALL_BLIND,  # Use enum value
+                    position=PlayerPosition.SMALL_BLIND,
                     bet=10,
                     folded=False,
                     is_dealer=False,
@@ -102,7 +102,7 @@ def test_plan_strategy_success(planner):
                 PlayerState(
                     name="Player3",
                     chips=1000,
-                    position=PlayerPosition.BIG_BLIND,  # Use enum value
+                    position=PlayerPosition.BIG_BLIND,
                     bet=20,
                     folded=False,
                     is_dealer=False,
@@ -130,14 +130,12 @@ def test_plan_strategy_success(planner):
         )
         print(f"Game state: {game_state}")
 
-        plan = planner.plan_strategy(game_state, chips=1000)
+        plan = planner.plan_strategy(game_state, stack_size=1000)
         print(f"Generated plan: {plan}")
 
         # Verify the plan was created correctly
         assert isinstance(plan, Plan)
-        assert (
-            plan.approach == Approach.AGGRESSIVE
-        ), f"Expected AGGRESSIVE but got {plan.approach}"
+        assert plan.approach == Approach.AGGRESSIVE
         assert plan.bet_sizing == BetSizing.LARGE
         assert plan.bluff_threshold == 0.7
         assert plan.fold_threshold == 0.2
@@ -205,9 +203,9 @@ def test_plan_strategy_reuse_existing(planner):
 
         # Second call should reuse plan without generating new one
         with patch.object(planner.llm_client, "generate_plan") as mock_generate:
-            second_plan = planner.plan_strategy(game_state, chips=1000)
+            second_plan = planner.plan_strategy(game_state, stack_size=1000)
             print(f"Second plan: {second_plan}")
-            
+
             mock_generate.assert_not_called()
             assert second_plan == initial_plan
             print("Successfully reused plan without LLM query")
@@ -217,7 +215,7 @@ def test_plan_strategy_error_fallback(planner, mock_openai_client):
     """Test fallback plan on error"""
     mock_openai_client.chat.completions.create.side_effect = Exception("API Error")
 
-    plan = planner.plan_strategy("game_state", chips=1000)
+    plan = planner.plan_strategy("game_state", stack_size=1000)
 
     assert plan.approach == Approach.BALANCED
     assert plan.bet_sizing == BetSizing.MEDIUM
@@ -230,7 +228,7 @@ def test_plan_strategy_error_fallback(planner, mock_openai_client):
     [
         ("EXECUTE: fold because weak hand", "fold"),
         ("EXECUTE: call due to pot odds", "call"),
-        ("EXECUTE: raise with strong hand", "raise"),
+        ("EXECUTE: raise with strong hand", "raise 100"),
         ("EXECUTE: invalid_action", "call"),
     ],
 )
@@ -502,7 +500,7 @@ def test_strategy_planner_planning():
             mock_generate_plan.return_value = mock_plan
 
             # Test plan generation
-            plan = planner.plan_strategy(game_state, chips=1000)
+            plan = planner.plan_strategy(game_state, stack_size=1000)
             print(f"Generated plan: {plan}")
 
             # Verify the plan was created correctly
@@ -563,101 +561,6 @@ def test_validate_plan_data(planner):
     with pytest.raises(ValueError, match="Invalid range for bluff_threshold"):
         planner._validate_plan_data(invalid_plan)
     print("Invalid threshold range correctly detected")
-
-
-def test_plan_strategy_retries(planner, mock_openai_client):
-    """Test plan generation retry logic"""
-    print("\nTesting plan generation retries:")
-
-    game_state = GameState(
-        players=[
-            PlayerState(
-                name="Player1",
-                chips=1000,
-                position=PlayerPosition.DEALER,
-                bet=0,
-                folded=False,
-                is_dealer=True,
-                is_small_blind=False,
-                is_big_blind=False,
-            )
-        ],
-        dealer_position=0,
-        small_blind=10,
-        big_blind=20,
-        ante=0,
-        min_bet=20,
-        round_state=RoundState(phase="preflop", current_bet=0, round_number=1),
-        pot_state=PotState(main_pot=0),
-        deck_state=DeckState(cards_remaining=52),
-        active_player_position=0,
-    )
-
-    # Mock generate_plan to fail twice then succeed
-    with patch.object(planner.llm_client, "generate_plan") as mock_generate:
-        mock_generate.side_effect = [
-            {"invalid": "plan"},  # First attempt - invalid plan
-            ValueError("Bad plan"),  # Second attempt - error
-            {  # Third attempt - success
-                "approach": "aggressive",
-                "reasoning": "Test plan",
-                "bet_sizing": "large",
-                "bluff_threshold": 0.7,
-                "fold_threshold": 0.2,
-                "adjustments": [],
-                "target_opponent": None,
-            },
-        ]
-
-        plan = planner.plan_strategy(game_state, chips=1000)
-
-        # Verify retries occurred
-        assert mock_generate.call_count == 3
-        assert isinstance(plan, Plan)
-        assert plan.approach == Approach.AGGRESSIVE
-        print("Successfully retried and generated valid plan")
-
-
-def test_plan_strategy_all_retries_fail(planner, mock_openai_client):
-    """Test fallback when all retries fail"""
-    print("\nTesting all retries failing:")
-
-    game_state = GameState(
-        players=[
-            PlayerState(
-                name="Player1",
-                chips=1000,
-                position=PlayerPosition.DEALER,
-                bet=0,
-                folded=False,
-                is_dealer=True,
-                is_small_blind=False,
-                is_big_blind=False,
-            )
-        ],
-        dealer_position=0,
-        small_blind=10,
-        big_blind=20,
-        ante=0,
-        min_bet=20,
-        round_state=RoundState(phase="preflop", current_bet=0, round_number=1),
-        pot_state=PotState(main_pot=0),
-        deck_state=DeckState(cards_remaining=52),
-        active_player_position=0,
-    )
-
-    # Mock generate_plan to always fail
-    with patch.object(planner.llm_client, "generate_plan") as mock_generate:
-        mock_generate.side_effect = ValueError("Bad plan")
-
-        plan = planner.plan_strategy(game_state, chips=1000)
-
-        # Verify retries and fallback
-        assert mock_generate.call_count == 3
-        assert isinstance(plan, Plan)
-        assert plan.approach == Approach.BALANCED
-        assert "Plan validation failed after 3 attempts" in plan.reasoning
-        print("Correctly fell back to balanced strategy after all retries failed")
 
 
 def test_create_fallback_plan(planner):

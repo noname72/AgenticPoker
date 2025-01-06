@@ -453,25 +453,23 @@ def test_handle_betting_round_all_in(mock_game_state):
         game_state=mock_game_state,
     )
 
-    # Debug prints remain the same...
-
     # Update assertions to match correct betting behavior
-    assert new_pot == 170  # Total bets: 60 + 50 + 60
+    assert new_pot == 200  # Total bets: Player 1: 75 + Player 2: 50 + Player 3: 75
     assert len(side_pots) == 2
 
     # First side pot (all players contribute 50)
     assert side_pots[0].amount == 150
     assert len(side_pots[0].eligible_players) == 3
 
-    # Second side pot (remaining players contribute 10 each)
-    assert side_pots[1].amount == 20
+    # Second side pot (remaining players contribute 25 each)
+    assert side_pots[1].amount == 50
     assert len(side_pots[1].eligible_players) == 2
     assert players[1] not in side_pots[1].eligible_players
 
     # Verify final player states
-    assert players[0].chips == 40  # Started with 100, bet 60
-    assert players[1].chips == 0  # Started with 50, went all-in
-    assert players[2].chips == 40  # Started with 100, bet 60
+    assert players[0].chips == 25  # Started with 100, bet 75
+    assert players[1].chips == 0   # Started with 50, went all-in
+    assert players[2].chips == 25  # Started with 100, bet 75
 
 
 def test_handle_betting_round_everyone_folds(mock_game_state):

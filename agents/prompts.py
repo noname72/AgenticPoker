@@ -5,12 +5,12 @@
 # - strategy_style: Agent's current strategy style (e.g. "Aggressive Bluffer")
 # - strategy_prompt: Strategy-specific guidance from StrategyManager
 # - game_state: Current game situation including cards, bets, etc.
-DECISION_PROMPT = """You are a {strategy_style} poker player. You must respond with exactly one action.
+DECISION_PROMPT = """You are a {strategy_style} poker player.
+
+Current game state:
+{game_state}
 
 {strategy_prompt}
-
-Current situation:
-{game_state}
 
 Respond ONLY in this format:
 DECISION: <action> <brief reason>

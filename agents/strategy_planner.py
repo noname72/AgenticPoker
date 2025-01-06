@@ -157,86 +157,61 @@ class StrategyPlanner:
             logger.error(f"Plan validation failed: {str(e)}")
             raise ValueError(f"Invalid plan data: {str(e)}")
 
-    def plan_strategy(self, game_state: "GameState", chips: int) -> Plan:
-        """Generate or retrieve a strategic plan based on current game state.
+    def plan_strategy(self, game_state: "GameState", stack_size: int) -> Plan:
+        """Generate or update the agent's strategic plan.
 
         Args:
-            game_state: Current game state as GameState object
-            chips: Current chip count for the player
+            game_state: Current game state
+            stack_size: Current stack size
 
         Returns:
-            Plan: A valid strategic plan
+            Plan: Current or new strategic plan
         """
-        current_time = time.time()
-
         try:
             # Check if current plan is still valid
-            if (
-                self.current_plan
-                and not self.current_plan.is_expired(current_time)
-                and not self.requires_replanning(game_state)
-            ):
-                logger.debug(
-                    "[Strategy] Using existing plan '%s' (expires in %.1f seconds)",
-                    self.current_plan.approach.value,
-                    self.current_plan.expiry - current_time,
+            if self.current_plan and not self.requires_replanning(game_state):
+                logger.info(
+                    f"[Strategy] Reusing existing plan: {self.current_plan.approach}"
                 )
                 return self.current_plan
 
-            # Extract metrics first to validate game state
-            metrics = self.extract_metrics(game_state)
+            # Get plan from LLM
+            plan_data = self.llm_client.generate_plan(
+                strategy_style=self.strategy_style,
+                game_state=self._format_state_summary(game_state),
+            )
 
-            # Create fallback plan if no position found
-            if not metrics["position"]:
-                logger.warning("[Strategy] No position found - using fallback plan")
-                return self._create_fallback_plan(
-                    current_time, reason="No position information available"
-                )
-            # Generate new plan with retries
-            max_retries = 3
-            for attempt in range(max_retries):
-                try:
-                    # Generate raw plan from LLM
-                    plan_dict = self.llm_client.generate_plan(
-                        strategy_style=self.strategy_style,
-                        game_state=self._format_state_summary(game_state),
-                    )
+            # Create new plan with proper validation
+            self.current_plan = Plan(
+                approach=Approach(plan_data.get("approach", "balanced")),
+                reasoning=plan_data.get("reasoning", "Default reasoning"),
+                bet_sizing=BetSizing(plan_data.get("bet_sizing", "medium")),
+                bluff_threshold=float(plan_data.get("bluff_threshold", 0.5)),
+                fold_threshold=float(plan_data.get("fold_threshold", 0.3)),
+                expiry=time.time() + DEFAULT_PLAN_DURATION,
+                adjustments=[],
+                target_opponent=None,
+            )
 
-                    # Validate and normalize plan data
-                    validated_plan = self._validate_plan_data(plan_dict)
+            logger.info(
+                f"[Strategy] New Plan: approach={self.current_plan.approach} "
+                f"reasoning='{self.current_plan.reasoning}'"
+            )
 
-                    # Create Plan instance with validated data
-                    plan = Plan(
-                        **validated_plan, expiry=current_time + self.plan_duration
-                    )
-
-                    self.current_plan = plan
-                    logger.info(f"[Strategy] New Plan: {plan}")
-                    return plan
-
-                except ValueError as e:
-                    if attempt < max_retries - 1:
-                        logger.warning(
-                            f"Plan generation attempt {attempt + 1} failed: {str(e)}. Retrying..."
-                        )
-                        continue
-                    else:
-                        logger.error(f"All plan generation attempts failed: {str(e)}")
-                        return self._create_fallback_plan(
-                            current_time,
-                            reason=f"Plan validation failed after {max_retries} attempts",
-                        )
-
-                except Exception as e:
-                    logger.error(f"Unexpected error in plan generation: {str(e)}")
-                    return self._create_fallback_plan(
-                        current_time, reason=f"Unexpected error: {str(e)}"
-                    )
+            return self.current_plan
 
         except Exception as e:
-            logger.error("[Strategy] Plan generation failed: %s", str(e))
-            return self._create_fallback_plan(
-                current_time, reason=f"General error: {str(e)}"
+            logger.error(f"Error generating plan: {str(e)}")
+            # Create and return a default plan instead of failing
+            return Plan(
+                approach=Approach.BALANCED,
+                reasoning="Default fallback plan due to error",
+                bet_sizing=BetSizing.MEDIUM,
+                bluff_threshold=0.5,
+                fold_threshold=0.3,
+                expiry=time.time() + DEFAULT_PLAN_DURATION,
+                adjustments=[],
+                target_opponent=None,
             )
 
     def _create_fallback_plan(
@@ -266,15 +241,19 @@ class StrategyPlanner:
         self,
         game_state: "GameState",
         hand_eval: Optional[Tuple[int, List[int], str]] = None,
+        current_bet: int = 0,
+        min_raise: int = 100,  # Default to 100 or fetch from game state
     ) -> str:
         """Execute an action based on current plan and game state.
 
         Args:
             game_state: Current game state as GameState object
-            hand_eval: Tuple of (hand_rank, card_ranks, hand_name) representing hand strength
+            hand_eval: Optional tuple of (hand_rank, card_ranks, hand_name)
+            current_bet: Current bet amount that needs to be matched
+            min_raise: Minimum raise amount allowed
 
         Returns:
-            str: Action to take ('fold', 'call', 'raise', or 'raise X')
+            str: Action to take ('fold', 'call', or 'raise X')
         """
         try:
             # Ensure we have a valid plan
@@ -293,12 +272,48 @@ class StrategyPlanner:
                 )
                 return "call"
 
-            # Get action from LLM client
+            # Calculate minimum total bet required for a raise
+            min_total_bet = current_bet + min_raise
+
+            # Determine raise amount based on strategy
+            if self.current_plan.approach == Approach.AGGRESSIVE:
+                # For aggressive play, use larger bet sizing but ensure it meets minimum
+                if self.current_plan.bet_sizing == BetSizing.LARGE:
+                    desired_raise = max(current_bet * 2, min_total_bet)
+                else:
+                    desired_raise = min_total_bet
+            else:
+                # For other approaches, use minimum raise
+                desired_raise = min_total_bet
+
+            # Get action from LLM client with adjusted raise amount
             action = self.llm_client.decide_action(
                 strategy_style=self.strategy_style,
                 game_state=self._format_state_summary(game_state),
                 plan=self.current_plan.dict(),
+                min_raise=desired_raise,  # Pass min_raise to the prompt
             )
+
+            # If action is 'raise', ensure the amount meets minimum requirements
+            if action.startswith("raise"):
+                try:
+                    _, amount_str = action.split()
+                    amount = int(amount_str)
+                    if amount < min_total_bet:
+                        action = f"raise {min_total_bet}"
+                        logger.info(
+                            f"[Action] Adjusted raise amount from {amount} to {min_total_bet} to meet minimum"
+                        )
+                    else:
+                        logger.info(
+                            f"[Action] Raise amount {amount} meets the minimum requirement of {min_total_bet}"
+                        )
+                        min_raise = amount  # Update min_raise to the valid raise amount
+                except (ValueError, IndexError):
+                    action = f"raise {min_total_bet}"
+                    logger.info(
+                        f"[Action] Invalid raise format, using minimum raise {min_total_bet}"
+                    )
 
             logger.info(
                 f"[Action] Decided on '{action}' based on {self.current_plan.approach.value} strategy"
@@ -312,32 +327,20 @@ class StrategyPlanner:
             return "call"  # Safe fallback
 
     def requires_replanning(self, game_state: Union[Dict, "GameState"]) -> bool:
-        """Determine if current game state requires a new strategic plan.
-
-        Evaluates multiple factors to decide if replanning is needed:
-        - Position changes
-        - Significant stack size changes
-        - Plan expiration
-        - Missing current plan
-
-        Args:
-            game_state: Current game state as dict or GameState object
-
-        Returns:
-            bool: True if replanning is required, False otherwise
-
-        Notes:
-            - Compares current metrics against last recorded metrics
-            - Uses REPLAN_STACK_THRESHOLD for stack change evaluation
-            - Logs significant changes that trigger replanning
-            - Returns False on evaluation errors to maintain current plan
-        """
+        """Determine if current game state requires a new strategic plan."""
         # Always replan if no current plan exists
         if not self.current_plan:
             logger.debug("[Planning] No current plan exists - replanning required")
             return True
 
         try:
+            # Check if plan has expired
+            if self.current_plan.is_expired():
+                logger.debug(
+                    "[Planning] Current plan has expired - replanning required"
+                )
+                return True
+
             # Extract current metrics using unified method
             current_metrics = self.extract_metrics(game_state)
 
