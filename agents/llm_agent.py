@@ -3,13 +3,13 @@ import logging
 import os
 import time
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 from dotenv import load_dotenv
-from openai import OpenAI
 
 from agents.base_agent import BaseAgent
+from agents.llm_client import LLMClient
 from agents.prompts import (
     DECISION_PROMPT,
     DISCARD_PROMPT,
@@ -24,7 +24,7 @@ from agents.strategy_cards import StrategyManager
 from agents.strategy_planner import StrategyPlanner
 from agents.types import Approach, BetSizing, Plan
 from data.memory import ChromaMemoryStore
-from exceptions import LLMError, OpenAIError
+from exceptions import OpenAIError
 from game.types import GameState
 
 # Load environment variables
@@ -122,22 +122,16 @@ class LLMAgent(BaseAgent):
             "risk_tolerance": 0.5,
         }
 
-        # Initialize OpenAI client
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY environment variable not set")
-        self.client = OpenAI(api_key=api_key)
+        # Initialize LLM client first
+        self.llm_client = LLMClient(
+            api_key=os.getenv("OPENAI_API_KEY"), model="gpt-3.5-turbo"
+        )
 
-        # Initialize LLM client
-        from agents.llm_client import LLMClient
-
-        self.llm_client = LLMClient(self.client)
-
-        # Add plan tracking (only if planning is enabled)
+        # Then initialize strategy planner with llm_client
         if self.use_planning:
             self.strategy_planner = StrategyPlanner(
                 strategy_style=self.strategy_style,
-                client=self.client,
+                client=self.llm_client,  # Pass llm_client instead of self.client
                 plan_duration=30.0,
             )
 
@@ -339,45 +333,79 @@ Your current strategic plan:
             strategy_prompt=plan_info,
         )
 
-    def decide_action(self, game_state: str) -> Tuple[str, int]:
-        """Decide on an action for the current game state.
-
-        Returns:
-            Tuple[str, int]: A tuple containing:
-                - action: 'fold', 'call', or 'raise'
-                - amount: Amount to bet (for raises) or 0 (for fold/call)
-        """
+    def decide_action(self, game_state: Union[str, Dict[str, Any]]) -> Tuple[str, int]:
+        """Decide poker action using LLM."""
         try:
-            # Get the decision prompt
-            prompt = self._get_decision_prompt(game_state)
+            # Create decision prompt
+            prompt = self._create_decision_prompt(game_state)
 
-            # Get raw action from LLM
-            raw_action = self.llm_client.decide_action(
-                strategy_style=self.strategy_style,
-                game_state=game_state,
-                plan=self.current_plan.dict() if self.current_plan else {},
-                min_raise=100,  # Default minimum raise
+            # Add system message for strategy context
+            system_message = (
+                f"You are a {self.strategy_style} poker player making decisions."
             )
 
-            # Parse the action and amount
-            if raw_action.startswith("raise"):
-                action = "raise"
-                try:
-                    amount = int(raw_action.split()[1])
-                except (IndexError, ValueError):
-                    amount = 100  # Default raise amount
-            elif raw_action == "fold":
-                action = "fold"
-                amount = 0
-            else:  # Default to call
-                action = "call"
-                amount = 0
+            # Query LLM with retry logic
+            response = self._query_llm(
+                prompt=prompt, temperature=0.7, system_message=system_message
+            ).strip()  # Strip whitespace from full response
 
-            return action, amount
+            # Debug logging
+            self.logger.debug(f"Raw LLM response:\n{response}")
+
+            # Parse and validate response
+            # Look for DECISION: line
+            if "DECISION:" not in response:
+                self.logger.warning(
+                    f"No DECISION: found in response: {response[:100]}..."
+                )
+                return "fold", 0
+
+            try:
+                # Extract decision line, handling potential whitespace
+                decision_line = next(
+                    line.strip() for line in response.split("\n") if "DECISION:" in line
+                )
+
+                # Debug logging
+                self.logger.debug(f"Found decision line: {decision_line}")
+
+                # Parse action and amount
+                parts = decision_line.replace("DECISION:", "").strip().split()
+                action = parts[0].lower()
+
+                # Debug logging
+                self.logger.debug(f"Parsed action: {action}, parts: {parts}")
+
+                # Validate action
+                if action not in ["fold", "call", "raise"]:
+                    self.logger.warning(f"Invalid action '{action}' in response")
+                    return "fold", 0
+
+                # Extract amount for raise
+                amount = 0
+                if action == "raise" and len(parts) > 1:
+                    try:
+                        amount = int(parts[1])
+                        self.logger.debug(f"Parsed raise amount: {amount}")
+                    except (IndexError, ValueError) as e:
+                        self.logger.warning(f"Error parsing raise amount: {e}")
+                        amount = 100  # Default raise amount
+
+                # Validate final amount
+                amount = self._validate_bet_amount(f"{action} {amount}")
+
+                # Debug logging
+                self.logger.debug(f"Final decision: {action} {amount}")
+
+                return action, amount
+
+            except StopIteration:
+                self.logger.warning("Could not find valid DECISION line in response")
+                return "fold", 0
 
         except Exception as e:
-            self.logger.error(f"Decision error: {str(e)}")
-            return "call", 0  # Safe default
+            self.logger.error(f"Error in decide_action: {str(e)}")
+            return "fold", 0  # Safe default
 
     def _format_game_state(self, game_state: GameState) -> Dict[str, Any]:
         """Format game state into a dictionary representation."""
@@ -408,80 +436,27 @@ Your current strategic plan:
         except:
             return None
 
-    def get_message(self, game_state: str) -> str:
-        """Generate table talk based on communication style and game state."""
-        # Get recent table history
-        table_history = (
-            "\n".join(self.table_history[-3:])
-            if self.table_history
-            else "No recent history"
-        )
-
-        # First get strategic banter with intent
-        banter_prompt = STRATEGIC_BANTER_PROMPT.format(
-            strategy_style=self.strategy_style,
-            game_state=game_state,
-            position=self.position if hasattr(self, "position") else "unknown",
-            recent_actions=self._format_recent_actions(),
-            opponent_patterns=self._get_opponent_patterns(),
-            communication_style=self.communication_style,
-            emotional_state=self.emotional_state,
-        )
-
-        banter_response = self._query_llm(banter_prompt)
-
-        # Parse the strategic response
+    def get_message(self, game_state: Union[str, Dict[str, Any]]) -> str:
+        """Generate table talk using LLM."""
         try:
-            message_line = next(
-                line
-                for line in banter_response.split("\n")
-                if line.startswith("MESSAGE:")
-            )
-            intent_line = next(
-                line
-                for line in banter_response.split("\n")
-                if line.startswith("INTENT:")
-            )
-            confidence_line = next(
-                line
-                for line in banter_response.split("\n")
-                if line.startswith("CONFIDENCE:")
+            # Create message prompt
+            prompt = self._create_message_prompt(game_state)
+
+            system_message = (
+                f"You are a {self.communication_style} {self.strategy_style} "
+                f"poker player engaging in table talk."
             )
 
-            # Store the intent and confidence for future reference
-            self._last_message_intent = intent_line.replace("INTENT:", "").strip()
-            self._last_message_confidence = int(
-                confidence_line.replace("CONFIDENCE:", "").strip()
+            # Query LLM with lower temperature for more consistent messaging
+            response = self._query_llm(
+                prompt=prompt, temperature=0.5, system_message=system_message
             )
 
-            # Update emotional state based on confidence
-            self._update_emotional_state(self._last_message_confidence)
-
-            # Store in table history
-            self.table_history.append(
-                f"{self.name}: {message_line.replace('MESSAGE:', '').strip()}"
-            )
-
-            return message_line.replace("MESSAGE:", "").strip()
+            return self._parse_message(response)
 
         except Exception as e:
-            logger.error(f"Error parsing banter response: {e}")
-            # Fallback to simple message prompt
-            return self._get_simple_message(game_state, table_history)
-
-    def _get_simple_message(self, game_state: str, table_history: str) -> str:
-        """Fallback method for simple message generation."""
-        prompt = MESSAGE_PROMPT.format(
-            strategy_style=self.strategy_style,
-            game_state=game_state,
-            communication_style=self.communication_style,
-            table_history=table_history,
-        )
-        message = self._query_llm(prompt)
-        if message.startswith("MESSAGE:"):
-            message = message.replace("MESSAGE:", "").strip()
-        self.table_history.append(f"{self.name}: {message}")
-        return message
+            self.logger.error(f"Error generating message: {str(e)}")
+            return ""  # Safe default
 
     def _format_recent_actions(self) -> str:
         """Format recent game actions for context."""
@@ -544,66 +519,48 @@ Your current strategic plan:
 
         return perception
 
-    def decide_draw(self) -> List[int]:
-        """Decide which cards to discard and draw new ones."""
-        game_state = f"Hand: {self.hand.show()}"
-
-        prompt = DISCARD_PROMPT.format(
-            strategy_style=self.strategy_style,
-            game_state=game_state,
-            cards=[
-                self.hand.cards[i] if i < len(self.hand.cards) else "N/A"
-                for i in range(5)
-            ],
-        )
-
+    def decide_draw(self, game_state: Optional[Dict[str, Any]] = None) -> List[int]:
+        """Decide which cards to discard."""
         try:
-            response = self._query_llm(prompt)
+            # Create draw decision prompt
+            prompt = DISCARD_PROMPT.format(
+                strategy_style=self.strategy_style,
+                hand=self.hand.show() if hasattr(self, "hand") else "No hand",
+                game_state=game_state or "No game state",
+            )
 
-            # First try to parse with strict format
-            discard_positions = self._parse_discard(response)
+            system_message = (
+                f"You are a {self.strategy_style} poker player deciding which "
+                f"cards to discard in draw poker."
+            )
 
-            # If no DISCARD line found, try to extract from free text
-            if not discard_positions and "discard" in response.lower():
-                self.logger.warning(
-                    f"No DISCARD: line found, attempting to parse from text: {response}"
-                )
+            # Query LLM for discard decision
+            response = self._query_llm(
+                prompt=prompt, temperature=0.7, system_message=system_message
+            )
 
-                # Look for numbers in text after "discard"
-                import re
+            # Parse response for discard positions
+            if "DISCARD:" not in response:
+                return []
 
-                numbers = re.findall(
-                    r"\b[0-4]\b", response.lower().split("discard", 1)[1]
-                )
-                if numbers:
-                    discard_positions = [
-                        int(n) for n in numbers[:3]
-                    ]  # Limit to 3 cards
-                    self.logger.info(
-                        f"Extracted positions from text: {discard_positions}"
-                    )
+            discard_line = next(
+                line for line in response.split("\n") if line.startswith("DISCARD:")
+            )
 
-            # Validate positions
-            valid_positions = []
-            for pos in discard_positions:
-                if not isinstance(pos, int) or pos < 0 or pos > 4:
-                    self.logger.warning(f"Invalid discard position {pos}")
-                    continue
-                valid_positions.append(pos)
-
-            # Limit to 3 cards
-            if len(valid_positions) > 3:
-                self.logger.warning(
-                    f"Too many discards ({len(valid_positions)}), limiting to 3"
-                )
-                valid_positions = valid_positions[:3]
-
-            self.logger.info(f"{self.name} discarding positions: {valid_positions}")
-            return valid_positions
+            # Parse positions, ensuring they're valid (0-4)
+            try:
+                positions = [
+                    int(pos)
+                    for pos in discard_line.replace("DISCARD:", "").strip().split()
+                    if 0 <= int(pos) <= 4
+                ]
+                return positions[:3]  # Maximum 3 discards
+            except ValueError:
+                return []
 
         except Exception as e:
             self.logger.error(f"Error in decide_draw: {str(e)}")
-            return []  # Safe fallback - keep all cards
+            return []
 
     def _get_strategic_message(self, game_state: str) -> str:
         """Enhanced message generation with memory retrieval."""
@@ -649,32 +606,47 @@ Your current strategic plan:
         self.last_message = message
         return message
 
-    def interpret_message(self, opponent_message: str) -> str:
-        """Analyze and interpret opponent's message using historical context.
+    def interpret_message(self, message: str) -> str:
+        """Interpret opponent's message."""
+        try:
+            prompt = INTERPRET_MESSAGE_PROMPT.format(
+                strategy_style=self.strategy_style,
+                message=message,
+                recent_history=(
+                    self.table_history[-3:] if self.table_history else "No history"
+                ),
+                opponent_patterns=self._get_opponent_patterns(),
+            )
 
-        Evaluates opponent messages by considering recent game history, conversation patterns,
-        and the agent's strategic style to determine appropriate response strategy.
+            system_message = (
+                f"You are a {self.strategy_style} poker player analyzing "
+                f"an opponent's table talk."
+            )
 
-        Args:
-            opponent_message (str): Message received from the opponent
+            response = self._query_llm(
+                prompt=prompt, temperature=0.5, system_message=system_message
+            )
 
-        Returns:
-            str: Interpretation result, one of:
-                - 'trust': Message appears genuine
-                - 'ignore': Message is irrelevant or misleading
-                - 'counter-bluff': Message indicates opponent bluffing
+            # Parse interpretation (trust/ignore/counter-bluff)
+            if "INTERPRETATION:" in response:
+                interp_line = next(
+                    line
+                    for line in response.split("\n")
+                    if line.startswith("INTERPRETATION:")
+                )
+                interpretation = (
+                    interp_line.replace("INTERPRETATION:", "").strip().lower()
+                )
 
-        Note:
-            Uses LLM to analyze message sentiment and intent based on game context.
-        """
-        recent_history = self.perception_history[-3:] if self.perception_history else []
+                valid_interpretations = ["trust", "ignore", "counter-bluff"]
+                if interpretation in valid_interpretations:
+                    return interpretation
 
-        prompt = INTERPRET_MESSAGE_PROMPT.format(
-            strategy_style=self.strategy_style,
-            opponent_message=opponent_message,
-            recent_history=recent_history,
-        )
-        return self._query_llm(prompt).strip().lower()
+            return "ignore"  # Default to ignoring if parsing fails
+
+        except Exception as e:
+            self.logger.error(f"Error interpreting message: {str(e)}")
+            return "ignore"
 
     def _normalize_action(self, action: str) -> str:
         """Normalize the LLM's action response to a valid poker action.
@@ -835,36 +807,43 @@ Your current strategic plan:
                 return "call"
             return "I need to think about my next move."
 
-    def _query_llm(self, prompt: str, max_retries: int = 3) -> str:
-        """Query LLM with retry logic and better error handling.
+    def _query_llm(
+        self,
+        prompt: str,
+        temperature: float = 0.7,
+        max_tokens: int = 150,
+        system_message: Optional[str] = None,
+    ) -> str:
+        """Query LLM with retry logic and error handling."""
+        try:
+            return self.llm_client.query(
+                prompt=prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                system_message=system_message,
+            )
+        except Exception as e:
+            self.logger.error(f"LLM query failed: {str(e)}")
+            raise
 
-        Args:
-            prompt: Formatted prompt string
-            max_retries: Maximum number of retry attempts
-
-        Returns:
-            str: LLM response text
-
-        Raises:
-            LLMError: If all retries fail
-        """
-        for attempt in range(max_retries):
-            try:
-                response = self.client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.7,
-                    max_tokens=150,  # Limit response length
-                )
-                return response.choices[0].message.content
-
-            except Exception as e:
-                self.logger.warning(f"LLM query attempt {attempt + 1} failed: {str(e)}")
-                if attempt == max_retries - 1:
-                    raise LLMError(
-                        f"All {max_retries} LLM query attempts failed"
-                    ) from e
-                time.sleep(1)  # Wait before retry
+    async def _query_llm_async(
+        self,
+        prompt: str,
+        temperature: float = 0.7,
+        max_tokens: int = 150,
+        system_message: Optional[str] = None,
+    ) -> str:
+        """Asynchronous LLM query."""
+        try:
+            return await self.llm_client.query_async(
+                prompt=prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                system_message=system_message,
+            )
+        except Exception as e:
+            self.logger.error(f"Async LLM query failed: {str(e)}")
+            raise
 
     def update_strategy(self, game_outcome: Dict[str, Any]) -> None:
         """Update agent's strategy based on game outcomes and performance.
@@ -1417,227 +1396,155 @@ Your current strategic plan:
             return False
 
     def _parse_decision(self, response: str) -> str:
-        """Parse the decision from LLM response with strict format checking.
-
-        Extracts and validates the action from a response containing a 'DECISION:' line.
-
-        Args:
-            response (str): Full LLM response text
-
-        Returns:
-            str: Validated action ('fold', 'call', or 'raise'). Defaults to 'call' if parsing fails.
-
-        Example:
-            >>> response = "Analysis: Good hand\nDECISION: raise\nReasoning: Strong cards"
-            >>> agent._parse_decision(response)
-            'raise'
-        """
+        """Parse LLM response for action decision."""
         try:
             # Look for DECISION: line
-            decision_line = [
-                line for line in response.split("\n") if line.startswith("DECISION:")
-            ]
-            if not decision_line:
-                logger.warning("No DECISION: line found in response")
-                return "call"  # safe default
-
-            # Extract action
-            action = decision_line[0].split("DECISION:")[1].strip().lower()
-
-            # Validate action
-            if action not in ["fold", "call", "raise"]:
-                logger.warning(f"Invalid action '{action}' found in response")
-                return "call"
-
-            return action
-
-        except Exception as e:
-            logger.error(f"Error parsing decision: {e}")
-            return "call"
-
-    def _parse_discard(self, response: str) -> List[int]:
-        """Parse the discard positions from LLM response with strict format checking.
-
-        Extracts and validates card positions to discard from a response containing a 'DISCARD:' line.
-
-        Args:
-            response (str): Full LLM response text
-
-        Returns:
-            List[int]: List of valid card positions (0-4) to discard, limited to 3 cards.
-                      Returns empty list if parsing fails.
-
-        Example:
-            >>> response = "Analysis: Weak cards\nDISCARD: [0, 2, 4]\nReasoning: Poor cards"
-            >>> agent._parse_discard(response)
-            [0, 2, 4]
-        """
-        try:
-            # Look for DISCARD: line
-            discard_line = [
-                line for line in response.split("\n") if line.startswith("DISCARD:")
-            ]
-            if not discard_line:
-                logger.warning("No DISCARD: line found in response")
-                return []
-
-            # Extract positions
-            positions_str = discard_line[0].split("DISCARD:")[1].strip()
-            if positions_str.lower() == "none":
-                return []
-
-            # Parse list of positions
-            positions = eval(positions_str)  # safely evaluate [0,2,4] format
-
-            # Validate positions
-            if not all(isinstance(p, int) and 0 <= p <= 4 for p in positions):
-                logger.warning(f"Invalid positions {positions} found in response")
-                return []
-
-            # Sort positions and limit to 3 cards
-            return sorted(positions)[:3]  # Add this line to limit to 3 cards
-
-        except Exception as e:
-            logger.error(f"Error parsing discard positions: {e}")
-            return []
-
-    def _get_basic_action(self, game_state: str) -> str:
-        """Make a basic decision without complex planning."""
-        try:
-            # Get relevant memories for context, handle case with few memories
-            try:
-                memories = self.memory_store.get_relevant_memories(game_state, k=2)
-            except Exception as e:
-                self.logger.debug(f"Memory retrieval adjusted: {str(e)}")
-                # Try with k=1 if k=2 fails, or empty list as fallback
-                try:
-                    memories = self.memory_store.get_relevant_memories(game_state, k=1)
-                except:
-                    memories = []
-
-            # Format prompt with game state and memories
-            prompt = self._format_decision_prompt(game_state, memories)
-
-            # Query LLM for decision
-            response = self._query_llm(prompt)
-
-            # Parse and validate response
-            action = self._parse_action(response)
-
-            # Store decision in memory
-            self._store_decision_memory(game_state, action)
-
-            return action
-
-        except Exception as e:
-            self.logger.error(f"Basic decision error: {str(e)}")
-            return "fold"  # Safe default
-
-    def _get_strategic_action(self, game_state: str) -> str:
-        """Get action using strategic planning."""
-        try:
-            # Get or create strategic plan
-            plan = self.strategy_planner.plan_strategy(game_state, self.chips)
-
-            # Execute plan to get concrete action
-            action = self.strategy_planner.execute_action(game_state)
-
-            self.logger.info(
-                f"[{self.name}] Strategy plan: {plan['approach']} -> Action: {action}"
-            )
-            return action
-
-        except Exception as e:
-            self.logger.error(f"Strategic action error: {str(e)}")
-            return "call"  # Safe default
-
-    def _format_decision_prompt(
-        self, game_state: str, memories: List[Dict[str, Any]]
-    ) -> str:
-        """Format prompt for basic decision making."""
-        # Format memories for context
-        memory_context = ""
-        if memories:
-            memory_context = "\nRecent relevant experiences:\n" + "\n".join(
-                [f"- {mem['text']}" for mem in memories]
-            )
-
-        # Get opponent patterns if modeling is enabled
-        opponent_context = ""
-        if self.use_opponent_modeling and hasattr(self, "opponent_models"):
-            patterns = []
-            for opp, model in self.opponent_models.items():
-                if "style" in model:
-                    patterns.append(f"{opp}: {model['style']}")
-            if patterns:
-                opponent_context = "\nOpponent patterns:\n" + "\n".join(patterns)
-
-        return f"""You are a {self.strategy_style} poker player.
-Current game state:
-{game_state}
-{memory_context}
-{opponent_context}
-
-Decide your action (fold/call/raise) based on:
-1. Your strategy style ({self.strategy_style})
-2. Current game state
-3. Historical context
-4. Opponent patterns
-
-Respond with DECISION: followed by your action.
-Example: "DECISION: call"
-"""
-
-    def _store_decision_memory(self, game_state: str, action: str) -> None:
-        """Store decision in memory for future reference."""
-        self.memory_store.add_memory(
-            text=f"Made decision to {action} in state: {game_state}",
-            metadata={
-                "type": "decision",
-                "action": action,
-                "timestamp": time.time(),
-                "strategy_style": self.strategy_style,
-            },
-        )
-
-    def _parse_action(self, response: str) -> str:
-        """Parse and validate action from LLM response.
-
-        Args:
-            response: Raw response string from LLM
-
-        Returns:
-            str: Normalized action ('fold', 'call', or 'raise')
-        """
-        try:
-            # Look for DECISION: line with more flexible parsing
             if "DECISION:" not in response:
                 self.logger.warning(
                     f"No DECISION: found in response: {response[:100]}..."
                 )
-                return "call"
+                return "fold"
 
-            # Extract everything after DECISION: and before next newline
-            decision_line = [
+            decision_line = next(
                 line for line in response.split("\n") if "DECISION:" in line
-            ][0]
-            action = decision_line.split("DECISION:")[1].strip().split()[0].lower()
+            )
+            action = decision_line.split("DECISION:")[1].strip().lower().split()[0]
 
             # Validate action
             valid_actions = ["fold", "call", "raise"]
             if action not in valid_actions:
-                self.logger.warning(
-                    f"Invalid action '{action}' in response: {response[:100]}..."
-                )
-                return "call"
+                self.logger.warning(f"Invalid action '{action}' in response")
+                return "fold"
 
             return action
 
         except Exception as e:
-            self.logger.error(
-                f"Error parsing action: {str(e)}\nResponse: {response[:100]}..."
+            self.logger.error(f"Error parsing decision: {str(e)}")
+            return "fold"
+
+    def _validate_bet_amount(self, action: str) -> int:
+        """Validate and adjust bet amount."""
+        try:
+            if action.startswith("raise"):
+                try:
+                    amount = int(action.split()[1])
+                    return max(100, amount)  # Minimum raise of 100
+                except (IndexError, ValueError):
+                    return 100  # Default raise amount
+            return 0  # For fold/call
+
+        except Exception as e:
+            self.logger.error(f"Error validating bet amount: {str(e)}")
+            return 0
+
+    def _create_message_prompt(self, game_state: Union[str, Dict[str, Any]]) -> str:
+        """Create prompt for message generation."""
+        # Get recent table history
+        table_history = (
+            "\n".join(self.table_history[-3:])
+            if self.table_history
+            else "No recent history"
+        )
+
+        # Get relevant memories
+        memories = self.get_relevant_memories(
+            self._create_memory_query(game_state)
+            if isinstance(game_state, dict)
+            else game_state
+        )
+        memory_context = (
+            "\n".join(f"- {m['text']}" for m in memories)
+            if memories
+            else "No relevant memories"
+        )
+
+        # Format recent conversation history
+        recent_conversation = (
+            "\n".join(
+                f"{msg['sender']}: {msg['message']}"
+                for msg in self.conversation_history[-3:]
             )
-            return "call"  # Safe default
+            if self.conversation_history
+            else "No recent conversation"
+        )
+
+        return STRATEGIC_MESSAGE_PROMPT.format(
+            strategy_style=self.strategy_style,
+            game_state=game_state,
+            position=getattr(self, "position", "unknown"),
+            recent_actions=self._format_recent_actions(),
+            opponent_patterns=self._get_opponent_patterns(),
+            communication_style=self.communication_style,
+            emotional_state=self.emotional_state,
+            table_history=table_history,
+            recent_observations=(
+                "\n".join(str(p) for p in self.perception_history[-3:])
+                if self.perception_history
+                else "No recent observations"
+            ),
+            memory_context=memory_context,
+            recent_conversation=recent_conversation,
+        )
+
+    def _parse_message(self, response: str) -> str:
+        """Parse LLM response for message content."""
+        try:
+            # Extract message content
+            if "MESSAGE:" not in response:
+                return ""
+
+            message_line = next(
+                line for line in response.split("\n") if line.startswith("MESSAGE:")
+            )
+
+            message = message_line.replace("MESSAGE:", "").strip()
+
+            # Store in table history
+            self.table_history.append(f"{self.name}: {message}")
+
+            return message
+
+        except Exception as e:
+            self.logger.error(f"Error parsing message: {str(e)}")
+            return ""
+
+    def _create_decision_prompt(self, game_state: Union[str, Dict[str, Any]]) -> str:
+        """Create the decision prompt with current game state and strategy."""
+        # Get current plan if available
+        current_plan = None
+        if self.use_planning and hasattr(self, "strategy_planner"):
+            current_plan = self.strategy_planner.current_plan
+
+        # Format plan information for strategy prompt
+        strategy_prompt = f"\nCurrent Plan: {current_plan.dict() if current_plan else 'No active plan'}"
+
+        # Get relevant memories
+        memories = self.get_relevant_memories(
+            self._create_memory_query(game_state)
+            if isinstance(game_state, dict)
+            else game_state
+        )
+        memory_info = (
+            "\n".join(f"- {m['text']}" for m in memories)
+            if memories
+            else "No relevant memories"
+        )
+
+        # Format opponent info if available
+        opponent_info = (
+            self._get_opponent_patterns()
+            if self.use_opponent_modeling
+            else "No opponent modeling"
+        )
+
+        return DECISION_PROMPT.format(
+            strategy_style=self.strategy_style,
+            game_state=game_state,
+            strategy_prompt=strategy_prompt,  # Pass strategy_prompt instead of plan_info
+            memory_info=memory_info,
+            opponent_info=opponent_info,
+            personality_traits=self.personality_traits,
+        )
 
     def get_relevant_memories(self, query: str) -> List[Dict[str, Any]]:
         """Get relevant memories for decision making.
@@ -1704,3 +1611,13 @@ Example: "DECISION: call"
         except Exception as e:
             self.logger.error(f"Error creating memory query: {str(e)}")
             return str(game_state)  # Fallback to basic string conversion
+
+    def cleanup(self):
+        """Cleanup resources."""
+        # Get final metrics
+        metrics = self.llm_client.get_metrics()
+        self.logger.info(f"Final LLM metrics for {self.name}: {metrics}")
+
+        # Cleanup memory store
+        if hasattr(self, "memory_store"):
+            self.memory_store.close()

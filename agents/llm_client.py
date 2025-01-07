@@ -1,10 +1,9 @@
-import json
 import logging
-import re
 import time
-from typing import Dict, List, Optional, Tuple, Union, Any
+from typing import Any, Dict, Optional, Union
 
-from openai import OpenAI
+from openai import AsyncOpenAI, OpenAI
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 from exceptions import LLMError
 
@@ -12,22 +11,42 @@ logger = logging.getLogger(__name__)
 
 
 class LLMClient:
-    """Handles LLM queries with consistent error handling and retries.
+    """Centralized interface for LLM communication with comprehensive error handling and monitoring."""
 
-    This class encapsulates all LLM interaction logic, providing a clean interface
-    for different types of queries while handling retries, timeouts, and errors
-    consistently.
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gpt-3.5-turbo",
+        max_retries: int = 3,
+        base_wait: float = 1.0,
+        max_wait: float = 10.0,
+        client: Optional[Any] = None,
+    ):
+        """Initialize LLM client with configurable retry parameters.
 
-    Attributes:
-        client (OpenAI): OpenAI client instance
-        max_retries (int): Maximum number of retry attempts
-        retry_delay (float): Delay between retries in seconds
-    """
-
-    def __init__(self, client: OpenAI, max_retries: int = 3, retry_delay: float = 1.0):
-        self.client = client
+        Args:
+            api_key: OpenAI API key
+            model: Model identifier to use
+            max_retries: Maximum retry attempts
+            base_wait: Base delay between retries
+            max_wait: Maximum delay between retries
+            client: Optional pre-configured client for testing
+        """
+        self.model = model
+        self.client = client or OpenAI(api_key=api_key)
+        self.async_client = client or AsyncOpenAI(api_key=api_key)
         self.max_retries = max_retries
-        self.retry_delay = retry_delay
+        self.base_wait = base_wait
+        self.max_wait = max_wait
+
+        # Metrics tracking
+        self.metrics = {
+            "total_queries": 0,
+            "failed_queries": 0,
+            "retry_count": 0,
+            "total_tokens": 0,
+            "query_times": [],
+        }
 
     def query(
         self,
@@ -36,256 +55,133 @@ class LLMClient:
         max_tokens: int = 150,
         system_message: Optional[str] = None,
     ) -> str:
-        """Base query method with retry logic.
+        """Execute synchronous LLM query with retry logic.
 
         Args:
-            prompt: The prompt to send to the LLM
-            temperature: Sampling temperature (0.0 to 1.0)
+            prompt: The prompt to send
+            temperature: Sampling temperature
             max_tokens: Maximum tokens in response
-            system_message: Optional system message for chat context
+            system_message: Optional system context
 
         Returns:
             str: LLM response text
 
         Raises:
             LLMError: If all retries fail
+            ValueError: If input parameters are invalid
         """
-        messages = []
-        if system_message:
-            messages.append({"role": "system", "content": system_message})
-        messages.append({"role": "user", "content": prompt})
+        # Input validation
+        if not prompt:
+            raise ValueError("Prompt cannot be empty")
+        if not 0 <= temperature <= 1:
+            raise ValueError("Temperature must be between 0 and 1")
+        if max_tokens < 1:
+            raise ValueError("max_tokens must be positive")
 
-        for attempt in range(self.max_retries):
-            try:
-                response = self.client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                )
-                return response.choices[0].message.content
-
-            except Exception as e:
-                logger.warning(f"LLM query attempt {attempt + 1} failed: {str(e)}")
-                if attempt == self.max_retries - 1:
-                    raise LLMError(
-                        f"All {self.max_retries} LLM query attempts failed"
-                    ) from e
-                time.sleep(self.retry_delay)
-
-    def generate_plan(self, strategy_style: str, game_state: str) -> Dict[str, Any]:
-        """Generate a strategic plan using the LLM.
-
-        Args:
-            strategy_style: Player's strategic style
-            game_state: Current game state
-
-        Returns:
-            Dict[str, Any]: Strategic plan containing approach, bet sizing, etc.
-        """
         try:
-            planning_prompt = f"""You are a {strategy_style} poker player planning your strategy.
-            
-Current situation:
-{game_state}
+            return self._execute_query(prompt, temperature, max_tokens, system_message)
+        except Exception as e:
+            # Convert to LLMError after all retries fail
+            raise LLMError(f"Query failed after retries: {str(e)}")
 
-Create a strategic plan in valid JSON format:
-{{
-    "approach": "aggressive|balanced|defensive",
-    "reasoning": "<brief explanation>",
-    "bet_sizing": "small|medium|large",
-    "bluff_threshold": <0.0-1.0>,
-    "fold_threshold": <0.0-1.0>
-}}
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        reraise=True,
+    )
+    def _execute_query(
+        self,
+        prompt: str,
+        temperature: float,
+        max_tokens: int,
+        system_message: Optional[str] = None,
+    ) -> str:
+        """Execute the actual query with retry logic."""
+        start_time = time.time()
+        self.metrics["total_queries"] += 1
 
-Example valid response:
-{{
-    "approach": "aggressive",
-    "reasoning": "Strong hand and good position",
-    "bet_sizing": "large",
-    "bluff_threshold": 0.8,
-    "fold_threshold": 0.2
-}}
-"""
+        try:
+            messages = []
+            if system_message:
+                messages.append({"role": "system", "content": system_message})
+            messages.append({"role": "user", "content": prompt})
 
-            response = self.query(
-                prompt=planning_prompt,
-                temperature=0.7,
-                system_message=f"You are a {strategy_style} poker strategist.",
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
             )
 
-            # Try to parse JSON response
-            try:
-                import json
-                plan_data = json.loads(response.strip())
-                
-                # Validate required fields
-                required_fields = ['approach', 'reasoning', 'bet_sizing', 'bluff_threshold', 'fold_threshold']
-                for field in required_fields:
-                    if field not in plan_data:
-                        raise ValueError(f"Missing required field: {field}")
-                        
-                return plan_data
-                
-            except json.JSONDecodeError:
-                logger.error(f"Failed to parse plan JSON: {response}")
-                # Return default plan
-                return {
-                    "approach": "balanced",
-                    "reasoning": "Default plan due to parsing error",
-                    "bet_sizing": "medium",
-                    "bluff_threshold": 0.7,
-                    "fold_threshold": 0.3
-                }
+            # Update metrics
+            duration = time.time() - start_time
+            self.metrics["query_times"].append(duration)
+            self.metrics["total_tokens"] += response.usage.total_tokens
+
+            return response.choices[0].message.content
 
         except Exception as e:
-            logger.error(f"Error generating plan: {str(e)}")
-            # Return default plan
-            return {
-                "approach": "balanced",
-                "reasoning": "Default plan due to error",
-                "bet_sizing": "medium",
-                "bluff_threshold": 0.7,
-                "fold_threshold": 0.3
-            }
+            # Only track retry count here
+            self.metrics["retry_count"] += 1
+            logger.error(f"LLM query attempt failed: {str(e)}")
 
-    def decide_action(
+            # Track failed_queries only on last retry
+            if self.metrics["retry_count"] >= self.max_retries:
+                self.metrics["failed_queries"] += 1
+
+            raise  # Let tenacity handle the retry
+
+    async def query_async(
         self,
-        strategy_style: str,
-        game_state: str,
-        plan: Dict[str, Any],
-        min_raise: int,
+        prompt: str,
+        temperature: float = 0.7,
+        max_tokens: int = 150,
+        system_message: Optional[str] = None,
     ) -> str:
-        """Determine the next action based on strategy plan.
-        
-        Args:
-            strategy_style: Current strategy style being used
-            game_state: Current state of the game
-            plan: Strategic plan dictionary containing approach and parameters
-            min_raise: Minimum raise amount allowed
-            
-        Returns:
-            str: Action decision ('fold', 'call', or 'raise X')
-        """
-        # Create decision prompt with min_raise information
-        prompt = f"""You are a {strategy_style} poker player.
-
-Current game state:
-{game_state}
-
-Your current strategic plan:
-- Approach: {plan['approach']}
-- Reasoning: {plan['reasoning']}
-- Bet Sizing: {plan['bet_sizing']}
-- Bluff Threshold: {plan['bluff_threshold']}
-- Fold Threshold: {plan['fold_threshold']}
-
-Important betting rules:
-- Minimum raise amount: ${min_raise}
-- Any raise must be at least ${min_raise}
-- If you want to raise, it must be 'raise X' where X >= {min_raise}
-
-Based on your strategy and the minimum raise requirement, decide your action.
-Respond with exactly one line starting with 'ACTION: ' followed by either:
-- 'fold'
-- 'call'
-- 'raise X' (where X is your raise amount, must be >= {min_raise})
-
-Example responses:
-ACTION: fold
-ACTION: call
-ACTION: raise {min_raise}
-"""
+        """Execute asynchronous LLM query with retry logic."""
+        start_time = time.time()
+        self.metrics["total_queries"] += 1
 
         try:
-            # Query LLM with retry logic
-            for attempt in range(3):  # 3 retries
-                try:
-                    response = self.client.chat.completions.create(
-                        model="gpt-3.5-turbo",
-                        messages=[{"role": "user", "content": prompt}],
-                        temperature=0.7,
-                        max_tokens=50,  # Short response needed
-                    )
+            messages = []
+            if system_message:
+                messages.append({"role": "system", "content": system_message})
+            messages.append({"role": "user", "content": prompt})
 
-                    # Extract action from response
-                    action_line = None
-                    for line in response.choices[0].message.content.split('\n'):
-                        if line.startswith('ACTION:'):
-                            action_line = line.replace('ACTION:', '').strip().lower()
-                            break
+            response = await self.async_client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
 
-                    if action_line:
-                        # Validate raise amount if it's a raise
-                        if action_line.startswith('raise'):
-                            try:
-                                _, amount = action_line.split()
-                                amount = int(amount)
-                                if amount < min_raise:
-                                    self.logger.warning(
-                                        f"LLM suggested raise {amount} below minimum {min_raise}, adjusting to minimum"
-                                    )
-                                    return f"raise {min_raise}"
-                            except (ValueError, IndexError):
-                                self.logger.warning("Invalid raise format from LLM")
-                                return "call"  # Safe fallback
-                        return action_line
-                    
-                    self.logger.warning(f"No valid action found in response: {response.choices[0].message.content}")
-                    continue  # Try again
+            # Update metrics
+            duration = time.time() - start_time
+            self.metrics["query_times"].append(duration)
+            self.metrics["total_tokens"] += response.usage.total_tokens
 
-                except Exception as e:
-                    if attempt < 2:  # Don't log on last attempt
-                        self.logger.warning(f"LLM query attempt {attempt + 1} failed: {str(e)}")
-                    time.sleep(1)  # Wait before retry
-                    continue
-
-            # If all retries failed, return safe default
-            self.logger.error("All LLM query attempts failed")
-            return "call"
+            return response.choices[0].message.content
 
         except Exception as e:
-            self.logger.error(f"Error in decide_action: {str(e)}")
-            return "call"  # Safe fallback
+            self.metrics["failed_queries"] += 1
+            logger.error(f"Async LLM query failed: {str(e)}")
+            raise
 
-    def generate_message(
-        self,
-        strategy_style: str,
-        game_state: str,
-        communication_style: str,
-        recent_history: str,
-    ) -> str:
-        """Generate table talk for the poker agent.
+    def get_metrics(self) -> Dict[str, Union[int, float, list]]:
+        """Return current metrics."""
+        metrics = self.metrics.copy()
+        if self.metrics["query_times"]:
+            metrics["average_query_time"] = sum(self.metrics["query_times"]) / len(
+                self.metrics["query_times"]
+            )
+        return metrics
 
-        Args:
-            strategy_style: Player's strategic style
-            game_state: Current game state
-            communication_style: Desired communication style
-            recent_history: Recent table history
-
-        Returns:
-            str: Generated message for table talk
-        """
-        message_prompt = f"""
-        You are a {strategy_style} poker player with a {communication_style} communication style.
-        
-        Current situation:
-        {game_state}
-        
-        Recent table history:
-        {recent_history}
-        
-        Generate a short message for table talk.
-        Respond with:
-        MESSAGE: <your message>
-        """
-
-        response = self.query(
-            prompt=message_prompt,
-            max_tokens=50,  # Shorter for table talk
-            system_message=f"You are a {communication_style} {strategy_style} poker player.",
-        )
-
-        if "MESSAGE:" in response:
-            return response.split("MESSAGE:")[1].strip()
-        return response.strip()
+    def reset_metrics(self) -> None:
+        """Reset metrics counters."""
+        self.metrics = {
+            "total_queries": 0,
+            "failed_queries": 0,
+            "retry_count": 0,
+            "total_tokens": 0,
+            "query_times": [],
+        }

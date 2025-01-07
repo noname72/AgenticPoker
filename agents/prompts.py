@@ -117,7 +117,7 @@ What is your discard decision?
 # - recent_observations: Last 3 game events from perception history
 # - memory_context: Relevant memories from long-term storage
 # - recent_conversation: Last 5 messages exchanged
-STRATEGIC_MESSAGE_PROMPT = """You are a {strategy_style} poker player.
+STRATEGIC_MESSAGE_PROMPT = """You are a {strategy_style} poker player with a {communication_style} communication style.
 Your response must be a single short message (max 10 words) that fits your style.
 
 Game State: {game_state}
