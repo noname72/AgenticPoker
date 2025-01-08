@@ -32,8 +32,10 @@ Key features:
 import logging
 from typing import Dict, List, Optional, Tuple, Union
 
+from data.types.game_state import GameState
+from data.types.pot_types import SidePot
+
 from .player import Player
-from .types import GameState, SidePot
 
 logger = logging.getLogger(__name__)
 
@@ -201,20 +203,20 @@ def _get_action_and_amount(
                     f"Raise amount ${amount} below minimum (${min_raise}), converting to call"
                 )
                 return "call", highest_bet
-            
+
             # Ensure player has enough chips for the raise
             max_possible_raise = player.chips + player.bet
             if amount > max_possible_raise:
                 amount = max_possible_raise
-                
+
             return "raise", amount
 
         elif action == "call":
             return "call", highest_bet
-            
+
         elif action == "fold":
             return "fold", 0
-            
+
         else:
             logger.warning(f"Invalid action {action}, defaulting to call")
             return "call", highest_bet
@@ -367,7 +369,9 @@ def _process_player_action(
             logging.info(f"{player.name} raises to ${amount}{status}")
         else:
             # Invalid raise amount, convert to call
-            logging.info(f"Raise amount ${amount} below minimum (${min_raise}), converting to call")
+            logging.info(
+                f"Raise amount ${amount} below minimum (${min_raise}), converting to call"
+            )
             return _process_call(player, current_bet, pot)
 
     # Update all-in status considering active players
@@ -624,7 +628,7 @@ def create_or_update_betting_state(
     """
     if game_state is None:
         # Import here to avoid circular import
-        from .base_types import DeckState, PotState, RoundState
+        from data.types.base_types import DeckState, PotState, RoundState
 
         game_state = GameState(
             players=[],  # Will be populated by betting module
@@ -657,7 +661,7 @@ def _ensure_game_state(
     """
     if game_state is None:
         # Create new GameState
-        from .base_types import DeckState, PotState, RoundState
+        from data.types.base_types import DeckState, PotState, RoundState
 
         return GameState(
             players=[],  # Will be populated later
@@ -672,7 +676,7 @@ def _ensure_game_state(
         )
     elif isinstance(game_state, dict):
         # Convert legacy dict to GameState
-        from .base_types import DeckState, PotState, RoundState
+        from data.types.base_types import DeckState, PotState, RoundState
 
         return GameState(
             players=[],  # Will be populated from players list
@@ -696,14 +700,16 @@ def _ensure_game_state(
         raise TypeError("game_state must be None, dict, or GameState")
 
 
-def _process_call(player: Player, current_bet: int, pot: int) -> Tuple[int, int, Optional[Player]]:
+def _process_call(
+    player: Player, current_bet: int, pot: int
+) -> Tuple[int, int, Optional[Player]]:
     """Process a call action from a player.
-    
+
     Args:
         player: Player making the call
         current_bet: Current bet amount to match
         pot: Current pot amount
-        
+
     Returns:
         Tuple containing:
         - int: Updated pot amount
@@ -713,7 +719,7 @@ def _process_call(player: Player, current_bet: int, pot: int) -> Tuple[int, int,
     # Calculate how much more they need to add to call
     to_call = current_bet - player.bet
     bet_amount = min(to_call, player.chips)
-    
+
     # Place the bet
     actual_bet = player.place_bet(bet_amount)
     pot += actual_bet
@@ -722,5 +728,5 @@ def _process_call(player: Player, current_bet: int, pot: int) -> Tuple[int, int,
     status = " (all in)" if player.chips == 0 else ""
     logger.info(f"{player.name} calls ${bet_amount}{status}")
     logger.info(f"  Pot after call: ${pot}")
-    
+
     return pot, current_bet, None

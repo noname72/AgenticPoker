@@ -2,8 +2,9 @@ import logging
 import random
 from typing import List
 
+from data.types.base_types import DeckState
+
 from .card import Card
-from .base_types import DeckState
 
 
 class Deck:

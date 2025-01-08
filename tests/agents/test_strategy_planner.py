@@ -6,9 +6,12 @@ from openai.types.chat import ChatCompletion, ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
 
 from agents.strategy_planner import StrategyPlanner
-from agents.types import Approach, BetSizing, Plan
-from game.base_types import DeckState, PlayerPosition, PlayerState, PotState, RoundState
-from game.types import GameState
+from data.types.base_types import DeckState
+from data.types.game_state import GameState
+from data.types.plan import Approach, BetSizing, Plan
+from data.types.player_types import PlayerPosition, PlayerState
+from data.types.pot_types import PotState
+from data.types.round_state import RoundState
 
 
 @pytest.fixture
@@ -62,19 +65,19 @@ def test_plan_strategy_success(planner):
     """Test strategic planning functionality."""
     print("\nTesting plan strategy success:")
 
-    # Mock the LLM client's generate_plan method
-    with patch.object(planner.llm_client, "generate_plan") as mock_generate_plan:
-        mock_response = {
+    # Mock the LLM client's query method
+    with patch.object(planner.llm_client, "query") as mock_query:
+        mock_response = """
+        {
             "approach": "aggressive",
             "reasoning": "Strong hand position",
-            "bet_sizing": "large",
+            "bet_sizing": "large", 
             "bluff_threshold": 0.7,
-            "fold_threshold": 0.2,
-            "adjustments": [],
-            "target_opponent": None,
+            "fold_threshold": 0.2
         }
+        """
         print(f"Mock response: {mock_response}")
-        mock_generate_plan.return_value = mock_response
+        mock_query.return_value = mock_response
 
         # Create a proper GameState object with complete PlayerState objects
         game_state = GameState(
@@ -202,11 +205,11 @@ def test_plan_strategy_reuse_existing(planner):
         print(f"Mocked metrics: {initial_metrics}")
 
         # Second call should reuse plan without generating new one
-        with patch.object(planner.llm_client, "generate_plan") as mock_generate:
+        with patch.object(planner.llm_client, "query") as mock_query:
             second_plan = planner.plan_strategy(game_state, stack_size=1000)
             print(f"Second plan: {second_plan}")
 
-            mock_generate.assert_not_called()
+            mock_query.assert_not_called()
             assert second_plan == initial_plan
             print("Successfully reused plan without LLM query")
 
@@ -277,19 +280,16 @@ def test_execute_action(planner, mock_openai_client, action_response, expected):
     planner.current_plan = initial_plan
     print(f"Initial plan: {initial_plan}")
 
-    # Mock the LLM client's decide_action method
+    # Mock the LLM client's query method directly
     with patch.object(
-        planner.llm_client, "decide_action", return_value=expected
-    ) as mock_decide:
-        print(f"Executing action with expected response: {expected}")
+        planner.llm_client, "query", return_value=action_response
+    ) as mock_query:
+        # Execute action
         action = planner.execute_action(game_state)
         print(f"Actual action: {action}")
 
         assert action == expected, f"Expected {expected} but got {action}"
-        mock_decide.assert_called_once()
-        args = mock_decide.call_args
-        print(f"decide_action called with args: {args}")
-        assert args[1]["strategy_style"] == planner.strategy_style
+        mock_query.assert_called_once()
 
 
 def test_execute_action_no_plan(planner):
@@ -474,7 +474,7 @@ def test_strategy_planner_planning():
     )
     print(f"Game state: {game_state}")
 
-    # Mock both extract_metrics and generate_plan
+    # Mock both extract_metrics and query
     with patch.object(planner, "extract_metrics") as mock_extract:
         metrics = {
             "position": PlayerPosition.BIG_BLIND.value,
@@ -486,18 +486,18 @@ def test_strategy_planner_planning():
         print(f"Mock metrics: {metrics}")
         mock_extract.return_value = metrics
 
-        with patch.object(planner.llm_client, "generate_plan") as mock_generate_plan:
-            mock_plan = {
+        with patch.object(planner.llm_client, "query") as mock_query:
+            mock_response = """
+            {
                 "approach": "aggressive",
                 "reasoning": "Test plan",
                 "bet_sizing": "large",
                 "bluff_threshold": 0.7,
-                "fold_threshold": 0.2,
-                "adjustments": [],
-                "target_opponent": None,
+                "fold_threshold": 0.2
             }
-            print(f"Mock plan: {mock_plan}")
-            mock_generate_plan.return_value = mock_plan
+            """
+            print(f"Mock response: {mock_response}")
+            mock_query.return_value = mock_response
 
             # Test plan generation
             plan = planner.plan_strategy(game_state, stack_size=1000)
@@ -511,6 +511,13 @@ def test_strategy_planner_planning():
             assert plan.bet_sizing == BetSizing.LARGE
             assert plan.bluff_threshold == 0.7
             assert plan.fold_threshold == 0.2
+
+            # Verify query was called with correct arguments
+            mock_query.assert_called_once()
+            args = mock_query.call_args
+            assert args[1]["temperature"] == 0.7
+            assert args[1]["max_tokens"] == 200
+            print("Successfully verified plan generation and LLM query")
 
 
 def test_validate_plan_data(planner):

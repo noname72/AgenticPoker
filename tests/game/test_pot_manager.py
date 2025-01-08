@@ -2,10 +2,10 @@ from unittest.mock import Mock
 
 import pytest
 
+from data.types.pot_types import SidePot
 from exceptions import InvalidGameStateError
 from game.player import Player
 from game.pot_manager import PotManager
-from game.types import SidePot
 
 
 @pytest.fixture

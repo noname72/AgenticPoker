@@ -1,11 +1,9 @@
 import logging
 from typing import Dict, List, Optional
 
+from data.types.pot_types import PotState, SidePot, SidePotView
 from exceptions import InvalidGameStateError
-
-from .base_types import PotState
-from .player import Player
-from .types import SidePot, SidePotView
+from game.player import Player
 
 
 class PotManager:

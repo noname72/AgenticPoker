@@ -1,9 +1,12 @@
 import logging
+from data.types.base_types import DeckState
+from data.types.game_state import GameState
+from data.types.pot_types import PotState, SidePot
+from data.types.round_state import RoundState
 from unittest.mock import MagicMock
 
 import pytest
 
-from game.base_types import DeckState, PotState, RoundState
 from game.player import Player
 from game.post_draw import (
     _evaluate_hands,
@@ -11,7 +14,6 @@ from game.post_draw import (
     handle_post_draw_betting,
     handle_showdown,
 )
-from game.types import GameState, SidePot
 
 
 @pytest.fixture

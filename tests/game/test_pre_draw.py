@@ -1,8 +1,12 @@
+from data.types.base_types import DeckState
+from data.types.game_state import GameState
+from data.types.pot_types import PotState
+from data.types.round_state import RoundState
+
 import pytest
-from game.pre_draw import handle_pre_draw_betting
+
 from game.player import Player
-from game.types import GameState, SidePot
-from game.base_types import DeckState, PotState, RoundState
+from game.pre_draw import handle_pre_draw_betting
 
 
 @pytest.fixture
@@ -16,13 +20,10 @@ def basic_game_state():
         ante=0,
         min_bet=20,
         round_state=RoundState(
-            round_number=1,
-            phase="pre_draw",
-            current_bet=20,
-            raise_count=0
+            round_number=1, phase="pre_draw", current_bet=20, raise_count=0
         ),
         pot_state=PotState(main_pot=0),
-        deck_state=DeckState(cards_remaining=52)
+        deck_state=DeckState(cards_remaining=52),
     )
 
 
@@ -33,16 +34,13 @@ def test_handle_pre_draw_betting_simple_case(basic_game_state):
         Player("Player 2", 1000),
         Player("Player 3", 1000),
     ]
-    
+
     # Mock player decisions
     for player in players:
         player.decide_action = lambda x: ("call", 20)
 
     new_pot, side_pots, should_continue = handle_pre_draw_betting(
-        players=players,
-        pot=0,
-        dealer_index=0,
-        game_state=basic_game_state
+        players=players, pot=0, dealer_index=0, game_state=basic_game_state
     )
 
     assert new_pot == 60  # Each player bet 20
@@ -64,12 +62,9 @@ def test_handle_pre_draw_betting_with_raises(basic_game_state):
     players[0].decide_action = lambda x: ("raise", 40)
     players[1].decide_action = lambda x: ("raise", 80)
     players[2].decide_action = lambda x: ("call", 80)
-    
+
     new_pot, side_pots, should_continue = handle_pre_draw_betting(
-        players=players,
-        pot=0,
-        dealer_index=0,
-        game_state=basic_game_state
+        players=players, pot=0, dealer_index=0, game_state=basic_game_state
     )
 
     assert new_pot == 240  # 80 × 3
@@ -91,10 +86,7 @@ def test_handle_pre_draw_betting_all_fold(basic_game_state):
     players[2].decide_action = lambda x: ("fold", 0)
 
     new_pot, side_pots, should_continue = handle_pre_draw_betting(
-        players=players,
-        pot=0,
-        dealer_index=0,
-        game_state=basic_game_state
+        players=players, pot=0, dealer_index=0, game_state=basic_game_state
     )
 
     assert new_pot == 40
@@ -115,14 +107,11 @@ def test_handle_pre_draw_betting_all_in(basic_game_state):
 
     # Setup betting sequence leading to all-in
     players[0].decide_action = lambda x: ("raise", 100)  # All-in
-    players[1].decide_action = lambda x: ("call", 100)   # Partial call (all-in)
+    players[1].decide_action = lambda x: ("call", 100)  # Partial call (all-in)
     players[2].decide_action = lambda x: ("call", 100)
 
     new_pot, side_pots, should_continue = handle_pre_draw_betting(
-        players=players,
-        pot=0,
-        dealer_index=0,
-        game_state=basic_game_state
+        players=players, pot=0, dealer_index=0, game_state=basic_game_state
     )
 
     assert new_pot == 250  # 100 + 50 + 100
@@ -144,10 +133,7 @@ def test_handle_pre_draw_betting_invalid_actions(basic_game_state):
     players[2].decide_action = lambda x: ("call", 20)
 
     new_pot, side_pots, should_continue = handle_pre_draw_betting(
-        players=players,
-        pot=0,
-        dealer_index=0,
-        game_state=basic_game_state
+        players=players, pot=0, dealer_index=0, game_state=basic_game_state
     )
 
     assert new_pot == 60  # All should be converted to calls (20 × 3)

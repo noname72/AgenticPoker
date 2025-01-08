@@ -1,6 +1,10 @@
+from data.types.base_types import DeckState
+from data.types.game_state import GameState
+from data.types.pot_types import PotState
+from data.types.round_state import RoundState
+
 import pytest
 
-from game.base_types import DeckState, PotState, RoundState
 from game.betting import (
     betting_round,
     calculate_side_pots,
@@ -9,7 +13,6 @@ from game.betting import (
     validate_bet_to_call,
 )
 from game.player import Player
-from game.types import GameState, SidePot
 
 
 @pytest.fixture
@@ -468,7 +471,7 @@ def test_handle_betting_round_all_in(mock_game_state):
 
     # Verify final player states
     assert players[0].chips == 25  # Started with 100, bet 75
-    assert players[1].chips == 0   # Started with 50, went all-in
+    assert players[1].chips == 0  # Started with 50, went all-in
     assert players[2].chips == 25  # Started with 100, bet 75
 
 
@@ -1105,7 +1108,7 @@ def test_betting_round_with_posted_blinds(mock_game_state):
     # Run betting round
     initial_pot = 170  # Antes (40) + SB (50) + BB (100)
     print(f"\nStarting betting round with initial pot: {initial_pot}")
-    
+
     result = betting_round(players, initial_pot, mock_game_state)
 
     print("\nAfter betting round:")
@@ -1122,7 +1125,9 @@ def test_betting_round_with_posted_blinds(mock_game_state):
 
     # Verify each player's chips and bets
     # Dealer should have paid: 10 (ante) + 100 (call) = 110
-    assert players[0].chips == 890, f"Dealer should have 890 chips, has {players[0].chips}"
+    assert (
+        players[0].chips == 890
+    ), f"Dealer should have 890 chips, has {players[0].chips}"
     assert players[0].bet == 100, f"Dealer's bet should be 100, is {players[0].bet}"
 
     # Small Blind should have paid: 10 (ante) + 50 (SB) + 50 (complete) = 110
