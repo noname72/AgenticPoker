@@ -34,7 +34,7 @@ from typing import Dict, List, Optional, Tuple, Union
 
 from data.states.game_state import GameState
 from data.types.pot_types import SidePot
-from data.types.round_state import RoundPhase
+from data.states.round_state import RoundPhase
 
 from .player import Player
 

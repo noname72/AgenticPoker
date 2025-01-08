@@ -3,10 +3,11 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, validator
 
+from data.states.player_state import PlayerState
+from data.states.round_state import RoundState
 from data.types.base_types import DeckState
-from data.types.player_types import PlayerPosition, PlayerState
+from data.types.player_types import PlayerPosition
 from data.types.pot_types import PotState
-from data.types.round_state import RoundState
 
 if TYPE_CHECKING:
     from game.game import AgenticPoker

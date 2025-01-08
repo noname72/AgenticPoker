@@ -1,11 +1,11 @@
-from data.types.base_types import DeckState
-from data.states.game_state import GameState
-from data.types.pot_types import PotState
-from data.types.round_state import RoundState, RoundPhase
-from data.types.player_types import PlayerPosition
-
 import pytest
 
+from data.states.game_state import GameState
+from data.states.player_state import PlayerState
+from data.states.round_state import RoundPhase, RoundState
+from data.types.base_types import DeckState
+from data.types.player_types import PlayerPosition
+from data.types.pot_types import PotState
 from game.betting import (
     betting_round,
     calculate_side_pots,
@@ -387,24 +387,24 @@ def mock_game_state():
             "chips": 1000,
             "folded": False,
             "bet": 0,
-            "position": PlayerPosition.DEALER
+            "position": PlayerPosition.DEALER,
         },
         {
-            "name": "Mock Player 2", 
+            "name": "Mock Player 2",
             "chips": 1000,
             "folded": False,
             "bet": 0,
-            "position": PlayerPosition.SMALL_BLIND
+            "position": PlayerPosition.SMALL_BLIND,
         },
         {
             "name": "Mock Player 3",
             "chips": 1000,
             "folded": False,
             "bet": 0,
-            "position": PlayerPosition.BIG_BLIND
-        }
+            "position": PlayerPosition.BIG_BLIND,
+        },
     ]
-    
+
     return GameState(
         players=mock_players,  # Pass player state dictionaries
         dealer_position=0,
@@ -413,10 +413,7 @@ def mock_game_state():
         ante=0,
         min_bet=20,
         round_state=RoundState(
-            round_number=1,
-            phase=RoundPhase.PRE_DRAW,
-            current_bet=20,
-            raise_count=0
+            round_number=1, phase=RoundPhase.PRE_DRAW, current_bet=20, raise_count=0
         ),
         pot_state=PotState(main_pot=0),
         deck_state=DeckState(cards_remaining=52),
@@ -660,9 +657,7 @@ def test_betting_round_one_player_left_with_chips():
     print(f"Total pot: {pot}")
     print("Side pots:")
     for i, sp in enumerate(side_pots):
-        print(
-            f"  Pot {i+1}: ${sp.amount} - Eligible: {sp.eligible_players}"
-        )
+        print(f"  Pot {i+1}: ${sp.amount} - Eligible: {sp.eligible_players}")
 
     # Verify final state
     assert (
@@ -971,8 +966,6 @@ def test_small_blind_calling_big_blind():
     ]
 
     # Create initial player states
-    from data.types.player_types import PlayerPosition, PlayerState
-
     player_states = [
         PlayerState(
             name="Dealer",
