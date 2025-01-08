@@ -1,7 +1,8 @@
 import logging
-from typing import Optional
+from typing import List, Optional, Tuple, Union
 
-from .base_types import PlayerPosition, PlayerState
+from data.types.player_types import PlayerPosition, PlayerState
+
 from .hand import Hand
 
 

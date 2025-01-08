@@ -22,10 +22,10 @@ from agents.prompts import (
 )
 from agents.strategy_cards import StrategyManager
 from agents.strategy_planner import StrategyPlanner
-from agents.types import Approach, BetSizing, Plan
 from data.memory import ChromaMemoryStore
+from data.types.game_state import GameState
+from data.types.plan import Approach, BetSizing, Plan
 from exceptions import OpenAIError
-from game.types import GameState
 
 # Load environment variables
 load_dotenv()

@@ -2,13 +2,15 @@ import logging
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
 
+from data.types.game_state import GameState
+from data.types.player_types import PlayerPosition
+from data.types.round_state import RoundState
+
 from . import betting, draw, post_draw, pre_draw
-from .base_types import PlayerPosition, PlayerState, RoundState
 from .deck import Deck
 from .hand import Hand
 from .player import Player
 from .pot_manager import PotManager
-from .types import GameState, SidePot
 from .utils import log_chip_movements
 
 
@@ -437,7 +439,7 @@ class AgenticPoker:
 
     def _create_game_state(self) -> GameState:
         """Create a structured game state object.
-        
+
         Returns:
             GameState: Complete game state including betting limits and current state
         """
@@ -489,8 +491,8 @@ class AgenticPoker:
         current_bet = getattr(self.round_state, "current_bet", self.big_blind)
         min_raise = max(
             self.config.min_bet,  # Configured minimum bet
-            self.big_blind,       # Big blind amount
-            current_bet          # Current bet to match
+            self.big_blind,  # Big blind amount
+            current_bet,  # Current bet to match
         )
 
         # Update round state with current pot info

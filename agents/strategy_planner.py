@@ -1,15 +1,15 @@
 import logging
 import time
-from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from openai import OpenAI
 
-from game.base_types import PlayerPosition
-from game.types import GameState
+from agents.prompts import EXECUTION_PROMPT
+from data.types.game_state import GameState
+from data.types.plan import Approach, BetSizing, Plan
+from data.types.player_types import PlayerPosition
 
 from .llm_client import LLMClient
-from .types import Approach, BetSizing, Plan
 
 logger = logging.getLogger(__name__)
 
@@ -175,11 +175,31 @@ class StrategyPlanner:
                 )
                 return self.current_plan
 
-            # Get plan from LLM
-            plan_data = self.llm_client.generate_plan(
-                strategy_style=self.strategy_style,
-                game_state=self._format_state_summary(game_state),
+            # Create planning prompt
+            prompt = f"""
+            Given your {self.strategy_style} playing style, analyze this game state and create a strategic plan:
+            
+            Game State: {self._format_state_summary(game_state)}
+            
+            Respond with a plan in this exact format:
+            {{
+                "approach": "<aggressive/balanced/defensive/deceptive>",
+                "reasoning": "<explanation of strategic choice>",
+                "bet_sizing": "<small/medium/large>",
+                "bluff_threshold": <float 0-1>,
+                "fold_threshold": <float 0-1>
+            }}
+            """
+
+            # Query LLM for plan
+            response = self.llm_client.query(
+                prompt=prompt, temperature=0.7, max_tokens=200
             )
+
+            # Parse and validate response
+            plan_data = eval(
+                response.strip()
+            )  # Safe since we control LLM output format
 
             # Create new plan with proper validation
             self.current_plan = Plan(
@@ -244,17 +264,7 @@ class StrategyPlanner:
         current_bet: int = 0,
         min_raise: int = 100,  # Default to 100 or fetch from game state
     ) -> str:
-        """Execute an action based on current plan and game state.
-
-        Args:
-            game_state: Current game state as GameState object
-            hand_eval: Optional tuple of (hand_rank, card_ranks, hand_name)
-            current_bet: Current bet amount that needs to be matched
-            min_raise: Minimum raise amount allowed
-
-        Returns:
-            str: Action to take ('fold', 'call', or 'raise X')
-        """
+        """Execute an action based on current plan and game state."""
         try:
             # Ensure we have a valid plan
             if not self.current_plan:
@@ -265,65 +275,61 @@ class StrategyPlanner:
                     game_state, self.extract_metrics(game_state).get("stack_size", 0)
                 )
 
-            # Ensure we still have a valid plan after attempting to generate one
-            if not self.current_plan:
-                logger.warning(
-                    "[Action] Failed to generate plan - using default action"
-                )
+            # Create execution prompt
+            execution_prompt = EXECUTION_PROMPT.format(
+                strategy_style=self.strategy_style,
+                game_state=game_state,
+                plan_approach=self.current_plan.approach,
+                plan_reasoning=self.current_plan.reasoning,
+                bluff_threshold=self.current_plan.bluff_threshold,
+                fold_threshold=self.current_plan.fold_threshold,
+            )
+
+            # Get response from LLM
+            response = self.llm_client.query(
+                prompt=execution_prompt,
+                temperature=0.7,
+                max_tokens=150,
+            )
+
+            # Parse the response
+            if "EXECUTE:" not in response:
+                logger.warning("[Action] No EXECUTE directive found in response")
                 return "call"
 
-            # Calculate minimum total bet required for a raise
-            min_total_bet = current_bet + min_raise
+            # Extract action from response
+            action_text = response.split("EXECUTE:")[1].strip().lower()
+            logger.debug(f"[Action] Parsed action text: {action_text}")
 
-            # Determine raise amount based on strategy
-            if self.current_plan.approach == Approach.AGGRESSIVE:
-                # For aggressive play, use larger bet sizing but ensure it meets minimum
-                if self.current_plan.bet_sizing == BetSizing.LARGE:
-                    desired_raise = max(current_bet * 2, min_total_bet)
-                else:
-                    desired_raise = min_total_bet
-            else:
-                # For other approaches, use minimum raise
-                desired_raise = min_total_bet
-
-            # Get action from LLM client with adjusted raise amount
-            action = self.llm_client.decide_action(
-                strategy_style=self.strategy_style,
-                game_state=self._format_state_summary(game_state),
-                plan=self.current_plan.dict(),
-                min_raise=desired_raise,  # Pass min_raise to the prompt
-            )
-
-            # If action is 'raise', ensure the amount meets minimum requirements
-            if action.startswith("raise"):
+            # Parse action and amount
+            if "fold" in action_text:
+                logger.info("[Action] Decided to fold")
+                return "fold"
+            elif "raise" in action_text:
+                # Try to extract raise amount
                 try:
-                    _, amount_str = action.split()
-                    amount = int(amount_str)
-                    if amount < min_total_bet:
-                        action = f"raise {min_total_bet}"
-                        logger.info(
-                            f"[Action] Adjusted raise amount from {amount} to {min_total_bet} to meet minimum"
-                        )
+                    # Look for numbers in the text
+                    import re
+
+                    numbers = re.findall(r"\d+", action_text)
+                    if numbers:
+                        amount = int(numbers[-1])  # Take the last number found
+                        logger.info(f"[Action] Raising {amount}")
+                        return f"raise {amount}"
                     else:
                         logger.info(
-                            f"[Action] Raise amount {amount} meets the minimum requirement of {min_total_bet}"
+                            f"[Action] No raise amount found, using default {min_raise}"
                         )
-                        min_raise = amount  # Update min_raise to the valid raise amount
-                except (ValueError, IndexError):
-                    action = f"raise {min_total_bet}"
-                    logger.info(
-                        f"[Action] Invalid raise format, using minimum raise {min_total_bet}"
-                    )
-
-            logger.info(
-                f"[Action] Decided on '{action}' based on {self.current_plan.approach.value} strategy"
-            )
-            return action
+                        return f"raise {min_raise}"
+                except (ValueError, IndexError) as e:
+                    logger.warning(f"[Action] Error parsing raise amount: {e}")
+                    return f"raise {min_raise}"
+            else:
+                logger.info("[Action] Decided to call")
+                return "call"
 
         except Exception as e:
-            logger.error(
-                "[Action] Failed to execute action: %s. Defaulting to 'call'", str(e)
-            )
+            logger.error(f"[Action] Error executing action: {str(e)}")
             return "call"  # Safe fallback
 
     def requires_replanning(self, game_state: Union[Dict, "GameState"]) -> bool:

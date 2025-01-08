@@ -1,10 +1,12 @@
 import logging
 from typing import Dict, List, Optional, Tuple
 
+from data.types.game_state import GameState
+from data.types.pot_types import SidePot
+
 from . import betting
 from .player import Player
 from .pot_manager import PotManager
-from .types import SidePot, GameState
 from .utils import log_chip_movements
 
 

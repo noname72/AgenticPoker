@@ -1,8 +1,9 @@
 from typing import List, Optional, Tuple
 
+from data.types.hand_types import HandState
+
 from .card import Card
 from .evaluator import evaluate_hand
-from .base_types import HandState
 
 
 class Hand:

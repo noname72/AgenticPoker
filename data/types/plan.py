@@ -2,7 +2,7 @@ import time
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field
 
 
 class Approach(str, Enum):
@@ -66,11 +66,6 @@ class Plan(BaseModel):
         - Adjustments:
           * {adjustments_str}
         - Target Opponent: {self.target_opponent or 'None'}"""
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "Plan":
-        """Create a Plan instance from a dictionary."""
-        return cls(**data)
 
     def to_dict(self) -> dict:
         """Convert plan to dictionary format."""
