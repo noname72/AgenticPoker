@@ -1,7 +1,7 @@
 import logging
 from typing import Dict, List, Optional, Tuple
 
-from data.types.game_state import GameState
+from data.states.game_state import GameState
 from data.types.pot_types import SidePot
 
 from . import betting
@@ -99,15 +99,15 @@ def handle_showdown(
         # If no side pots, create one main pot
         if not side_pots:
             pot_amount = int(pot_manager.pot)
-            side_pots = [SidePot(pot_amount, active_players)]
+            side_pots = [SidePot(amount=pot_amount, eligible_players=[p.name for p in active_players])]
     except (AttributeError, TypeError):
         # Handle mock pot_manager by creating a single pot from initial chips
         total_pot = sum(initial_chips[p] - p.chips for p in players)
-        side_pots = [SidePot(total_pot, active_players)]
+        side_pots = [SidePot(amount=total_pot, eligible_players=[p.name for p in active_players])]
 
     # Distribute each pot
     for pot in side_pots:
-        eligible_players = [p for p in active_players if p in pot.eligible_players]
+        eligible_players = [p for p in active_players if p.name in pot.eligible_players]
         if eligible_players:
             winners = _evaluate_hands(eligible_players)
             if winners:

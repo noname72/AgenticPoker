@@ -32,8 +32,9 @@ Key features:
 import logging
 from typing import Dict, List, Optional, Tuple, Union
 
-from data.types.game_state import GameState
+from data.states.game_state import GameState
 from data.types.pot_types import SidePot
+from data.types.round_state import RoundPhase
 
 from .player import Player
 
@@ -406,12 +407,6 @@ def calculate_side_pots(
 ) -> List[SidePot]:
     """Creates side pots when one or more players are all-in.
 
-    Calculates multiple pots based on different all-in amounts:
-    1. Sorts all-in players by their total bet
-    2. Creates separate pots for each distinct all-in amount
-    3. Determines eligible players for each pot
-    4. Calculates the amount in each pot
-
     Args:
         active_players: List of players still in the hand
         all_in_players: List of players who are all-in
@@ -438,14 +433,16 @@ def calculate_side_pots(
         if bet_level > previous_bet:
             # Find eligible players for this level
             # A player is eligible if they bet at least this amount
-            eligible_players = [p for p in active_non_folded if p.bet >= bet_level]
+            eligible_players = [p.name for p in active_non_folded if p.bet >= bet_level]
 
             # Calculate pot amount for this level
             # Each eligible player contributes the difference between this level and previous level
             level_amount = (bet_level - previous_bet) * len(eligible_players)
 
             if level_amount > 0:
-                side_pots.append(SidePot(level_amount, eligible_players))
+                side_pots.append(
+                    SidePot(amount=level_amount, eligible_players=eligible_players)
+                )
 
             previous_bet = bet_level
 
@@ -453,7 +450,7 @@ def calculate_side_pots(
         logging.debug("Side pots created:")
         for i, pot in enumerate(side_pots, start=1):
             logging.debug(
-                f"  Pot {i}: ${pot.amount} - Eligible: {[p.name for p in pot.eligible_players]}"
+                f"  Pot {i}: ${pot.amount} - Eligible: {pot.eligible_players}"
             )
 
     return side_pots
@@ -594,7 +591,7 @@ def handle_betting_round(
         game_state.pot_state.side_pots = [
             {
                 "amount": pot.amount,
-                "eligible_players": [p.name for p in pot.eligible_players],
+                "eligible_players": pot.eligible_players,  # Already strings, no need to convert
             }
             for pot in side_pots
         ]
@@ -611,7 +608,7 @@ def create_or_update_betting_state(
     pot: int,
     dealer_index: int,
     game_state: Optional[GameState] = None,
-    phase: str = "pre_draw",
+    phase: str = RoundPhase.PRE_DRAW,
 ) -> GameState:
     """
     Create a new game state or update an existing one for betting rounds.
@@ -621,7 +618,7 @@ def create_or_update_betting_state(
         pot: Current pot amount
         dealer_index: Index of the dealer
         game_state: Optional existing game state to update
-        phase: Current game phase ("pre_draw" or "post_draw")
+        phase: Current game phase (defaults to PRE_DRAW)
 
     Returns:
         GameState: New or updated game state
@@ -644,7 +641,7 @@ def create_or_update_betting_state(
     else:
         # Use the existing game state, but ensure dealer position is set
         game_state.dealer_position = dealer_index
-        game_state.round_state.phase = phase
+        game_state.round_state.phase = RoundPhase(phase)
 
     # Set first bettor position in round state
     game_state.round_state.first_bettor_index = (dealer_index + 1) % len(players)
@@ -655,10 +652,7 @@ def create_or_update_betting_state(
 def _ensure_game_state(
     game_state: Optional[Union[Dict, GameState]], pot: int, dealer_index: int
 ) -> GameState:
-    """Ensures we have a proper GameState object.
-
-    Converts legacy dict format if needed or creates new GameState.
-    """
+    """Ensures we have a proper GameState object."""
     if game_state is None:
         # Create new GameState
         from data.types.base_types import DeckState, PotState, RoundState
@@ -687,7 +681,7 @@ def _ensure_game_state(
             min_bet=game_state.get("min_bet", 0),
             round_state=RoundState(
                 round_number=1,
-                phase=game_state.get("phase", "pre_draw"),
+                phase=RoundPhase(game_state.get("phase", RoundPhase.PRE_DRAW)),
                 current_bet=game_state.get("current_bet", 0),
                 raise_count=game_state.get("raise_count", 0),
             ),

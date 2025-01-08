@@ -1,7 +1,7 @@
 import logging
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
-from data.types.pot_types import PotState, SidePot, SidePotView
+from data.types.pot_types import PotState, SidePot
 from exceptions import InvalidGameStateError
 from game.player import Player
 
@@ -177,7 +177,11 @@ class PotManager:
                 # and hasn't been processed at this level
                 if pot_size > 0 and amount not in processed_amounts:
                     # Always create new pots for current betting round
-                    new_side_pots.append(SidePot(pot_size, eligible))
+                    new_side_pots.append(
+                        SidePot(
+                            amount=pot_size, eligible_players=[p.name for p in eligible]
+                        )
+                    )
                     logging.debug(
                         f"Created new pot: amount={pot_size}, "
                         f"eligible={[p.name for p in eligible]}"
@@ -205,17 +209,19 @@ class PotManager:
         self.side_pots = final_pots
         return final_pots
 
-    def get_side_pots_view(self) -> List[SidePotView]:
+    def get_side_pots_view(self) -> List[Dict[str, Any]]:
         """
         Get a display-friendly view of the current side pots.
+
+        Returns:
+            List[Dict[str, Any]]: List of dictionaries containing:
+                - amount: The amount in the side pot
+                - eligible_players: List of player names eligible for this pot
         """
         if not self.side_pots:
             return []
         return [
-            {
-                "amount": pot.amount,
-                "eligible_players": [p.name for p in pot.eligible_players],
-            }
+            {"amount": pot.amount, "eligible_players": pot.eligible_players}
             for pot in self.side_pots
         ]
 
@@ -226,9 +232,9 @@ class PotManager:
         if not self.side_pots:
             return
         logger.info("\nSide pots:")
-        for i, pot in enumerate(self.get_side_pots_view(), 1):
-            players_str = ", ".join(pot["eligible_players"])
-            logger.info(f"  Pot {i}: ${pot['amount']} (Eligible: {players_str})")
+        for i, pot in enumerate(self.side_pots, 1):
+            players_str = ", ".join(pot.eligible_players)
+            logger.info(f"  Pot {i}: ${pot.amount} (Eligible: {players_str})")
 
     def set_pots(
         self, main_pot: int, side_pots: Optional[List[SidePot]] = None
@@ -374,19 +380,12 @@ class PotManager:
         logging.debug(f"End of betting round - New pot total: {self.pot}")
 
     def get_state(self) -> PotState:
-        """Get the current state of the pot manager."""
-        total_chips = self.pot
-        if self.side_pots:  # Only add if there are side pots
-            total_chips += sum(pot.amount for pot in self.side_pots)
-
+        """Get the current state of all pots."""
         return PotState(
             main_pot=self.pot,
-            side_pots=[
-                {
-                    "amount": pot.amount,
-                    "eligible_players": [p.name for p in pot.eligible_players],
-                }
-                for pot in (self.side_pots or [])
-            ],  # Will be empty list if no side pots
-            total_chips_in_play=total_chips,
+            side_pots=(
+                self.side_pots if self.side_pots else []
+            ),  # Convert None to empty list
+            total_pot=self.pot
+            + sum(pot.amount for pot in (self.side_pots or [])),  # Handle None case
         )

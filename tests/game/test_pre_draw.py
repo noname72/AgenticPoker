@@ -1,10 +1,10 @@
-from data.types.base_types import DeckState
-from data.types.game_state import GameState
-from data.types.pot_types import PotState
-from data.types.round_state import RoundState
-
 import pytest
 
+from data.states.game_state import GameState
+from data.types.base_types import DeckState
+from data.types.player_types import PlayerPosition, PlayerState
+from data.types.pot_types import PotState
+from data.types.round_state import RoundPhase, RoundState
 from game.player import Player
 from game.pre_draw import handle_pre_draw_betting
 
@@ -12,15 +12,27 @@ from game.pre_draw import handle_pre_draw_betting
 @pytest.fixture
 def basic_game_state():
     """Create a basic GameState for testing."""
+    # Create a minimal player state for initialization
+    initial_player = PlayerState(
+        name="Initial Player",
+        chips=1000,
+        bet=0,
+        position=PlayerPosition.DEALER,
+        folded=False,
+    )
+
     return GameState(
-        players=[],  # Will be populated in tests
+        players=[initial_player],  # Initialize with at least one player
         dealer_position=0,
         small_blind=10,
         big_blind=20,
         ante=0,
         min_bet=20,
         round_state=RoundState(
-            round_number=1, phase="pre_draw", current_bet=20, raise_count=0
+            round_number=1,
+            phase=RoundPhase.PRE_DRAW,
+            current_bet=20,
+            raise_count=0,
         ),
         pot_state=PotState(main_pot=0),
         deck_state=DeckState(cards_remaining=52),

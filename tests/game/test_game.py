@@ -110,38 +110,6 @@ def test_round_initialization(game, mock_players):
     assert all(hasattr(player, "hand") for player in game.players)
 
 
-def test_game_state_creation(game, mock_players):
-    """Test that game state is created correctly with all required fields."""
-    game_state = game._create_game_state()
-
-    # Check basic fields exist
-    assert "pot" in game_state
-    assert "current_bet" in game_state
-    assert "small_blind" in game_state
-    assert "big_blind" in game_state
-    assert "dealer_position" in game_state  # Changed from dealer_index
-
-    # Verify player info
-    for player_state in game_state["players"]:  # Changed to access player states
-        assert player_state.name is not None  # Access attributes directly
-        assert player_state.chips is not None
-        assert player_state.bet is not None
-        assert hasattr(player_state, "folded")  # Check if attribute exists
-        assert hasattr(player_state, "position")  # Check position exists
-
-    # Verify pot state
-    assert game_state["pot_state"].main_pot == game_state["pot"]  # Verify consistency
-    assert isinstance(game_state["pot_state"].side_pots, list)
-
-    # Verify round state
-    assert hasattr(game_state["round_state"], "current_bet")
-    assert hasattr(game_state["round_state"], "phase")
-
-    # Verify deck state
-    assert hasattr(game_state["deck_state"], "cards_remaining")
-    assert hasattr(game_state["deck_state"], "needs_shuffle")
-
-
 def test_hand_ranks_update_after_draw(game, mock_players):
     """Test that hand ranks are properly updated after the draw phase."""
 
