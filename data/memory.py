@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 import tempfile
 import time
 from abc import ABC, abstractmethod
@@ -72,15 +73,44 @@ class ChromaMemoryStore(MemoryStore):
     """
 
     def __init__(self, collection_name: str):
+        # Add environment check at the start
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"  # Prevent warning messages
+
         # Use temporary directory for tests
         if os.environ.get("PYTEST_RUNNING"):
             temp_dir = tempfile.gettempdir()
-            self.persist_dir = os.path.join(temp_dir, "chroma_db")
+            self.persist_dir = os.path.join(temp_dir, "chroma_test_db")
         else:
-            # Ensure results directory exists
             results_dir = os.path.join(os.getcwd(), "results")
             self.persist_dir = os.path.join(results_dir, "chroma_db")
-        os.makedirs(self.persist_dir, exist_ok=True)
+
+        # Clean up existing directory if in test mode
+        if os.environ.get("PYTEST_RUNNING"):
+            try:
+                if os.path.exists(self.persist_dir):
+                    shutil.rmtree(self.persist_dir)
+                    time.sleep(0.2)  # Give OS time to release handles
+            except PermissionError:
+                logger.warning(
+                    f"Could not remove existing directory: {self.persist_dir}"
+                )
+                # Try to clean up contents instead
+                for item in os.listdir(self.persist_dir):
+                    try:
+                        path = os.path.join(self.persist_dir, item)
+                        if os.path.isfile(path):
+                            os.unlink(path)
+                        elif os.path.isdir(path):
+                            shutil.rmtree(path)
+                    except Exception as e:
+                        logger.warning(f"Could not remove {path}: {e}")
+
+        # Create directory
+        try:
+            os.makedirs(self.persist_dir, exist_ok=True)
+        except Exception as e:
+            logger.error(f"Failed to create directory {self.persist_dir}: {e}")
+            raise
 
         # Sanitize collection name and ensure uniqueness
         self.safe_name = "".join(c for c in collection_name if c.isalnum() or c in "_-")
@@ -102,15 +132,24 @@ class ChromaMemoryStore(MemoryStore):
 
     def _initialize_client(self):
         """Initialize or reinitialize the ChromaDB client and collection."""
-        settings = Settings(
-            anonymized_telemetry=False, allow_reset=True, is_persistent=True
-        )
-
         try:
-            # Create persistent client
-            self.client = chromadb.PersistentClient(
-                path=self.persist_dir, settings=settings
-            )
+            # Create persistent client with retries
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    # Use new client initialization style
+                    self.client = chromadb.Client(
+                        chromadb.config.Settings(
+                            is_persistent=True,
+                            persist_directory=self.persist_dir,
+                            anonymized_telemetry=False,
+                        )
+                    )
+                    break
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        raise
+                    time.sleep(0.5)
 
             # Add retry logic for collection initialization
             max_retries = 3
@@ -156,47 +195,46 @@ class ChromaMemoryStore(MemoryStore):
                 self.id_counter = 0
 
         except Exception as e:
-            logger.error(f"Failed to initialize collection {self.safe_name}: {str(e)}")
+            logger.error(f"Failed to initialize ChromaDB: {str(e)}")
             raise
 
     def add_memory(self, text: str, metadata: Dict[str, Any]) -> None:
-        """Store a new memory in Chroma.
-
-        Args:
-            text: The text content to store
-            metadata: Dictionary of metadata associated with the memory
-
-        Note:
-            If the collection becomes invalid, it will attempt to reinitialize
-            and retry the operation.
-        """
+        """Store a new memory in Chroma with improved error handling."""
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                if self.collection is None:
-                    logger.warning("Collection is None, reinitializing...")
+                if not self.collection:
                     self._initialize_client()
+
+                # Add unique timestamp to metadata
+                metadata = {**metadata, "timestamp": time.time()}
 
                 self.id_counter += 1
-                self.collection.add(
-                    documents=[text],
-                    metadatas=[metadata],
-                    ids=[f"mem_{self.id_counter}"],
-                )
+                mem_id = f"mem_{self.id_counter}"
+
+                # Add with retries
+                retry_count = 0
+                while retry_count < 3:
+                    try:
+                        self.collection.add(
+                            documents=[text], metadatas=[metadata], ids=[mem_id]
+                        )
+                        time.sleep(0.1)  # Small delay to ensure processing
+                        break
+                    except Exception as e:
+                        retry_count += 1
+                        if retry_count == 3:
+                            raise
+                        time.sleep(0.2)
                 break
 
-            except (InvalidCollectionException, AttributeError) as e:
-                logger.warning(f"Collection error (attempt {attempt + 1}): {str(e)}")
-                if attempt < max_retries - 1:
-                    self._initialize_client()
-                    time.sleep(0.2)  # Give time for initialization
-                else:
-                    logger.error("Failed to recover collection after multiple attempts")
-                    raise
-
             except Exception as e:
-                logger.error(f"Failed to add memory: {str(e)}")
-                raise
+                if attempt == max_retries - 1:
+                    logger.error(
+                        f"Failed to add memory after {max_retries} attempts: {str(e)}"
+                    )
+                    raise
+                time.sleep(0.5)
 
     def get_relevant_memories(
         self, query: Union[str, Dict], k: int = 2
