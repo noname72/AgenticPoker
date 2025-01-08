@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
 
 from data.states.game_state import GameState
-from data.types.round_state import RoundState
+from data.states.round_state import RoundState
 
 from . import betting, draw, post_draw, pre_draw
 from .deck import Deck

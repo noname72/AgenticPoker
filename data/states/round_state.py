@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 
 
 class RoundPhase(str, Enum):
@@ -37,6 +37,12 @@ class RoundState(BaseModel):
     acted_this_phase: List[str] = []
     is_complete: bool = False
     winner: Optional[str] = None
+
+    @validator("current_bet", "round_number", "raise_count", "main_pot")
+    def validate_non_negative(cls, v):
+        if v < 0:
+            raise ValueError("Amount cannot be negative")
+        return v
 
     @classmethod
     def new_round(cls, round_number: int) -> "RoundState":

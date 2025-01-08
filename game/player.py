@@ -1,7 +1,7 @@
 import logging
-from typing import List, Optional, Tuple, Union
 
-from data.types.player_types import PlayerPosition, PlayerState
+from data.states.player_state import PlayerState
+from data.types.player_types import PlayerPosition
 
 from .hand import Hand
 
@@ -153,30 +153,7 @@ class Player:
 
     def get_state(self) -> PlayerState:
         """Get the current state of this player."""
-        return PlayerState(
-            name=self.name,
-            chips=self.chips,
-            bet=self.bet,
-            folded=self.folded,
-            position=PlayerPosition.OTHER,  # Default position
-            seat_number=getattr(self, "seat_number", None),
-            is_dealer=getattr(self, "is_dealer", False),
-            is_small_blind=getattr(self, "is_small_blind", False),
-            is_big_blind=getattr(self, "is_big_blind", False),
-            hand=str(self.hand) if hasattr(self, "hand") else None,
-            hand_rank=getattr(self, "hand_rank", None),
-            has_acted=getattr(self, "has_acted", False),
-            total_bet_this_round=getattr(self, "total_bet_this_round", 0),
-            last_action=getattr(self, "last_action", None),
-            last_raise_amount=getattr(self, "last_raise_amount", None),
-            is_all_in=getattr(self, "is_all_in", False),
-            is_active=not self.folded and self.chips > 0,
-            chips_at_start_of_hand=getattr(self, "chips_at_start_of_hand", None),
-            hands_played=getattr(self, "hands_played", 0),
-            hands_won=getattr(self, "hands_won", 0),
-            total_winnings=getattr(self, "total_winnings", 0),
-            biggest_pot_won=getattr(self, "biggest_pot_won", 0),
-        )
+        return PlayerState.from_player(self)
 
     def update_from_state(self, state: PlayerState) -> None:
         """Update this player's attributes from a PlayerState."""

@@ -7,11 +7,12 @@ from openai.types.chat.chat_completion import Choice
 
 from agents.strategy_planner import StrategyPlanner
 from data.states.game_state import GameState
+from data.states.round_state import RoundPhase, RoundState
 from data.types.base_types import DeckState
 from data.types.plan import Approach, BetSizing, Plan
-from data.types.player_types import PlayerPosition, PlayerState
+from data.states.player_state import PlayerState
+from data.types.player_types import PlayerPosition
 from data.types.pot_types import PotState
-from data.types.round_state import RoundPhase, RoundState
 
 
 @pytest.fixture
@@ -300,7 +301,7 @@ def test_execute_action_no_plan():
         chips=1000,
         bet=0,
         position=PlayerPosition.DEALER,
-        folded=False
+        folded=False,
     )
 
     game_state = GameState(
@@ -311,13 +312,10 @@ def test_execute_action_no_plan():
         ante=0,
         min_bet=20,
         round_state=RoundState(
-            round_number=1,
-            phase=RoundPhase.PRE_DRAW,
-            current_bet=0,
-            raise_count=0
+            round_number=1, phase=RoundPhase.PRE_DRAW, current_bet=0, raise_count=0
         ),
         pot_state=PotState(main_pot=0),
-        deck_state=DeckState(cards_remaining=52)
+        deck_state=DeckState(cards_remaining=52),
     )
 
     # Create planner without a plan
