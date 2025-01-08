@@ -1,6 +1,6 @@
 import logging
 from data.types.base_types import DeckState
-from data.types.game_state import GameState
+from data.states.game_state import GameState
 from data.types.pot_types import PotState, SidePot
 from data.types.round_state import RoundState
 from unittest.mock import MagicMock
@@ -17,10 +17,10 @@ from game.post_draw import (
 
 
 @pytest.fixture
-def basic_game_state():
+def basic_game_state(mock_players):
     """Create a basic GameState for testing."""
     return GameState(
-        players=[],  # Will be populated in tests
+        players=[player.get_state() for player in mock_players],
         dealer_position=0,
         small_blind=10,
         big_blind=20,
@@ -135,12 +135,10 @@ def test_handle_post_draw_betting_all_in(mock_players, basic_game_state):
 
         return decide_action
 
-    # Set up betting sequence - matching actual behavior
-    mock_players[0].decide_action = make_decision(0, [("raise", 60)])  # Raise to 60
-    mock_players[1].decide_action = make_decision(
-        1, [("call", 60)]  # Will only bet 50 (all-in)
-    )
-    mock_players[2].decide_action = make_decision(2, [("call", 60)])  # Full call
+    # Set up betting sequence
+    mock_players[0].decide_action = make_decision(0, [("raise", 60)])
+    mock_players[1].decide_action = make_decision(1, [("call", 60)])
+    mock_players[2].decide_action = make_decision(2, [("call", 60)])
 
     # Update game state
     basic_game_state.round_state.current_bet = 20
@@ -157,9 +155,7 @@ def test_handle_post_draw_betting_all_in(mock_players, basic_game_state):
     print("Side pots:")
     if side_pots:
         for i, pot in enumerate(side_pots):
-            print(
-                f"  Pot {i+1}: ${pot.amount} - Eligible: {[p.name for p in pot.eligible_players]}"
-            )
+            print(f"  Pot {i+1}: ${pot.amount} - Eligible: {pot.eligible_players}")
 
     print("\nFinal player states:")
     for i, p in enumerate(mock_players):
@@ -169,38 +165,26 @@ def test_handle_post_draw_betting_all_in(mock_players, basic_game_state):
     for player, (action, amount) in betting_sequence:
         print(f"{player}: {action} {amount}")
 
-    # Verify results based on actual behavior
-    assert (
-        new_pot == 170
-    ), f"Expected pot of 170, got {new_pot}"  # Total bets: 60 + 50 + 60
+    # Verify results
+    assert new_pot == 170, f"Expected pot of 170, got {new_pot}"
     assert side_pots is not None, "Expected side pots to be created"
     assert len(side_pots) == 2, f"Expected 2 side pots, got {len(side_pots)}"
 
     # First side pot (all players contribute 50)
-    assert (
-        side_pots[0].amount == 150
-    ), f"Expected main pot of 150, got {side_pots[0].amount}"
+    assert side_pots[0].amount == 150, f"Expected main pot of 150, got {side_pots[0].amount}"
     assert len(side_pots[0].eligible_players) == 3
 
     # Second side pot (P0 and P2 contribute extra 10 each)
-    assert (
-        side_pots[1].amount == 20
-    ), f"Expected side pot of 20, got {side_pots[1].amount}"
+    assert side_pots[1].amount == 20, f"Expected side pot of 20, got {side_pots[1].amount}"
     assert len(side_pots[1].eligible_players) == 2
-    assert mock_players[1] not in side_pots[1].eligible_players
+    assert f"Player1" not in side_pots[1].eligible_players
 
     assert should_continue is True
 
     # Verify final chip counts
-    assert (
-        mock_players[0].chips == 40
-    ), f"Expected P0 to have 40 chips, got {mock_players[0].chips}"  # 100 - 60
-    assert (
-        mock_players[1].chips == 0
-    ), f"Expected P1 to have 0 chips, got {mock_players[1].chips}"  # All-in
-    assert (
-        mock_players[2].chips == 40
-    ), f"Expected P2 to have 40 chips, got {mock_players[2].chips}"  # 100 - 60
+    assert mock_players[0].chips == 40, f"Expected P0 to have 40 chips, got {mock_players[0].chips}"
+    assert mock_players[1].chips == 0, f"Expected P1 to have 0 chips, got {mock_players[1].chips}"
+    assert mock_players[2].chips == 40, f"Expected P2 to have 40 chips, got {mock_players[2].chips}"
 
     print("\n=== Test complete ===")
 
@@ -345,9 +329,7 @@ def test_handle_post_draw_betting_with_side_pots(mock_players, basic_game_state)
     print("Side pots:")
     if side_pots:
         for i, pot in enumerate(side_pots):
-            print(
-                f"  Pot {i+1}: ${pot.amount} - Eligible: {[p.name for p in pot.eligible_players]}"
-            )
+            print(f"  Pot {i+1}: ${pot.amount} - Eligible: {pot.eligible_players}")
 
     print("\nFinal player states:")
     for i, p in enumerate(mock_players):
@@ -485,9 +467,9 @@ def test_handle_showdown_with_side_pots(mock_players):
     mock_pot_manager = MagicMock()
     mock_pot_manager.pot = 600
     side_pots = [
-        SidePot(amount=300, eligible_players=mock_players),
-        SidePot(amount=200, eligible_players=mock_players[:2]),
-        SidePot(amount=100, eligible_players=[mock_players[0]]),
+        SidePot(amount=300, eligible_players=[p.name for p in mock_players]),
+        SidePot(amount=200, eligible_players=[p.name for p in mock_players[:2]]),
+        SidePot(amount=100, eligible_players=[mock_players[0].name]),
     ]
     mock_pot_manager.calculate_side_pots.return_value = side_pots
 
@@ -594,13 +576,10 @@ def test_handle_showdown_complex_side_pots(mock_players):
     mock_pot_manager.pot = 1700  # Total pot (1000 + 500 + 200)
 
     # Create side pots:
-    # 1. Main pot (600): All players contribute 200 each
-    # 2. Middle pot (600): Player0 and Player1 contribute 300 each
-    # 3. High pot (500): Only Player0 contributes remaining 500
     side_pots = [
-        SidePot(amount=600, eligible_players=mock_players),  # 200 x 3
-        SidePot(amount=600, eligible_players=mock_players[:2]),  # 300 x 2
-        SidePot(amount=500, eligible_players=[mock_players[0]]),  # 500 x 1
+        SidePot(amount=600, eligible_players=[p.name for p in mock_players]),  # 200 x 3
+        SidePot(amount=600, eligible_players=[p.name for p in mock_players[:2]]),  # 300 x 2
+        SidePot(amount=500, eligible_players=[mock_players[0].name]),  # 500 x 1
     ]
     mock_pot_manager.calculate_side_pots.return_value = side_pots
 

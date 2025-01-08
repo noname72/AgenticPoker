@@ -1,6 +1,6 @@
 from typing import List, Optional, Tuple
 
-from data.types.game_state import GameState
+from data.states.game_state import GameState
 from data.types.pot_types import SidePot
 
 from . import betting

@@ -23,7 +23,7 @@ from agents.prompts import (
 from agents.strategy_cards import StrategyManager
 from agents.strategy_planner import StrategyPlanner
 from data.memory import ChromaMemoryStore
-from data.types.game_state import GameState
+from data.states.game_state import GameState
 from data.types.plan import Approach, BetSizing, Plan
 from exceptions import OpenAIError
 

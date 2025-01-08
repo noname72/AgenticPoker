@@ -6,12 +6,12 @@ from openai.types.chat import ChatCompletion, ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
 
 from agents.strategy_planner import StrategyPlanner
+from data.states.game_state import GameState
 from data.types.base_types import DeckState
-from data.types.game_state import GameState
 from data.types.plan import Approach, BetSizing, Plan
 from data.types.player_types import PlayerPosition, PlayerState
 from data.types.pot_types import PotState
-from data.types.round_state import RoundState
+from data.types.round_state import RoundPhase, RoundState
 
 
 @pytest.fixture
@@ -292,22 +292,43 @@ def test_execute_action(planner, mock_openai_client, action_response, expected):
         mock_query.assert_called_once()
 
 
-def test_execute_action_no_plan(planner):
-    """Test execute_action falls back to 'call' with no plan"""
+def test_execute_action_no_plan():
+    """Test executing action without a plan."""
+    # Create a basic player state for testing
+    player_state = PlayerState(
+        name="Test Player",
+        chips=1000,
+        bet=0,
+        position=PlayerPosition.DEALER,
+        folded=False
+    )
+
     game_state = GameState(
-        players=[],
+        players=[player_state],  # Add at least one player
         dealer_position=0,
         small_blind=10,
         big_blind=20,
         ante=0,
         min_bet=20,
-        round_state=RoundState(phase="preflop", current_bet=0, round_number=1),
+        round_state=RoundState(
+            round_number=1,
+            phase=RoundPhase.PRE_DRAW,
+            current_bet=0,
+            raise_count=0
+        ),
         pot_state=PotState(main_pot=0),
-        deck_state=DeckState(cards_remaining=52),
-        active_player_position=1,
+        deck_state=DeckState(cards_remaining=52)
     )
+
+    # Create planner without a plan
+    planner = StrategyPlanner("Aggressive", Mock())
+    assert planner.current_plan is None
+
+    # Execute action without a plan
     action = planner.execute_action(game_state)
-    assert action == "call"
+
+    # Should fall back to "call" when no plan exists
+    assert action == "call", "Should fall back to 'call' when no plan exists"
 
 
 def test_requires_replanning(planner):

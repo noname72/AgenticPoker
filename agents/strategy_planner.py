@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from openai import OpenAI
 
 from agents.prompts import EXECUTION_PROMPT
-from data.types.game_state import GameState
+from data.states.game_state import GameState
 from data.types.plan import Approach, BetSizing, Plan
 from data.types.player_types import PlayerPosition
 

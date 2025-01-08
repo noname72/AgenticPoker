@@ -1,7 +1,8 @@
 from data.types.base_types import DeckState
-from data.types.game_state import GameState
+from data.states.game_state import GameState
 from data.types.pot_types import PotState
-from data.types.round_state import RoundState
+from data.types.round_state import RoundState, RoundPhase
+from data.types.player_types import PlayerPosition
 
 import pytest
 
@@ -220,8 +221,8 @@ def test_betting_round_multiple_raises(basic_players, mock_game_state):
     assert mock_game_state.round_state.raise_count == 1
 
 
-def test_betting_round_last_raiser_completion(basic_players, mock_game_state):
-    """Test that betting continues until last raiser has acted again."""
+def test_betting_round_last_raiser_completion_with_calls(basic_players):
+    """Test that betting continues until last raiser has acted again when others call."""
     # First player raises, others call, then first player gets another chance
     calls = 0
 
@@ -236,8 +237,7 @@ def test_betting_round_last_raiser_completion(basic_players, mock_game_state):
     basic_players[1].decide_action = lambda x: ("call", 30)
     basic_players[2].decide_action = lambda x: ("call", 30)
 
-    mock_game_state.round_state.current_bet = 10
-    result = betting_round(basic_players, 0, mock_game_state)
+    result = betting_round(basic_players, 0)
     assert result == 90  # Three players × 30
     assert calls == 2  # Player 1 should have acted twice
 
@@ -298,27 +298,6 @@ def test_betting_round_with_game_state(basic_players, mock_game_state):
     assert result == 60  # Each player matched 20
     assert all(p.bet == 20 for p in basic_players)
     assert all(p.chips == 980 for p in basic_players)
-
-
-def test_betting_round_last_raiser_completion(basic_players):
-    """Test that betting continues until last raiser has acted again."""
-    # First player raises, others call, then first player gets another chance
-    calls = 0
-
-    def player1_action(state):
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            return "raise", 30
-        return "call", 30
-
-    basic_players[0].decide_action = player1_action
-    basic_players[1].decide_action = lambda x: ("call", 30)
-    basic_players[2].decide_action = lambda x: ("call", 30)
-
-    result = betting_round(basic_players, 0)
-    assert result == 90  # Three players × 30
-    assert calls == 2  # Player 1 should have acted twice
 
 
 def test_betting_round_multiple_all_ins_same_amount():
@@ -401,15 +380,43 @@ def test_collect_blinds_and_antes_short_stack():
 @pytest.fixture
 def mock_game_state():
     """Create a mock GameState for testing."""
+    # Create player state dictionaries
+    mock_players = [
+        {
+            "name": "Mock Player 1",
+            "chips": 1000,
+            "folded": False,
+            "bet": 0,
+            "position": PlayerPosition.DEALER
+        },
+        {
+            "name": "Mock Player 2", 
+            "chips": 1000,
+            "folded": False,
+            "bet": 0,
+            "position": PlayerPosition.SMALL_BLIND
+        },
+        {
+            "name": "Mock Player 3",
+            "chips": 1000,
+            "folded": False,
+            "bet": 0,
+            "position": PlayerPosition.BIG_BLIND
+        }
+    ]
+    
     return GameState(
-        players=[],  # Will be populated in tests
+        players=mock_players,  # Pass player state dictionaries
         dealer_position=0,
         small_blind=10,
         big_blind=20,
         ante=0,
         min_bet=20,
         round_state=RoundState(
-            round_number=1, phase="pre_draw", current_bet=20, raise_count=0
+            round_number=1,
+            phase=RoundPhase.PRE_DRAW,
+            current_bet=20,
+            raise_count=0
         ),
         pot_state=PotState(main_pot=0),
         deck_state=DeckState(cards_remaining=52),
@@ -654,7 +661,7 @@ def test_betting_round_one_player_left_with_chips():
     print("Side pots:")
     for i, sp in enumerate(side_pots):
         print(
-            f"  Pot {i+1}: ${sp.amount} - Eligible: {[p.name for p in sp.eligible_players]}"
+            f"  Pot {i+1}: ${sp.amount} - Eligible: {sp.eligible_players}"
         )
 
     # Verify final state
@@ -685,7 +692,7 @@ def test_betting_round_one_player_left_with_chips():
         side_pots[1].amount == 20
     ), f"Second side pot should be 20, but was {side_pots[1].amount}"
     assert len(side_pots[1].eligible_players) == 2
-    assert players[1] not in side_pots[1].eligible_players
+    assert players[1].name not in side_pots[1].eligible_players
 
 
 def test_betting_round_minimum_raise_validation(basic_players, mock_game_state):
@@ -963,9 +970,43 @@ def test_small_blind_calling_big_blind():
         Player("UTG", 1000),  # Under the gun
     ]
 
+    # Create initial player states
+    from data.types.player_types import PlayerPosition, PlayerState
+
+    player_states = [
+        PlayerState(
+            name="Dealer",
+            chips=1000,
+            bet=0,
+            position=PlayerPosition.DEALER,
+            folded=False,
+        ),
+        PlayerState(
+            name="Small Blind",
+            chips=1000,
+            bet=0,
+            position=PlayerPosition.SMALL_BLIND,
+            folded=False,
+        ),
+        PlayerState(
+            name="Big Blind",
+            chips=1000,
+            bet=0,
+            position=PlayerPosition.BIG_BLIND,
+            folded=False,
+        ),
+        PlayerState(
+            name="UTG",
+            chips=1000,
+            bet=0,
+            position=PlayerPosition.UNDER_THE_GUN,
+            folded=False,
+        ),
+    ]
+
     # Create game state with blinds configuration
     game_state = GameState(
-        players=[],
+        players=player_states,  # Pass the player states list
         dealer_position=0,
         small_blind=50,
         big_blind=100,
@@ -973,7 +1014,7 @@ def test_small_blind_calling_big_blind():
         min_bet=100,
         round_state=RoundState(
             round_number=1,
-            phase="pre_draw",
+            phase=RoundPhase.PRE_DRAW,
             current_bet=100,  # Current bet is big blind amount
             raise_count=0,
             big_blind_position=2,  # Position 2 is BB
