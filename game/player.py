@@ -1,4 +1,5 @@
 import logging
+from typing import TYPE_CHECKING
 
 from data.states.player_state import PlayerState
 from data.types.player_types import PlayerPosition
@@ -54,6 +55,7 @@ class Player:
         self.folded = False
         self.hand = Hand()
         self.position = PlayerPosition.OTHER
+        self.is_all_in = False
 
     def place_bet(self, amount: int) -> int:
         """
@@ -75,6 +77,7 @@ class Player:
         amount = min(amount, self.chips)
 
         # If this is a raise, ensure it's at least double the current bet
+        #! is this needed???
         if hasattr(self, "current_bet") and amount <= self.current_bet:
             logging.debug(
                 f"Raise amount {amount} too small compared to current bet {self.current_bet}"
@@ -118,7 +121,6 @@ class Player:
         """Reset player state for a new round."""
         self.bet = 0
         self.folded = False
-        self.has_acted = False
         self.total_bet_this_round = 0
         self.last_action = None
         self.last_raise_amount = None
@@ -139,23 +141,12 @@ class Player:
         """
         return f"{self.name} (chips: {self.chips}, folded: {self.folded})"
 
-    def decide_action(self, game_state: str) -> str:
-        """Decide what action to take based on current game state."""
-        # Get hand evaluation before making decision
-        hand_eval = self.hand.evaluate() if self.hand else None
-
-        if self.strategy_planner:
-            # Pass hand evaluation info to strategy planner
-            return self.strategy_planner.execute_action(game_state, hand_eval)
-
-        # Fallback to basic decision making if no strategy planner
-        return self._basic_decision(game_state)
-
     def get_state(self) -> PlayerState:
         """Get the current state of this player."""
         return PlayerState.from_player(self)
 
     def update_from_state(self, state: PlayerState) -> None:
+        #! do I really need this???
         """Update this player's attributes from a PlayerState."""
         self.name = state.name
         self.chips = state.chips
@@ -169,7 +160,6 @@ class Player:
         self.is_big_blind = state.is_big_blind
 
         # Update betting state
-        self.has_acted = state.has_acted
         self.total_bet_this_round = state.total_bet_this_round
         self.last_action = state.last_action
         self.last_raise_amount = state.last_raise_amount

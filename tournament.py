@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 
-from agents.llm_agent import LLMAgent
+from agents.agent import Agent
 from agents.random_agent import RandomAgent
 from game.tournament import PokerTournament
 from util import (
@@ -29,7 +29,7 @@ agent_configs = load_agent_configs()
 
 # Create a larger pool of players for the tournament
 players = [
-    LLMAgent(
+    Agent(
         "Alice",
         chips=5000,  # Higher starting chips for tournament
         strategy_style="Aggressive Bluffer",
@@ -43,7 +43,7 @@ players = [
         session_id=session_id,
         communication_style="Intimidating",
     ),
-    LLMAgent(
+    Agent(
         "Bob",
         chips=5000,
         strategy_style="Calculated and Cautious",
@@ -55,7 +55,7 @@ players = [
         session_id=session_id,
         communication_style="Analytical",
     ),
-    LLMAgent(
+    Agent(
         "Charlie",
         chips=5000,
         strategy_style="Chaotic and Unpredictable",
@@ -68,7 +68,7 @@ players = [
         communication_style="Friendly",
     ),
     RandomAgent("Randy", chips=5000),
-    LLMAgent(
+    Agent(
         "David",
         chips=5000,
         strategy_style="Tight and Aggressive",
@@ -77,7 +77,7 @@ players = [
         config=agent_configs.get("David", {}),
         session_id=session_id,
     ),
-    LLMAgent(
+    Agent(
         "Eve",
         chips=5000,
         strategy_style="Loose and Passive",

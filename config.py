@@ -4,6 +4,7 @@ from pydantic import BaseSettings
 
 
 class GameConfig(BaseSettings):
+    #! how is this different with game.config.py?
     """Configuration for poker game settings."""
 
     # Database settings

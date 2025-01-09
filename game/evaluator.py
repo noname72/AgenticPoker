@@ -1,9 +1,24 @@
-from typing import List, Tuple
+from typing import List, NamedTuple
 
 from .card import Card
 
 
-def evaluate_hand(cards: List[Card]) -> Tuple[int, List[int], str]:
+class HandEvaluation(NamedTuple):
+    """
+    A named tuple containing the evaluation of a poker hand.
+
+    Attributes:
+        rank (int): The rank of the hand from 1-10 (1 being best, 10 being worst)
+        tiebreakers (List[int]): Tiebreaker values in descending order of importance
+        description (str): Human readable description of the hand
+    """
+
+    rank: int
+    tiebreakers: List[int]
+    description: str
+
+
+def evaluate_hand(cards: List[Card]) -> HandEvaluation:
     """
     Evaluate a 5-card poker hand and return its ranking, tiebreakers, and description.
 
@@ -11,7 +26,7 @@ def evaluate_hand(cards: List[Card]) -> Tuple[int, List[int], str]:
         cards (List[Card]): A list of exactly 5 Card objects representing a poker hand.
 
     Returns:
-        Tuple[int, List[int], str]: A tuple containing:
+        HandEvaluation: A named tuple containing:
             - int: Hand rank from 1-10 (1 being best, 10 being worst)
             - List[int]: Tiebreaker values in descending order of importance
             - str: Human readable description of the hand

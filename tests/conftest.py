@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import Mock, patch
-from agents.llm_agent import LLMAgent
+from agents.agent import Agent
 import os
 
 

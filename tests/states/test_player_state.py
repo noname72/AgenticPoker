@@ -51,7 +51,6 @@ class TestPlayerState:
         )
         assert player_state.hand is None
         assert player_state.hand_rank is None
-        assert player_state.has_acted is False
         assert player_state.total_bet_this_round == 0
         assert player_state.last_action is None
         assert player_state.last_raise_amount is None
@@ -70,7 +69,6 @@ class TestPlayerState:
         assert player_dict["is_dealer"] is True
 
         assert "betting" in player_dict
-        assert player_dict["betting"]["has_acted"] is False
         assert player_dict["betting"]["total_bet"] == 0
 
         assert "history" in player_dict
@@ -207,7 +205,6 @@ class TestPlayerState:
         # Test betting structure
         assert "betting" in player_dict
         betting = player_dict["betting"]
-        assert betting["has_acted"] is False
         assert betting["total_bet"] == 0
         assert betting["last_action"] is None
         assert betting["last_raise"] is None
