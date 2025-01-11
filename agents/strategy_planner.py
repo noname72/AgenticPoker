@@ -3,9 +3,7 @@ import os
 import time
 from typing import TYPE_CHECKING, Optional
 
-from agents.prompts import ACTION_PROMPT, PLANNING_PROMPT
 from data.types.action_response import ActionResponse, ActionType
-from data.types.llm_responses import PlanResponse
 from data.types.metrics import GameMetrics, SidePotMetrics
 from data.types.plan import Approach, BetSizing, Plan
 from data.types.player_types import PlayerPosition
@@ -13,7 +11,7 @@ from game.evaluator import HandEvaluation
 from game.utils import get_min_bet
 
 #! query through player instead
-from .llm_client import LLMClient
+from .llm_strategy_generator import LLMStrategyGenerator
 
 if TYPE_CHECKING:
     from game.game import Game
@@ -51,10 +49,14 @@ class StrategyPlanner:
         self.strategy_style = strategy_style
         self.plan_duration = plan_duration
         self.REPLAN_STACK_THRESHOLD = replan_threshold
-        self.current_plan: Optional[Plan] = None
-        self.last_metrics: Optional[GameMetrics] = None
-        self.llm_client = LLMClient(
-            api_key=os.getenv("OPENAI_API_KEY"), model="gpt-3.5-turbo"
+        self.current_plan = None
+        self.last_metrics = None
+
+        # Replace direct LLMClient usage with the LLMStrategyGenerator
+        self.strategy_generator = LLMStrategyGenerator(
+            strategy_style=strategy_style,
+            api_key=os.getenv("OPENAI_API_KEY"),
+            model="gpt-3.5-turbo",
         )
 
     def get_action(
@@ -75,32 +77,24 @@ class StrategyPlanner:
             ActionResponse: The action to take. Defaults to ActionType.CALL on any error.
         """
         try:
-            # Ensure we have a valid plan
             if not self.current_plan:
                 logger.info(
                     "[Action] No active plan - generating new plan before action"
                 )
                 self.plan_strategy(game, hand_eval)
 
-            # Create execution prompt
-            execution_prompt = ACTION_PROMPT.format(
-                strategy_style=self.strategy_style,
-                game_state=game.get_state(),  #! prob passing too much info
+            # Delegate action creation to the strategy generator
+            response_str = self.strategy_generator.generate_action(
+                game_state=game.get_state(),
+                current_plan=self.current_plan,
                 hand_eval=hand_eval,
-                plan_approach=self.current_plan.approach,
-                plan_reasoning=self.current_plan.reasoning,
-                bluff_threshold=self.current_plan.bluff_threshold,
-                fold_threshold=self.current_plan.fold_threshold,
             )
-
-            # Get response from LLM
-            action_response = self.llm_client.query(
-                prompt=execution_prompt,
-                temperature=0.7,
-                max_tokens=100,
-            )
-
-            return self._parse_action_response(action_response, game)
+            # Then parse the raw response and validate the action
+            action = self.strategy_generator.parse_action_response(response_str)
+            min_bet = get_min_bet(game)
+            action = self._validate_raise_action(action, min_bet)
+            logger.info(f"[Action] {action}")
+            return action
 
         except Exception as e:
             logger.error(
@@ -156,33 +150,22 @@ class StrategyPlanner:
             The returned Plan is always valid, even in error cases.
         """
         try:
-            # Check if current plan is still valid
             if self.current_plan and not self.requires_replanning(game):
                 logger.info(
                     f"[Strategy] Reusing existing plan: {self.current_plan.approach}"
                 )
                 return self.current_plan
 
-            # Create planning prompt
-            prompt = PLANNING_PROMPT.format(
-                strategy_style=self.strategy_style,
+            # Use the strategy generator to get new plan data
+            plan_data = self.strategy_generator.generate_plan(
                 game_state=game.get_state(),
                 hand_eval=hand_eval,
             )
-
-            # Query LLM for plan
-            response = self.llm_client.query(
-                prompt=prompt, temperature=0.7, max_tokens=200
-            )
-
-            plan_data = PlanResponse.parse_llm_response(response)
             self.current_plan = self._create_plan_from_response(plan_data)
-
             logger.info(
                 f"[Strategy] New Plan: approach={self.current_plan.approach} "
                 f"reasoning='{self.current_plan.reasoning}'"
             )
-
             return self.current_plan
 
         except Exception as e:
@@ -227,22 +210,6 @@ class StrategyPlanner:
             )
             action.raise_amount = min_bet
         return action
-
-    def _parse_action_response(self, response: str, game: "Game") -> ActionResponse:
-        """Parse the LLM response and return the appropriate action."""
-        try:
-            action = ActionResponse.parse_llm_response(response)
-            min_bet = get_min_bet(game)
-
-            # Validate and adjust raise amount if needed
-            action = self._validate_raise_action(action, min_bet)
-
-            logger.info(f"[Action] {action}")
-            return action
-
-        except Exception as e:
-            logger.error(f"[Action] Error parsing action response: {str(e)}")
-            return ActionResponse(action_type=ActionType.CALL)
 
     def requires_replanning(self, game: "Game") -> bool:
         """Determine if current game state requires a new strategic plan.
