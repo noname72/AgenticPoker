@@ -2,7 +2,12 @@ import logging
 import random
 from typing import Any, Dict, List, Optional, Union
 
+from data.model import Game
+from data.types.action_response import ActionResponse, ActionType
+from game.evaluator import HandEvaluation
 from game.player import Player
+
+logger = logging.getLogger(__name__)
 
 
 class RandomAgent(Player):
@@ -11,56 +16,71 @@ class RandomAgent(Player):
     def __init__(self, name: str, chips: int = 1000):
         """Initialize the random agent."""
         super().__init__(name, chips)
-        self.logger = logging.getLogger(__name__)
 
     def decide_action(
-        self, 
-        game_state: Dict[str, Any],
-        opponent_message: Optional[str] = None
-    ) -> str:
+        self, game: "Game", hand_eval: Optional[HandEvaluation] = None
+    ) -> ActionResponse:
         """Randomly decide an action based on valid options.
-        
+
         Args:
             game_state: Dictionary containing current game state
             opponent_message: Optional message from opponent (ignored for RandomAgent)
-            
+
         Returns:
-            str: Action to take ('fold', 'call', or 'raise {amount}')
+            ActionResponse: Action to take ('fold', 'call', or 'raise {amount}')
         """
         try:
-            if isinstance(game_state, dict):
-                current_bet = game_state.get("current_bet", 0)
-                pot = game_state.get("pot", 0)
-                
+            if isinstance(game, Game):
+                current_bet = game.current_bet
+
                 # If we can't afford the current bet, fold
                 if current_bet > self.chips:
-                    return "fold"
-                    
+                    logger.info(f"{self.name} cannot afford current bet, folding")
+                    return ActionResponse(action_type=ActionType.FOLD)
+
                 # Randomly choose between available actions
-                actions = ["fold", "call"]
-                
+                actions = [ActionType.FOLD, ActionType.CALL]
+
                 # Only add raise as an option if we have enough chips
                 min_raise = current_bet * 2  # Minimum raise is typically 2x current bet
                 if self.chips >= min_raise:
-                    actions.append("raise")
-                
+                    actions.append(ActionType.RAISE)
+
                 action = random.choice(actions)
-                
-                if action == "raise":
+                logger.info(f"{self.name} decided to {action.value}")
+
+                if action == ActionType.RAISE:
                     # Calculate valid raise range
-                    max_raise = min(self.chips, current_bet * 3)  # Limit to 3x current bet or all chips
+                    max_raise = min(
+                        self.chips, current_bet * 3
+                    )  # Limit to 3x current bet or all chips
                     if max_raise > min_raise:
-                        raise_amount = random.randrange(min_raise, max_raise + 1, 10)  # Step by 10 chips
-                        return f"raise {raise_amount}"
-                    return "call"  # Fall back to call if raise range is invalid
-                    
-                return action
-                
-            return "fold"  # Default to fold for invalid game state
-            
+                        raise_amount = random.randrange(
+                            min_raise, max_raise + 1, 10
+                        )  # Step by 10 chips
+                        logger.info(f"{self.name} raised to {raise_amount}")
+                        return ActionResponse(
+                            action_type=ActionType.RAISE, raise_amount=raise_amount
+                        )
+
+                    logger.info(
+                        f"{self.name} raised to {min_raise}, falling back to call"
+                    )
+                    return ActionResponse(
+                        action_type=ActionType.CALL
+                    )  # Fall back to call if raise range is invalid
+
+                logger.info(f"{self.name} decided to call")
+                return ActionResponse(action_type=ActionType.CALL)
+
+            logger.info(f"{self.name} defaulting to fold for invalid game state")
+            return ActionResponse(
+                action_type=ActionType.FOLD
+            )  # Default to fold for invalid game state
+
         except Exception as e:
-            self.logger.error(f"Random decision error: {str(e)}")
-            return "fold"  # Safe default action
+            logger.error(f"Random decision error: {str(e)}")
+            return ActionResponse(action_type=ActionType.FOLD)  # Safe default action
 
     def get_message(self, game_state: str) -> str:
         """Return empty string as random agent doesn't communicate."""
@@ -72,7 +92,7 @@ class RandomAgent(Player):
         num_to_discard = random.randint(0, 3)
         if num_to_discard == 0:
             return []
-        
+
         # Get random positions to discard
         positions = list(range(5))  # 5 card positions
         return sorted(random.sample(positions, num_to_discard))

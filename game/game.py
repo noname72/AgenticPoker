@@ -1,9 +1,9 @@
 import logging
-from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
 
 from data.states.game_state import GameState
 from data.states.round_state import RoundState
+from game.config import GameConfig
 
 from . import betting, draw, post_draw, pre_draw
 from .deck import Deck
@@ -11,58 +11,6 @@ from .hand import Hand
 from .player import Player
 from .pot_manager import PotManager
 from .utils import log_chip_movements
-
-
-@dataclass
-class GameConfig:
-    """
-    Configuration parameters for a poker game.
-
-    This class defines all the customizable parameters that control game behavior,
-    including betting limits, starting conditions, and round restrictions.
-
-    Attributes:
-        starting_chips (int): Initial chip amount for each player (default: 1000)
-        small_blind (int): Small blind bet amount (default: 10)
-        big_blind (int): Big blind bet amount (default: 20)
-        ante (int): Mandatory bet required from all players before dealing (default: 0)
-        max_rounds (Optional[int]): Maximum number of rounds to play, None for unlimited (default: None)
-        session_id (Optional[str]): Unique identifier for the game session (default: None)
-        max_raise_multiplier (int): Maximum raise as multiplier of current bet (default: 3)
-        max_raises_per_round (int): Maximum number of raises allowed per betting round (default: 4)
-        min_bet (Optional[int]): Minimum bet amount, defaults to big blind if not specified
-
-    Raises:
-        ValueError: If any of the numerical parameters are invalid (negative or zero where not allowed)
-    """
-
-    starting_chips: int = 1000
-    small_blind: int = 10
-    big_blind: int = 20
-    ante: int = 0
-    max_rounds: Optional[int] = None
-    session_id: Optional[str] = None
-    max_raise_multiplier: int = 3
-    max_raises_per_round: int = 4
-    min_bet: Optional[int] = None
-
-    def __post_init__(self):
-        """Validate configuration parameters."""
-        if self.starting_chips <= 0:
-            raise ValueError("Starting chips must be positive")
-        if self.small_blind <= 0 or self.big_blind <= 0:
-            raise ValueError("Blinds must be positive")
-        if self.ante < 0:
-            raise ValueError("Ante cannot be negative")
-        if self.max_raise_multiplier <= 0:
-            raise ValueError("Max raise multiplier must be positive")
-        if self.max_raises_per_round <= 0:
-            raise ValueError("Max raises per round must be positive")
-        # Set min_bet to big blind if not specified
-        if self.min_bet is None:
-            self.min_bet = self.big_blind
-        elif self.min_bet < self.big_blind:
-            raise ValueError("Minimum bet cannot be less than big blind")
 
 
 class AgenticPoker:
@@ -209,13 +157,7 @@ class AgenticPoker:
 
             # Pre-draw betting round
             logging.info(f"====== Pre-draw betting ======\n")
-            game_state = GameState.from_game(self)
-            new_pot, side_pots, should_continue = pre_draw.handle_pre_draw_betting(
-                players=self.players,
-                pot=self.pot_manager.pot,
-                dealer_index=self.dealer_index,
-                game_state=game_state,
-            )
+            new_pot, side_pots, should_continue = pre_draw.handle_pre_draw_betting(self)
 
             # Update pot manager with new pot and side pots
             if side_pots:
@@ -285,10 +227,11 @@ class AgenticPoker:
         self._collect_blinds_and_antes()
 
         # Handle AI player pre-round messages
-        for player in self.players:
-            if hasattr(player, "get_message"):
-                game_state = f"Round {self.round_number}, Your chips: ${player.chips}"
-                message = player.get_message(game_state)
+        #! need to fix this
+        # for player in self.players:
+        #     if hasattr(player, "get_message"):
+        #         game_state = f"Round {self.round_number}, Your chips: ${player.chips}"
+        #         message = player.get_message(game_state)
 
     def _collect_blinds_and_antes(self) -> None:
         """
@@ -508,3 +451,6 @@ class AgenticPoker:
             player.folded = False
             player.hand = Hand()
             player.hand.add_cards(self.deck.deal(5))
+
+    def get_state(self) -> GameState:
+        return GameState.from_game(self)

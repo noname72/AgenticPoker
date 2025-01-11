@@ -1,6 +1,7 @@
 import logging
 from typing import Any, Dict, List, Union
 
+from data.model import Game
 from game.player import Player
 
 
@@ -37,3 +38,20 @@ def log_chip_movements(
                 )
             else:
                 raise e
+
+
+def get_min_bet(game: "Game") -> int:
+    """Calculate the minimum allowed bet amount.
+
+    Args:
+        game: Current game state
+
+    Returns:
+        int: Minimum allowed bet amount
+    """
+    # If no current bet, use big blind as minimum
+    if game.current_bet == 0:
+        return game.big_blind
+
+    # For raises, minimum is double the current bet
+    return game.current_bet * 2

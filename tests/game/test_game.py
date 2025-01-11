@@ -3,7 +3,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from agents.llm_agent import LLMAgent
+from agents.agent import Agent
 from game import AgenticPoker
 from game.card import Card
 from game.draw import handle_draw_phase
@@ -15,7 +15,7 @@ def mock_players():
     """Fixture to create mock players."""
     players = []
     for name in ["Alice", "Bob", "Charlie"]:
-        player = Mock(spec=LLMAgent)
+        player = Mock(spec=Agent)
         player.name = name
         player.chips = 1000
         player.folded = False
@@ -77,7 +77,7 @@ def test_invalid_game_initialization(mock_players):
     with pytest.raises(ValueError):
         # Create players with negative chips
         invalid_players = [
-            Mock(spec=LLMAgent, chips=-1000, name=f"Player{i}") for i in range(3)
+            Mock(spec=Agent, chips=-1000, name=f"Player{i}") for i in range(3)
         ]
         AgenticPoker(
             players=invalid_players,

@@ -34,7 +34,6 @@ class PlayerState(BaseModel):
             hand_rank (Optional[str]): Description of hand strength if evaluated
 
         Betting Round State:
-            has_acted (bool): Whether player has acted in current betting round
             total_bet_this_round (int): Amount bet in current betting round
             last_action (Optional[str]): Last action taken (fold/call/raise)
             last_raise_amount (Optional[int]): Size of player's last raise
@@ -74,7 +73,6 @@ class PlayerState(BaseModel):
     hand_rank: Optional[str] = None  # Description of hand rank if evaluated
 
     # Betting round state
-    has_acted: bool = False  # Whether player has acted in current round
     total_bet_this_round: int = Field(
         default=0, ge=0
     )  # Total amount bet in current round
@@ -131,7 +129,6 @@ class PlayerState(BaseModel):
             },
             "hand": {"cards": self.hand, "rank": self.hand_rank},
             "betting": {
-                "has_acted": self.has_acted,
                 "total_bet": self.total_bet_this_round,
                 "last_action": self.last_action,
                 "last_raise": self.last_raise_amount,
@@ -179,7 +176,6 @@ class PlayerState(BaseModel):
             is_big_blind=getattr(player, "is_big_blind", False),
             hand=str(player.hand) if hasattr(player, "hand") else None,
             hand_rank=getattr(player, "hand_rank", None),
-            has_acted=getattr(player, "has_acted", False),
             total_bet_this_round=getattr(player, "total_bet_this_round", 0),
             last_action=getattr(player, "last_action", None),
             last_raise_amount=getattr(player, "last_raise_amount", None),

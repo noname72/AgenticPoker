@@ -10,19 +10,28 @@ DECISION_PROMPT = """You are a {strategy_style} poker player.
 Current game state:
 {game_state}
 
-{strategy_prompt}
+Hand Evaluation:
+{hand_eval}
 
-Respond ONLY in this format:
-DECISION: <action> <brief reason>
-where <action> must be exactly one of: fold, call, raise
+You must respond with EXACTLY ONE of these formats:
+1. DECISION: fold
+2. DECISION: call
+3. DECISION: raise NUMBER
 
-Example responses:
-DECISION: fold weak hand against aggressive raise
-DECISION: call decent draw with good pot odds
-DECISION: raise strong hand in position
+Examples of valid responses:
+DECISION: fold
+DECISION: call
+DECISION: raise 200
+
+Rules:
+- Use ONLY the exact formats above
+- For raise, include only a number (no words/explanations)
+- Do not include any other text or explanations
+- NUMBER must be a positive integer
 
 What is your decision?
 """
+
 
 # Used for generating table talk messages
 # Variables:
@@ -62,6 +71,7 @@ MESSAGE: [angry] You're all terrible players!  (too hostile/negative)
 
 Respond with exactly one message following these rules.
 """
+
 
 # Used for deciding which cards to discard during draw phase
 # Variables:
@@ -110,6 +120,7 @@ Card 4: {cards[4]}
 What is your discard decision?
 """
 
+
 # Used for generating strategic messages with memory context
 # Variables:
 # - strategy_style: Agent's current strategy style
@@ -132,6 +143,7 @@ Example responses:
 
 Your table talk message:"""
 
+
 # Used to analyze and interpret opponent messages
 # Variables:
 # - strategy_style: Agent's current strategy style
@@ -149,34 +161,33 @@ Based on your strategy style and the game history:
 Respond with only: 'trust', 'ignore', or 'counter-bluff'
 """
 
+
 # Used to generate or update strategic plans
 # Variables:
 # - strategy_style: Agent's current strategy style
 # - game_state: Current game situation
+# - hand_eval: Current hand evaluation
 # Returns: JSON formatted plan with approach, reasoning, and thresholds
 PLANNING_PROMPT = """You are a {strategy_style} poker player planning your strategy.
 
 Current situation:
 {game_state}
 
-Create a strategic plan using this exact format:
-{{
-    "approach": "<aggressive/balanced/defensive>",
-    "reasoning": "<brief explanation>",
-    "bet_sizing": "<small/medium/large>",
-    "bluff_threshold": <float 0-1>,
-    "fold_threshold": <float 0-1>
-}}
+Hand Evaluation: {hand_eval}
 
-Example:
-{{
-    "approach": "aggressive",
-    "reasoning": "Strong hand, weak opponents",
-    "bet_sizing": "large",
-    "bluff_threshold": 0.7,
-    "fold_threshold": 0.2
-}}
+Create a strategic plan by responding with a SINGLE LINE of JSON in this exact format:
+{{"approach": "<aggressive/balanced/defensive>", "reasoning": "<brief explanation>", "bet_sizing": "<small/medium/large>", "bluff_threshold": <float 0-1>, "fold_threshold": <float 0-1>}}
+
+Rules:
+1. Response must be valid JSON on a single line
+2. No extra text or explanations - only the JSON object
+3. No newlines or extra whitespace
+4. Use exact field names shown above
+
+Example response:
+{{"approach": "aggressive", "reasoning": "Strong hand, weak opponents", "bet_sizing": "large", "bluff_threshold": 0.7, "fold_threshold": 0.2}}
 """
+
 
 # Used to execute actions based on current plan
 # Variables:
@@ -186,20 +197,40 @@ Example:
 # - plan_reasoning: Explanation of current plan
 # - bluff_threshold: Current bluffing probability threshold
 # - fold_threshold: Current folding probability threshold
-EXECUTION_PROMPT = """You are a {strategy_style} poker player following this plan:
+ACTION_PROMPT = """You are a {strategy_style} poker player following this plan:
 Approach: {plan_approach}
 Reasoning: {plan_reasoning}
 
 Current situation:
 {game_state}
 
-Given your {plan_approach} approach:
+Hand Evaluation:
+{hand_eval}
+
+Given your approach:
 1. Evaluate if the situation matches your plan
 2. Consider pot odds and immediate action costs
 3. Factor in your bluff_threshold ({bluff_threshold}) and fold_threshold ({fold_threshold})
 
-Respond with EXECUTE: <fold/call/raise> and brief reasoning
+You must respond with EXACTLY ONE of these formats:
+1. DECISION: fold, REASONING: <reasoning>
+2. DECISION: call, REASONING: <reasoning>
+3. DECISION: raise NUMBER, REASONING: <reasoning>
+
+Examples of valid responses:
+DECISION: fold, REASONING: This is a weak hand and the pot odds are not good
+DECISION: call, REASONING: The pot odds are good and I have a strong hand
+DECISION: raise 200, REASONING: I have a strong hand and the pot odds are good
+
+Rules:
+- Use ONLY the exact formats above
+- For raise, include only a number (no words/explanations)
+- Do not include any other text or explanations
+- NUMBER must be a positive integer
+
+What is your decision?
 """
+
 
 # Add a new prompt for richer table talk interactions
 STRATEGIC_BANTER_PROMPT = """You are a {strategy_style} poker player engaging in table talk.

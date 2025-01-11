@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 
-from agents.llm_agent import LLMAgent
+from agents.agent import Agent
 from agents.random_agent import RandomAgent
 from game import AgenticPoker, GameConfig
 from util import (
@@ -29,7 +29,7 @@ agent_configs = load_agent_configs()
 
 # Create AI players with different strategies and features
 players = [
-    LLMAgent(
+    Agent(
         "Alice",
         chips=1000,
         strategy_style="Aggressive Bluffer",
@@ -43,7 +43,7 @@ players = [
         session_id=session_id,
         communication_style="Intimidating",
     ),
-    LLMAgent(
+    Agent(
         "Bob",
         chips=1000,
         strategy_style="Calculated and Cautious",
@@ -55,7 +55,7 @@ players = [
         session_id=session_id,
         communication_style="Analytical",
     ),
-    LLMAgent(
+    Agent(
         "Charlie",
         chips=1000,
         strategy_style="Chaotic and Unpredictable",
@@ -77,7 +77,7 @@ players = [
 game = AgenticPoker(
     players,
     config=GameConfig(
-        starting_chips=1000,
+        starting_chips=1000,  #! is this a needed parameter if we have chips in agent?
         small_blind=50,
         big_blind=100,
         ante=10,
