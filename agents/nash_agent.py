@@ -87,7 +87,7 @@ class NashAgent(Player):
                 reward + max_future_value - self.action_values[action]
             )
 
-    def get_message(self, game_state: str) -> str:
+    def get_message(self, game) -> str:
         """
         Generate a strategic message to maintain unpredictability.
         """

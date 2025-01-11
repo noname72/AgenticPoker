@@ -175,23 +175,17 @@ Current situation:
 
 Hand Evaluation: {hand_eval}
 
-Create a strategic plan using this exact format:
-{
-    "approach": "<aggressive/balanced/defensive>",
-    "reasoning": "<brief explanation>",
-    "bet_sizing": "<small/medium/large>",
-    "bluff_threshold": <float 0-1>,
-    "fold_threshold": <float 0-1>
-}
+Create a strategic plan by responding with a SINGLE LINE of JSON in this exact format:
+{{"approach": "<aggressive/balanced/defensive>", "reasoning": "<brief explanation>", "bet_sizing": "<small/medium/large>", "bluff_threshold": <float 0-1>, "fold_threshold": <float 0-1>}}
 
-Example:
-{
-    "approach": "aggressive",
-    "reasoning": "Strong hand, weak opponents",
-    "bet_sizing": "large", 
-    "bluff_threshold": 0.7,
-    "fold_threshold": 0.2
-}
+Rules:
+1. Response must be valid JSON on a single line
+2. No extra text or explanations - only the JSON object
+3. No newlines or extra whitespace
+4. Use exact field names shown above
+
+Example response:
+{{"approach": "aggressive", "reasoning": "Strong hand, weak opponents", "bet_sizing": "large", "bluff_threshold": 0.7, "fold_threshold": 0.2}}
 """
 
 
@@ -219,14 +213,14 @@ Given your approach:
 3. Factor in your bluff_threshold ({bluff_threshold}) and fold_threshold ({fold_threshold})
 
 You must respond with EXACTLY ONE of these formats:
-1. DECISION: fold
-2. DECISION: call
-3. DECISION: raise NUMBER
+1. DECISION: fold, REASONING: <reasoning>
+2. DECISION: call, REASONING: <reasoning>
+3. DECISION: raise NUMBER, REASONING: <reasoning>
 
 Examples of valid responses:
-DECISION: fold
-DECISION: call
-DECISION: raise 200
+DECISION: fold, REASONING: This is a weak hand and the pot odds are not good
+DECISION: call, REASONING: The pot odds are good and I have a strong hand
+DECISION: raise 200, REASONING: I have a strong hand and the pot odds are good
 
 Rules:
 - Use ONLY the exact formats above

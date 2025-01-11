@@ -227,10 +227,11 @@ class AgenticPoker:
         self._collect_blinds_and_antes()
 
         # Handle AI player pre-round messages
-        for player in self.players:
-            if hasattr(player, "get_message"):
-                game_state = f"Round {self.round_number}, Your chips: ${player.chips}"
-                message = player.get_message(game_state)
+        #! need to fix this
+        # for player in self.players:
+        #     if hasattr(player, "get_message"):
+        #         game_state = f"Round {self.round_number}, Your chips: ${player.chips}"
+        #         message = player.get_message(game_state)
 
     def _collect_blinds_and_antes(self) -> None:
         """
@@ -450,3 +451,6 @@ class AgenticPoker:
             player.folded = False
             player.hand = Hand()
             player.hand.add_cards(self.deck.deal(5))
+
+    def get_state(self) -> GameState:
+        return GameState.from_game(self)

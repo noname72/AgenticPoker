@@ -25,7 +25,7 @@ class ActionResponse(BaseModel):
 
     action_type: ActionType
     raise_amount: Optional[int] = None
-    reasoning: str = Field(default="No reasoning provided")
+    reasoning: Optional[str] = None
 
     @validator("raise_amount")
     def validate_raise_amount(cls, v, values):
@@ -53,20 +53,59 @@ class ActionResponse(BaseModel):
             logger.warning("[Action] No DECISION directive found in response")
             return cls(action_type=ActionType.CALL)
 
-        # Extract action from response
-        action_text = response.split("DECISION:")[1].strip().lower()
-        parts = action_text.split()
+        # Extract reasoning if present (everything before DECISION:)
+        pre_reasoning = (
+            response.split("DECISION:")[0].strip() if "DECISION:" in response else None
+        )
+
+        # Extract action and post-reasoning from response
+        action_part = response.split("DECISION:")[1].strip()
+
+        # Handle reasoning after the action
+        action_text = action_part
+        post_reasoning = None
+        if "REASONING:" in action_part:
+            action_text, post_reasoning = action_part.split("REASONING:", 1)
+            action_text = action_text.strip()
+            post_reasoning = post_reasoning.strip()
+
+        # Combine reasonings, preferring post-reasoning if both exist
+        reasoning = post_reasoning if post_reasoning else pre_reasoning
+
+        parts = action_text.lower().split()
 
         try:
-            if parts[0] == "raise":
+            # Clean the action type of any trailing punctuation
+            action_type = parts[0].rstrip(",")
+
+            if action_type == "raise":
                 try:
-                    amount = int(parts[1])
-                    return cls(action_type=ActionType.RAISE, raise_amount=amount)
+                    # Remove any trailing comma from the amount
+                    amount_str = parts[1].rstrip(",")
+                    amount = int(amount_str)
+                    return cls(
+                        action_type=ActionType.RAISE,
+                        raise_amount=amount,
+                        reasoning=reasoning,
+                    )
                 except (IndexError, ValueError):
                     logger.warning("[Action] Invalid raise format")
-                    return cls(action_type=ActionType.CALL)
+                    return cls(action_type=ActionType.CALL, reasoning=reasoning)
             else:
-                return cls(action_type=ActionType(parts[0]))
+                return cls(action_type=ActionType(action_type), reasoning=reasoning)
         except ValueError:
             logger.warning(f"[Action] Invalid action '{parts[0]}', defaulting to call")
-            return cls(action_type=ActionType.CALL)
+            return cls(action_type=ActionType.CALL, reasoning=reasoning)
+
+    def __str__(self) -> str:
+        """String representation of the action response.
+
+        Returns:
+            str: Human readable string showing action type, amount (if raise), and reasoning
+        """
+        base = f"Action: {self.action_type.value}"
+        if self.action_type == ActionType.RAISE:
+            base += f" {self.raise_amount}"
+        if self.reasoning:
+            base += f" - {self.reasoning}"
+        return base

@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -7,6 +8,7 @@ from openai import OpenAI
 
 from agents.prompts import ACTION_PROMPT, PLANNING_PROMPT
 from data.types.action_response import ActionResponse, ActionType
+from data.types.llm_responses import PlanResponse
 from data.types.plan import Approach, BetSizing, Plan
 from data.types.player_types import PlayerPosition
 from game.evaluator import HandEvaluation
@@ -43,7 +45,6 @@ class StrategyPlanner:
     def __init__(
         self,
         strategy_style: str,
-        client: OpenAI,
         plan_duration: float = DEFAULT_PLAN_DURATION,
         replan_threshold: int = REPLAN_STACK_THRESHOLD,
     ) -> None:
@@ -56,91 +57,13 @@ class StrategyPlanner:
             replan_threshold: Stack change threshold that triggers replanning
         """
         self.strategy_style = strategy_style
-        self.client = client
         self.plan_duration = plan_duration
         self.REPLAN_STACK_THRESHOLD = replan_threshold
         self.current_plan: Optional[Plan] = None
         self.last_metrics: Dict[str, Any] = {}
-        self.llm_client = LLMClient(client)
-
-    def plan_strategy(
-        self,
-        game: "Game",
-        hand_eval: Optional[HandEvaluation] = None,
-    ) -> Plan:
-        """Generate or update the agent's strategic plan based on current game state.
-
-        This method evaluates the current game state and hand evaluation to create a new
-        strategic plan or validate/reuse an existing one. It uses LLM to generate plans
-        that include approach, bet sizing, and various thresholds.
-
-        Args:
-            game: Current game state containing pot, player positions, and betting info
-            hand_eval: Optional evaluation of the current hand strength
-
-        Returns:
-            Plan: A strategic plan object containing approach, bet sizing, and thresholds.
-                Returns default balanced plan if errors occur during generation.
-
-        Raises:
-            No direct exceptions - errors are caught and logged, returning default plan
-        """
-        try:
-            # Check if current plan is still valid
-            if self.current_plan and not self.requires_replanning(game):
-                logger.info(
-                    f"[Strategy] Reusing existing plan: {self.current_plan.approach}"
-                )
-                return self.current_plan
-
-            # Create planning prompt using the constant
-            #! make a plan data model with validation and parsing
-            prompt = PLANNING_PROMPT.format(
-                strategy_style=self.strategy_style,
-                game_state=self._format_state_summary(game),
-                hand_eval=hand_eval,
-            )
-
-            # Query LLM for plan
-            response = self.llm_client.query(
-                prompt=prompt, temperature=0.7, max_tokens=200
-            )
-
-            # Parse response using helper method
-            plan_data = self._parse_plan_response(response)
-
-            # Create new plan with proper validation
-            self.current_plan = Plan(
-                approach=Approach(plan_data.get("approach", "balanced")),
-                reasoning=plan_data.get("reasoning", "Default reasoning"),
-                bet_sizing=BetSizing(plan_data.get("bet_sizing", "medium")),
-                bluff_threshold=float(plan_data.get("bluff_threshold", 0.5)),
-                fold_threshold=float(plan_data.get("fold_threshold", 0.3)),
-                expiry=time.time() + DEFAULT_PLAN_DURATION,
-                adjustments=[],
-                target_opponent=None,
-            )
-
-            logger.info(
-                f"[Strategy] New Plan: approach={self.current_plan.approach} "
-                f"reasoning='{self.current_plan.reasoning}'"
-            )
-
-            return self.current_plan
-
-        except Exception as e:
-            logger.error(f"Error generating plan: {str(e)}")
-            # Create and return a default plan instead of failing
-            return Plan(
-                approach=Approach.BALANCED,
-                reasoning="Default fallback plan due to error",
-                bet_sizing=BetSizing.MEDIUM,
-                bluff_threshold=0.5,
-                fold_threshold=0.3,
-                expiry=time.time() + DEFAULT_PLAN_DURATION,
-                adjustments=[],
-                target_opponent=None,
-            )
+        self.llm_client = LLMClient(
+            api_key=os.getenv("OPENAI_API_KEY"), model="gpt-3.5-turbo"
+        )
 
     def execute_action(
         self,
@@ -188,12 +111,90 @@ class StrategyPlanner:
                 temperature=0.7,
                 max_tokens=150,
             )
+            logger.info(f"[Action Response] {action_response}")
 
             return self._parse_action_response(action_response, game)
 
         except Exception as e:
             logger.error(f"[Action] Error executing action: {str(e)}")
             return ActionResponse(action_type=ActionType.CALL)
+
+    def plan_strategy(
+        self,
+        game: "Game",
+        hand_eval: Optional[HandEvaluation] = None,
+    ) -> Plan:
+        """Generate or update the agent's strategic plan based on current game state.
+
+        This method evaluates the current game state and hand evaluation to create a new
+        strategic plan or validate/reuse an existing one. It uses LLM to generate plans
+        that include approach, bet sizing, and various thresholds.
+
+        Args:
+            game: Current game state containing pot, player positions, and betting info
+            hand_eval: Optional evaluation of the current hand strength
+
+        Returns:
+            Plan: A strategic plan object containing approach, bet sizing, and thresholds.
+                Returns default balanced plan if errors occur during generation.
+
+        Raises:
+            No direct exceptions - errors are caught and logged, returning default plan
+        """
+        try:
+            # Check if current plan is still valid
+            if self.current_plan and not self.requires_replanning(game):
+                logger.info(
+                    f"[Strategy] Reusing existing plan: {self.current_plan.approach}"
+                )
+                return self.current_plan
+
+            # Create planning prompt using the constant
+            prompt = PLANNING_PROMPT.format(
+                strategy_style=self.strategy_style,
+                game_state=game.get_state(),
+                hand_eval=hand_eval,
+            )
+
+            # Query LLM for plan
+            response = self.llm_client.query(
+                prompt=prompt, temperature=0.7, max_tokens=200
+            )
+
+            plan_data = PlanResponse.parse_llm_response(response)
+
+            # Create new plan with proper validation
+            self.current_plan = Plan(
+                approach=Approach(plan_data.get("approach", "balanced")),
+                reasoning=plan_data.get("reasoning", "Default reasoning"),
+                bet_sizing=BetSizing(plan_data.get("bet_sizing", "medium")),
+                bluff_threshold=float(plan_data.get("bluff_threshold", 0.5)),
+                fold_threshold=float(plan_data.get("fold_threshold", 0.3)),
+                expiry=time.time() + DEFAULT_PLAN_DURATION,
+                adjustments=[],
+                target_opponent=None,
+            )
+
+            logger.info(
+                f"[Strategy] New Plan: approach={self.current_plan.approach} "
+                f"reasoning='{self.current_plan.reasoning}'"
+            )
+
+            return self.current_plan
+
+        except Exception as e:
+            logger.error(f"Error generating plan: {str(e)}")
+            # Create and return a default plan instead of failing
+            return Plan(
+                approach=Approach.BALANCED,
+                reasoning="Default fallback plan due to error",
+                bet_sizing=BetSizing.MEDIUM,
+                bluff_threshold=0.5,
+                fold_threshold=0.3,
+                expiry=time.time() + DEFAULT_PLAN_DURATION,
+                adjustments=[],
+                target_opponent=None,
+            )
 
     def _parse_action_response(self, response: str, game: "Game") -> ActionResponse:
         """Parse the LLM response and return the appropriate action.
@@ -208,14 +209,17 @@ class StrategyPlanner:
         try:
             action = ActionResponse.parse_llm_response(response)
 
+            min_bet = self.get_min_bet(game)
+
             # Validate raise amount against game rules
             if action.action_type == ActionType.RAISE:
-                if action.raise_amount < game.min_bet:
-                    logger.info(
-                        f"[Action] Raise {action.raise_amount} below minimum {game.min_bet}, converting to call"
-                    )
-                    action.raise_amount = game.min_bet
 
+                if action.raise_amount < min_bet:
+                    logger.info(
+                        f"[Action] Raise {action.raise_amount} below minimum {min_bet}, converting to call"
+                    )
+                    action.raise_amount = min_bet
+                    
             logger.info(f"[Action] {action}")
             return action
 
@@ -387,9 +391,8 @@ class StrategyPlanner:
         """
         try:
             return (
-                f"Pot: ${game.pot_state.main_pot}, "
+                f"Pot: ${game.pot_manager.pot}, "
                 f"Current bet: ${getattr(game.round_state, 'current_bet', 0)}, "
-                f"Position: {self._get_position_name(game.active_player_position, len(game.players), game.dealer_position)}, "
                 f"Phase: {game.round_state.phase}"
             )
         except Exception as e:
@@ -445,9 +448,6 @@ class StrategyPlanner:
     def _parse_plan_response(self, response: str) -> Dict[str, Any]:
         """Parse and validate LLM response into plan data.
 
-        Attempts to parse JSON response from LLM into valid plan data structure.
-        Provides default values if parsing fails.
-
         Args:
             response: Raw response string from LLM containing JSON plan data
 
@@ -458,21 +458,21 @@ class StrategyPlanner:
                 - bet_sizing (str): Bet sizing strategy (default: 'medium')
                 - bluff_threshold (float): Threshold for bluffing (default: 0.5)
                 - fold_threshold (float): Threshold for folding (default: 0.3)
-
-        Raises:
-            No direct exceptions - JSON parse errors are caught and logged
         """
-        try:
-            plan_data = json.loads(response.strip())
-            return plan_data
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse LLM response as JSON: {str(e)}")
-            logger.debug(f"Invalid response: {response}")
-            # Return default plan data on parse error
-            return {
-                "approach": "balanced",
-                "reasoning": "Default plan due to parse error",
-                "bet_sizing": "medium",
-                "bluff_threshold": 0.5,
-                "fold_threshold": 0.3,
-            }
+        return PlanResponse.parse_llm_response(response)
+
+    def get_min_bet(self, game: "Game") -> int:
+        """Calculate the minimum allowed bet amount.
+
+        Args:
+            game: Current game state
+
+        Returns:
+            int: Minimum allowed bet amount
+        """
+        # If no current bet, use big blind as minimum
+        if game.current_bet == 0:
+            return game.big_blind
+
+        # For raises, minimum is double the current bet
+        return game.current_bet * 2

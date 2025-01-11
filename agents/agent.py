@@ -13,7 +13,7 @@ from agents.strategy_planner import StrategyPlanner
 from config import GameConfig
 from data.memory import ChromaMemoryStore
 from data.model import Game
-from data.types.action_response import ActionResponse
+from data.types.action_response import ActionResponse, ActionType
 from game.evaluator import HandEvaluation
 from game.player import Player
 
@@ -21,6 +21,45 @@ logger = logging.getLogger(__name__)
 
 
 class Agent(Player):
+    """An intelligent poker agent that uses LLM-based decision making and various cognitive modules.
+
+    This agent extends the base Player class with sophisticated decision-making capabilities including:
+    - LLM-based reasoning for actions and table talk
+    - Strategic planning and adaptation
+    - Memory management for game history
+    - Opponent modeling and analysis
+    - Reward-based learning
+
+    Attributes:
+        name (str): The agent's name
+        chips (int): Current chip count
+        strategy_style (str): Base strategy style (e.g. "Aggressive Bluffer")
+        use_reasoning (bool): Whether to use LLM reasoning module
+        use_reflection (bool): Whether to use reflection on past decisions
+        use_planning (bool): Whether to use strategic planning
+        use_opponent_modeling (bool): Whether to track and analyze opponents
+        use_reward_learning (bool): Whether to learn from action outcomes
+        learning_rate (float): Rate of strategy adaptation (0-1)
+        communication_style (str): Style of table talk (e.g. "Intimidating")
+        emotional_state (str): Current emotional context for decisions
+
+    The agent can be used either with explicit cleanup:
+        agent = Agent("Bot1")
+        try:
+            # Use agent
+        finally:
+            agent.close()
+
+    Or as a context manager (preferred):
+        with Agent("Bot2") as agent:
+            # Use agent
+
+    Note:
+        - Requires OpenAI API key for LLM functionality
+        - Uses ChromaDB for persistent memory storage
+        - Memory and resources are cleaned up automatically when using context manager
+    """
+
     def __init__(
         self,
         name: str,
@@ -70,7 +109,6 @@ class Agent(Player):
         if self.use_planning:
             self.strategy_planner = StrategyPlanner(
                 strategy_style=self.strategy_style,
-                client=self.llm_client,  # Pass llm_client instead of self.client
                 plan_duration=30.0,
             )
 
@@ -183,7 +221,7 @@ class Agent(Player):
                     self.memory_store.close()
                 except Exception as e:
                     if "Python is likely shutting down" not in str(e):
-                        logging.warning(f"Error cleaning up memory store: {str(e)}")
+                        logger.warning(f"Error cleaning up memory store: {str(e)}")
                 finally:
                     del self.memory_store
 
@@ -193,11 +231,11 @@ class Agent(Player):
                     del self.client
                 except Exception as e:
                     if "Python is likely shutting down" not in str(e):
-                        logging.warning(f"Error cleaning up OpenAI client: {str(e)}")
+                        logger.warning(f"Error cleaning up OpenAI client: {str(e)}")
 
         except Exception as e:
             if "Python is likely shutting down" not in str(e):
-                logging.error(f"Error in cleanup: {str(e)}")
+                logger.error(f"Error in cleanup: {str(e)}")
 
     def __enter__(self):
         """Context manager entry point.
@@ -317,20 +355,17 @@ class Agent(Player):
             )
 
             # Query LLM with retry logic
-            response = self._query_llm(
+            response = self.llm_client.query(
                 prompt=prompt, temperature=0.7, system_message=system_message
             ).strip()  # Strip whitespace from full response
 
             # Debug logging
-            self.logger.debug(f"Raw LLM response:\n{response}")
+            logger.debug(f"Raw LLM response:\n{response}")
 
             # Parse and validate response
-            # Look for DECISION: line
             if "DECISION:" not in response:
-                self.logger.warning(
-                    f"No DECISION: found in response: {response[:100]}..."
-                )
-                return ActionResponse(action="fold", amount=0)
+                logger.warning(f"No DECISION: found in response: {response[:100]}...")
+                return ActionResponse(action_type=ActionType.FOLD)
 
             decision_line = next(
                 line.strip() for line in response.split("\n") if "DECISION:" in line
@@ -340,45 +375,44 @@ class Agent(Player):
 
             # Validate action more strictly
             if action not in ["fold", "call", "raise"]:
-                self.logger.warning(f"Invalid action '{action}' in response")
-                return ActionResponse(action="fold", amount=0)
+                logger.warning(f"Invalid action '{action}' in response")
+                return ActionResponse(action_type=ActionType.FOLD)
 
             # Handle raise amount more strictly
             if action == "raise":
                 try:
                     if len(parts) != 2:
-                        self.logger.warning(
-                            "Raise command must have exactly one number"
-                        )
-                        # self._log_interaction(prompt, response, time.time() - start_time, action="call (invalid raise format)")
-                        return ActionResponse(action="call", amount=0)
+                        logger.warning("Raise command must have exactly one number")
+                        return ActionResponse(action_type=ActionType.CALL)
 
                     amount = int(parts[1])
                     if amount <= 0:
-                        self.logger.warning("Raise amount must be positive")
-                        # self._log_interaction(prompt, response, time.time() - start_time, action="call (invalid raise amount)")
-                        return ActionResponse(action="call", amount=0)
+                        logger.warning("Raise amount must be positive")
+                        return ActionResponse(action_type=ActionType.CALL)
 
-                    final_action = f"raise {amount}"
-                    # self._log_interaction(prompt, response, time.time() - start_time, action=final_action)
-                    return ActionResponse(action=final_action, amount=amount)
+                    return ActionResponse(
+                        action_type=ActionType.RAISE, raise_amount=amount
+                    )
                 except ValueError:
-                    self.logger.warning("Invalid raise amount format")
-                    # self._log_interaction(prompt, response, time.time() - start_time, action="call (raise parse error)")
-                    return ActionResponse(action="call", amount=0)
+                    logger.warning("Invalid raise amount format")
+                    return ActionResponse(action_type=ActionType.CALL)
 
-            # For fold or call
-            # self._log_interaction(prompt, response, time.time() - start_time, action=action)
-            return ActionResponse(action=action, amount=0)
+            # Map string actions to ActionType enum
+            action_map = {
+                "fold": ActionType.FOLD,
+                "call": ActionType.CALL,
+            }
+
+            return ActionResponse(action_type=action_map[action])
 
         except Exception as e:
-            self.logger.error(f"Error in decide_action: {str(e)}")
-            # self._log_interaction(prompt, response, time.time() - start_time, error=str(e), action="fold (error)")
-            return ActionResponse(action="fold", amount=0)
+            logger.error(f"Error in decide_action: {str(e)}")
+            return ActionResponse(action_type=ActionType.FOLD)
 
     def _create_decision_prompt(
         self, game: "Game", hand_eval: Optional[HandEvaluation] = None
     ) -> str:
+        #! is this needed???
         """Creates a formatted prompt for the LLM to make poker decisions.
 
         Combines game state, hand evaluation, memory context, opponent modeling,
@@ -400,32 +434,38 @@ class Agent(Player):
         """
 
         # Get relevant memories
-        memories = self.get_relevant_memories(self._create_memory_query(game))
-        memory_info = (
-            "\n".join(f"- {m['text']}" for m in memories)
-            if memories
-            else "No relevant memories"
-        )
+        # memories = self.get_relevant_memories(self._create_memory_query(game))
+        # memory_info = (
+        #     "\n".join(f"- {m['text']}" for m in memories)
+        #     if memories
+        #     else "No relevant memories"
+        # )
 
         # Format opponent info if available
-        opponent_info = (
-            self._get_opponent_patterns()
-            if self.use_opponent_modeling
-            else "No opponent modeling"
-        )
+        # opponent_info = (
+        #     self._get_opponent_patterns()
+        #     if self.use_opponent_modeling
+        #     else "No opponent modeling"
+        # )
 
         return DECISION_PROMPT.format(
             strategy_style=self.strategy_style,
             game_state=game.get_state(),
             hand_eval=hand_eval,
-            memory_info=memory_info,
-            opponent_info=opponent_info,
+            memory_info=None,
+            opponent_info=None,
             personality_traits=self.personality_traits,
         )
 
     def get_message(self, game) -> str:
-        #! is this still needed?
-        """Generate table talk using LLM."""
+        """Generate table talk using LLM.
+
+        Args:
+            game: Current game state
+
+        Returns:
+            str: A message for table talk, or empty string if generation fails
+        """
         try:
             # Create message prompt
             game_state = game.get_state()
@@ -437,15 +477,57 @@ class Agent(Player):
             )
 
             # Query LLM with lower temperature for more consistent messaging
-            response = self._query_llm(
+            response = self.llm_client.query(
                 prompt=prompt, temperature=0.5, system_message=system_message
             )
 
-            return self._parse_message(response)
+            # Parse response - look for MESSAGE: prefix
+            if "MESSAGE:" not in response:
+                logger.warning("No MESSAGE: found in response")
+                return "..."  # Return a default message instead of empty string
+
+            # Extract the message part after MESSAGE:
+            message_line = next(
+                line.strip()
+                for line in response.split("\n")
+                if line.strip().startswith("MESSAGE:")
+            )
+            message = message_line.replace("MESSAGE:", "").strip()
+
+            # Validate message
+            if not message:
+                logger.warning("Empty message after parsing")
+                return "..."  # Return a default message
+
+            return message
 
         except Exception as e:
-            self.logger.error(f"Error generating message: {str(e)}")
-            return ""  # Safe default
+            logger.error(f"Error generating message: {str(e)}")
+            return "..."  # Return a default message on error
+
+    def _create_message_prompt(self, game_state: str) -> str:
+        """Create prompt for message generation.
+
+        Args:
+            game_state: Current state of the game
+
+        Returns:
+            str: Formatted prompt for the LLM
+        """
+        return f"""
+        You are a {self.communication_style} poker player.
+        Current emotional state: {self.emotional_state}
+        Game state: {game_state}
+        Recent table history: {self.table_history[-3:] if self.table_history else 'None'}
+        
+        Generate a short, natural poker table message that:
+        1. Fits your communication style ({self.communication_style})
+        2. Responds to the current game state
+        3. Maintains character consistency
+        
+        Respond with just the message in this format:
+        MESSAGE: <your message here>
+        """
 
     def perceive(self, game_state: str, opponent_message: Optional[str] = None) -> Dict:
         #! validate this
@@ -495,7 +577,7 @@ class Agent(Player):
             )
 
             # Query LLM for discard decision
-            response = self._query_llm(
+            response = self.llm_client.query(
                 prompt=prompt, temperature=0.7, system_message=system_message
             )
 
@@ -519,7 +601,7 @@ class Agent(Player):
                 return []
 
         except Exception as e:
-            self.logger.error(f"Error in decide_draw: {str(e)}")
+            logger.error(f"Error in decide_draw: {str(e)}")
             return []
 
     def update_strategy(self, game_outcome: Dict[str, Any]) -> None:
@@ -553,7 +635,7 @@ class Agent(Player):
         Respond with just the number (1-4).
         """
 
-        response = self._query_llm(prompt).strip()
+        response = self.llm_client.query(prompt).strip()
 
         strategy_map = {
             "2": "Aggressive Bluffer",
@@ -562,7 +644,7 @@ class Agent(Player):
         }
 
         if response in strategy_map:
-            self.logger.info(
+            logger.info(
                 "[Strategy Update] %s changing strategy from %s to %s",
                 self.name,
                 self.strategy_style,
@@ -662,7 +744,7 @@ class Agent(Player):
         """
 
         try:
-            response = self._query_llm(prompt)
+            response = self.llm_client.query(prompt)
             analysis = eval(response.strip())  # Safe since we control LLM output format
 
             # Ensure all required keys are present
@@ -682,5 +764,5 @@ class Agent(Player):
             return analysis
 
         except Exception as e:
-            self.logger.error(f"Error in opponent analysis: {str(e)}")
+            logger.error(f"Error in opponent analysis: {str(e)}")
             return default_analysis
