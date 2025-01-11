@@ -64,19 +64,15 @@ class StrategyPlanner:
     ) -> ActionResponse:
         """Execute an action based on current plan and game state.
 
-        Generates and executes a poker action (call, fold, raise) based on the current
-        strategic plan and game state. Creates a new plan if none exists.
+        This method will always return an ActionResponse, even if errors occur during
+        execution. If any error occurs, it returns ActionResponse(action_type=ActionType.CALL).
 
         Args:
-            game: Current game state containing pot, player positions, and betting info
-            hand_eval: Optional evaluation of the current hand strength
+            game (Game): Current game state containing pot, player positions, and betting info
+            hand_eval (Optional[HandEvaluation]): Optional evaluation of current hand strength
 
         Returns:
-            ActionResponse: The action to take
-                Defaults to 'call' if errors occur during execution
-
-        Raises:
-            No direct exceptions - errors are caught and logged, returning 'call'
+            ActionResponse: The action to take. Defaults to ActionType.CALL on any error.
         """
         try:
             # Ensure we have a valid plan
@@ -112,6 +108,23 @@ class StrategyPlanner:
             )
             return ActionResponse(action_type=ActionType.CALL)
 
+    def _create_default_plan(self) -> Plan:
+        """Create a default Plan object when errors occur or no plan is available.
+
+        Returns:
+            Plan: A balanced default plan with standard thresholds and settings
+        """
+        return Plan(
+            approach=Approach.BALANCED,
+            reasoning="Default fallback plan due to error",
+            bet_sizing=BetSizing.MEDIUM,
+            bluff_threshold=0.5,
+            fold_threshold=0.3,
+            expiry=time.time() + DEFAULT_PLAN_DURATION,
+            adjustments=[],
+            target_opponent=None,
+        )
+
     def plan_strategy(
         self,
         game: "Game",
@@ -119,20 +132,28 @@ class StrategyPlanner:
     ) -> Plan:
         """Generate or update the agent's strategic plan based on current game state.
 
-        This method evaluates the current game state and hand evaluation to create a new
-        strategic plan or validate/reuse an existing one. It uses LLM to generate plans
-        that include approach, bet sizing, and various thresholds.
+        This method handles the core strategic planning for the poker agent. It either:
+        1. Reuses the current plan if it's still valid
+        2. Generates a new plan by querying the LLM with the current game state
+        3. Falls back to a default balanced plan if errors occur
+
+        The generated plan includes:
+        - Strategic approach (aggressive, balanced, etc.)
+        - Bet sizing preferences
+        - Bluff and fold thresholds
+        - Reasoning behind the strategy
 
         Args:
-            game: Current game state containing pot, player positions, and betting info
-            hand_eval: Optional evaluation of the current hand strength
+            game (Game): Current game state containing pot, player positions, and betting info
+            hand_eval (Optional[HandEvaluation]): Current hand strength evaluation, if available
 
         Returns:
             Plan: A strategic plan object containing approach, bet sizing, and thresholds.
-                Returns default balanced plan if errors occur during generation.
+                 Returns a default balanced plan if errors occur during generation.
 
-        Raises:
-            No direct exceptions - errors are caught and logged, returning default plan
+        Note:
+            This method handles all exceptions internally and will never raise.
+            The returned Plan is always valid, even in error cases.
         """
         try:
             # Check if current plan is still valid
@@ -142,7 +163,7 @@ class StrategyPlanner:
                 )
                 return self.current_plan
 
-            # Create planning prompt using the constant
+            # Create planning prompt
             prompt = PLANNING_PROMPT.format(
                 strategy_style=self.strategy_style,
                 game_state=game.get_state(),
@@ -155,18 +176,7 @@ class StrategyPlanner:
             )
 
             plan_data = PlanResponse.parse_llm_response(response)
-
-            # Create new plan with proper validation
-            self.current_plan = Plan(
-                approach=Approach(plan_data.get("approach", "balanced")),
-                reasoning=plan_data.get("reasoning", "Default reasoning"),
-                bet_sizing=BetSizing(plan_data.get("bet_sizing", "medium")),
-                bluff_threshold=float(plan_data.get("bluff_threshold", 0.5)),
-                fold_threshold=float(plan_data.get("fold_threshold", 0.3)),
-                expiry=time.time() + DEFAULT_PLAN_DURATION,
-                adjustments=[],
-                target_opponent=None,
-            )
+            self.current_plan = self._create_plan_from_response(plan_data)
 
             logger.info(
                 f"[Strategy] New Plan: approach={self.current_plan.approach} "
@@ -177,48 +187,62 @@ class StrategyPlanner:
 
         except Exception as e:
             logger.error(f"Error generating plan: {str(e)}")
-            # Create and return a default plan instead of failing
-            return Plan(
-                approach=Approach.BALANCED,
-                reasoning="Default fallback plan due to error",
-                bet_sizing=BetSizing.MEDIUM,
-                bluff_threshold=0.5,
-                fold_threshold=0.3,
-                expiry=time.time() + DEFAULT_PLAN_DURATION,
-                adjustments=[],
-                target_opponent=None,
-            )
+            return self._create_default_plan()
 
-    def _parse_action_response(self, response: str, game: "Game") -> ActionResponse:
-        """Parse the LLM response and return the appropriate action.
+    def _create_plan_from_response(self, plan_data: dict) -> Plan:
+        """Create a Plan object from LLM response data with validation.
 
         Args:
-            response: Raw response string from LLM
-            game: Current game state
+            plan_data (dict): Parsed response data from LLM
 
         Returns:
-            ActionResponse: The action to take
+            Plan: A new plan object with validated fields
         """
+        return Plan(
+            approach=Approach(plan_data.get("approach", "balanced")),
+            reasoning=plan_data.get("reasoning", "Default reasoning"),
+            bet_sizing=BetSizing(plan_data.get("bet_sizing", "medium")),
+            bluff_threshold=float(plan_data.get("bluff_threshold", 0.5)),
+            fold_threshold=float(plan_data.get("fold_threshold", 0.3)),
+            expiry=time.time() + DEFAULT_PLAN_DURATION,
+            adjustments=[],
+            target_opponent=None,
+        )
+
+    def _validate_raise_action(
+        self, action: ActionResponse, min_bet: int
+    ) -> ActionResponse:
+        """Validate and adjust raise amounts against game rules.
+
+        Args:
+            action (ActionResponse): The action to validate
+            min_bet (int): Minimum allowed bet size
+
+        Returns:
+            ActionResponse: The validated action, with raise amount adjusted if needed
+        """
+        if action.action_type == ActionType.RAISE and action.raise_amount < min_bet:
+            logger.info(
+                f"[Action] Raise {action.raise_amount} below minimum {min_bet}, adjusting to min_bet"
+            )
+            action.raise_amount = min_bet
+        return action
+
+    def _parse_action_response(self, response: str, game: "Game") -> ActionResponse:
+        """Parse the LLM response and return the appropriate action."""
         try:
             action = ActionResponse.parse_llm_response(response)
-
             min_bet = get_min_bet(game)
 
-            # Validate raise amount against game rules
-            if action.action_type == ActionType.RAISE:
-
-                if action.raise_amount < min_bet:
-                    logger.info(
-                        f"[Action] Raise {action.raise_amount} below minimum {min_bet}, converting to call"
-                    )
-                    action.raise_amount = min_bet
+            # Validate and adjust raise amount if needed
+            action = self._validate_raise_action(action, min_bet)
 
             logger.info(f"[Action] {action}")
             return action
 
         except Exception as e:
             logger.error(f"[Action] Error parsing action response: {str(e)}")
-            return "call"
+            return ActionResponse(action_type=ActionType.CALL)
 
     def requires_replanning(self, game: "Game") -> bool:
         """Determine if current game state requires a new strategic plan.
@@ -230,17 +254,16 @@ class StrategyPlanner:
         4. Significant stack size change (beyond REPLAN_STACK_THRESHOLD)
 
         Args:
-            game: Current game state containing player positions, stack sizes,
-                 and other relevant game information
+            game (Game): Current game state containing player positions, stack sizes,
+                        and other relevant game information
 
         Returns:
-            bool: True if replanning is required, False if current plan remains valid
+            bool: True if replanning is required, False if current plan remains valid.
+                 Returns False on any error to safely keep current plan.
 
         Note:
-            - Position changes always trigger replanning to adapt strategy
-            - Stack size changes only trigger replanning if they exceed REPLAN_STACK_THRESHOLD
-            - Game metrics are only updated if no replanning is required
-            - On error, defaults to False to keep current plan as safe fallback
+            This method handles all exceptions internally. On error, it defaults to False
+            to keep the current plan as a safe fallback strategy.
         """
         # Always replan if no current plan exists
         if not self.current_plan:
@@ -304,13 +327,15 @@ class StrategyPlanner:
         and plan evaluation. Handles missing or invalid data gracefully.
 
         Args:
-            game: Current game state object
+            game (Game): Current game state object
 
         Returns:
-            GameMetrics: Normalized metrics including stack sizes, positions, and derived calculations
+            GameMetrics: Normalized metrics including stack sizes, positions, and derived calculations.
+                        On error, returns GameMetrics with zero/default values for all fields.
 
         Note:
-            Returns default metrics with zero values if errors occur during extraction
+            This method handles all exceptions internally and will always return a valid
+            GameMetrics object, even if populated with default values.
         """
         try:
             # Find the active player's state
