@@ -374,7 +374,7 @@ def test_execute_action_no_plan():
     assert planner.current_plan is None
 
     # Execute action without a plan
-    action = planner.execute_action(game_state)
+    action = planner.get_action(game_state)
 
     # Should fall back to "call" when no plan exists
     assert action == "call", "Should fall back to 'call' when no plan exists"

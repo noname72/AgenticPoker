@@ -11,6 +11,7 @@ class ActionType(str, Enum):
     FOLD = "fold"
     CALL = "call"
     RAISE = "raise"
+    CHECK = "check"
 
 
 class ActionResponse(BaseModel):

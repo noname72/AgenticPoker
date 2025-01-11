@@ -111,6 +111,8 @@ class Agent(Player):
                 strategy_style=self.strategy_style,
                 plan_duration=30.0,
             )
+        else:
+            self.strategy_planner = None
 
         # Initialize memory store with session-specific collection name
         collection_name = f"agent_{name.lower().replace(' ', '_')}_{session_id}_memory"
@@ -314,7 +316,7 @@ class Agent(Player):
         hand_eval: HandEvaluation = self.hand.evaluate() if self.hand else None
 
         if self.strategy_planner:
-            return self.strategy_planner.execute_action(game, hand_eval)
+            return self.strategy_planner.get_action(game, hand_eval)
 
         # Fallback to basic decision making if no strategy planner
         return self._basic_decision(game, hand_eval)
