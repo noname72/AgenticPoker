@@ -1,39 +1,7 @@
-"""
-Betting module for poker game implementation.
-
-This module handles all betting-related functionality including:
-- Managing betting rounds
-- Processing player actions (fold, call, raise)
-- Handling all-in situations and side pots
-- Collecting blinds and antes
-- Validating bets and raises
-
-The module provides functions to manage the complete betting workflow in a poker game,
-with support for:
-- Multiple betting rounds
-- Side pot calculations
-- Blind and ante collection
-- Bet validation and limits
-- Minimum raise enforcement
-- Last raiser restrictions
-- Detailed logging of all betting actions
-- Showdown situation detection
-
-Key features:
-- Enforces minimum raise amounts (double the last raise)
-- Prevents players from raising twice consecutively unless they're the last active player
-- Tracks and validates betting sequences
-- Handles partial calls and all-in situations
-- Creates side pots automatically when needed
-- Provides detailed logging of betting actions and game state
-- Supports customizable betting limits and raise restrictions
-"""
-
 import logging
-from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple, Union
+from typing import TYPE_CHECKING, List, Optional, Set, Tuple, Union
 
 from config import GameConfig
-from data.states.game_state import GameState
 from data.states.round_state import RoundPhase
 from data.types.action_response import ActionResponse, ActionType
 from data.types.pot_types import SidePot
@@ -91,7 +59,7 @@ def betting_round(
 
             # Get and process player action
             # ? Validated this
-            action_decision = _get_action_and_amount(game, player)  
+            action_decision = _get_action_and_amount(game, player)
 
             # Process the action
             #! this is a large function. Is it needed???
@@ -213,9 +181,7 @@ def handle_betting_round(
     return new_pot, side_pots, should_continue
 
 
-def _get_action_and_amount(
-    game: "Game", player: Player
-) -> ActionResponse:
+def _get_action_and_amount(game: "Game", player: Player) -> ActionResponse:
     """Get and validate player action."""
     try:
         # Get raw action from player
@@ -286,14 +252,13 @@ def _process_player_action(
     new_last_raiser = None
 
     # Get max raise settings from game state
-    max_raise_multiplier = game.config.max_raise_multiplier #! why not used
-    max_raises_per_round = game.config.max_raises_per_round #! why not used
+    max_raise_multiplier = game.config.max_raise_multiplier  #! why not used
+    max_raises_per_round = game.config.max_raises_per_round  #! why not used
     raise_count = game.round_state.raise_count if game.round_state else 0
 
     # Calculate how much player needs to call, accounting for big blind position
     is_big_blind = player.is_big_blind if hasattr(player, "is_big_blind") else False
     to_call = validate_bet_to_call(current_bet, player.bet, is_big_blind)
-
 
     # Log initial state with active player context
     #! move to betting logger
@@ -366,7 +331,9 @@ def _process_player_action(
                     game.round_state.raise_count += 1
 
             status = " (all in)" if player.chips == 0 else ""
-            logging.info(f"{player.name} raises to ${action_decision.raise_amount}{status}")
+            logging.info(
+                f"{player.name} raises to ${action_decision.raise_amount}{status}"
+            )
         else:
             # Invalid raise amount, convert to call
             logging.info(

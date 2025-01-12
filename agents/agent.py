@@ -21,58 +21,21 @@ logger = logging.getLogger(__name__)
 
 
 class Agent(Player):
-    """An intelligent poker agent that uses LLM-based decision making and various cognitive modules.
-
-    This agent extends the base Player class with sophisticated decision-making capabilities including:
-    - LLM-based reasoning for actions and table talk
-    - Strategic planning and adaptation
-    - Memory management for game history
-    - Opponent modeling and analysis
-    - Reward-based learning
-
-    Attributes:
-        name (str): The agent's name
-        chips (int): Current chip count
-        strategy_style (str): Base strategy style (e.g. "Aggressive Bluffer")
-        use_reasoning (bool): Whether to use LLM reasoning module
-        use_reflection (bool): Whether to use reflection on past decisions
-        use_planning (bool): Whether to use strategic planning
-        use_opponent_modeling (bool): Whether to track and analyze opponents
-        use_reward_learning (bool): Whether to learn from action outcomes
-        learning_rate (float): Rate of strategy adaptation (0-1)
-        communication_style (str): Style of table talk (e.g. "Intimidating")
-        emotional_state (str): Current emotional context for decisions
-
-    The agent can be used either with explicit cleanup:
-        agent = Agent("Bot1")
-        try:
-            # Use agent
-        finally:
-            agent.close()
-
-    Or as a context manager (preferred):
-        with Agent("Bot2") as agent:
-            # Use agent
-
-    Note:
-        - Requires OpenAI API key for LLM functionality
-        - Uses ChromaDB for persistent memory storage
-        - Memory and resources are cleaned up automatically when using context manager
-    """
+    """An intelligent poker agent that uses LLM-based decision making and various cognitive modules."""
 
     def __init__(
         self,
         name: str,
         chips: int = 1000,
-        strategy_style: str = "Aggressive Bluffer",
+        strategy_style: str = "Aggressive Bluffer", #! make a play style model
         use_reasoning: bool = True,
         use_reflection: bool = True,
         use_planning: bool = True,
         use_opponent_modeling: bool = True,
         use_reward_learning: bool = True,
-        learning_rate: float = 0.1,
-        config: GameConfig = None,
-        session_id: str = None,
+        learning_rate: float = 0.1, #! is this needed?
+        config: GameConfig = None, #! is this needed?
+        session_id: str = None, #! is this needed?
         communication_style: str = "Intimidating",
     ):
         super().__init__(name, chips)
