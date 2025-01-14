@@ -5,6 +5,7 @@ from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+from dotenv import load_dotenv
 
 from agents.llm_client import LLMClient
 from agents.prompts import DECISION_PROMPT, DISCARD_PROMPT
@@ -19,6 +20,9 @@ from game.player import Player
 
 logger = logging.getLogger(__name__)
 
+load_dotenv()
+API_KEY = os.getenv("OPENAI_API_KEY", "")
+
 
 class Agent(Player):
     """An intelligent poker agent that uses LLM-based decision making and various cognitive modules."""
@@ -27,15 +31,15 @@ class Agent(Player):
         self,
         name: str,
         chips: int = 1000,
-        strategy_style: str = "Aggressive Bluffer", #! make a play style model
+        strategy_style: str = "Aggressive Bluffer",  #! make a play style model
         use_reasoning: bool = True,
         use_reflection: bool = True,
         use_planning: bool = True,
         use_opponent_modeling: bool = True,
         use_reward_learning: bool = True,
-        learning_rate: float = 0.1, #! is this needed?
-        config: GameConfig = None, #! is this needed?
-        session_id: str = None, #! is this needed?
+        learning_rate: float = 0.1,  #! is this needed?
+        config: GameConfig = None,  #! is this needed?
+        session_id: str = None,  #! is this needed?
         communication_style: str = "Intimidating",
     ):
         super().__init__(name, chips)
@@ -64,9 +68,7 @@ class Agent(Player):
         }
 
         # Initialize LLM client first
-        self.llm_client = LLMClient(
-            api_key=os.getenv("OPENAI_API_KEY"), model="gpt-3.5-turbo"
-        )
+        self.llm_client = LLMClient(api_key=API_KEY, model="gpt-3.5-turbo")
 
         # Then initialize strategy planner with llm_client
         if self.use_planning:

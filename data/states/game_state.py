@@ -193,7 +193,8 @@ class GameState(BaseModel):
             player_states.append(player_state)
 
             # Update the player with their new state
-            player.update_from_state(player_state)
+            #! what is this for, why load state???
+            # player.update_from_state(player_state)
 
         # Create or update round state if needed
         if not hasattr(game, "round_state"):

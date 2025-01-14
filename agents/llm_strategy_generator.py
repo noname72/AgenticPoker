@@ -1,6 +1,8 @@
 import logging
-import time
+import os
 from typing import Optional
+
+from dotenv import load_dotenv
 
 from agents.prompts import ACTION_PROMPT, PLANNING_PROMPT
 from data.types.action_response import ActionResponse, ActionType
@@ -10,6 +12,9 @@ from data.types.plan import Plan
 from .llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
+
+load_dotenv()
+API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 
 class LLMStrategyGenerator:
@@ -25,7 +30,7 @@ class LLMStrategyGenerator:
         model: str = "gpt-3.5-turbo",
     ):
         self.strategy_style = strategy_style
-        self.llm_client = LLMClient(api_key=api_key, model=model)
+        self.llm_client = LLMClient(api_key=API_KEY, model=model)
 
     def generate_plan(self, game_state, hand_eval) -> dict:
         """
