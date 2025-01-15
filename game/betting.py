@@ -9,7 +9,9 @@ from data.types.pot_types import SidePot
 from .player import Player
 
 if TYPE_CHECKING:
+    from agents.agent import Agent
     from game.game import Game
+
 
 logger = logging.getLogger(__name__)
 
@@ -49,22 +51,21 @@ def betting_round(
     #! make this a separate function
     while not round_complete:
 
-        for player in active_players:
-            logging.info(f"---- {player.name} is active ----")
+        for agent in active_players:
+            logging.info(f"---- {agent.name} is active ----")
 
-            should_skip, reason = _should_skip_player(player, needs_to_act)
+            should_skip, reason = _should_skip_player(agent, needs_to_act)
             if should_skip:
-                logging.info(f"{player.name} {reason}, skipping")
+                logging.info(f"{agent.name} {reason}, skipping")
                 continue
 
-            # Get and process player action
-            # ? Validated this
-            action_decision = _get_action_and_amount(game, player)
+            # Get player action
+            action_decision = agent.decide_action(game)
 
             # Process the action
             #! this is a large function. Is it needed???
             pot, new_current_bet, new_last_raiser = _process_player_action(
-                player,
+                agent,
                 action_decision,
                 current_bet,
                 last_raiser,
@@ -82,17 +83,17 @@ def betting_round(
             if new_last_raiser:
                 last_raiser = new_last_raiser
                 # Reset acted_since_last_raise set
-                acted_since_last_raise = {player}
+                acted_since_last_raise = {agent}
                 # Everyone except the raiser needs to act again
                 needs_to_act = set(
                     p
                     for p in active_players
-                    if p != player and not p.folded and p.chips > 0
+                    if p != agent and not p.folded and p.chips > 0
                 )
             else:
                 # Add player to acted set and remove from needs_to_act
-                acted_since_last_raise.add(player)
-                needs_to_act.discard(player)
+                acted_since_last_raise.add(agent)
+                needs_to_act.discard(agent)
 
             # Check if betting round should continue
             #! make a helper function for this
@@ -179,19 +180,6 @@ def handle_betting_round(
     should_continue = active_count > 1
 
     return new_pot, side_pots, should_continue
-
-
-def _get_action_and_amount(game: "Game", player: Player) -> ActionResponse:
-    """Get and validate player action."""
-    try:
-        # Get raw action from player
-        action_response = player.decide_action(game)
-
-        return action_response
-
-    except Exception as e:
-        logger.error(f"Error getting player action: {str(e)}")
-        return ActionResponse(action_type=ActionType.CALL)
 
 
 def validate_bet_to_call(

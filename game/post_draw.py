@@ -1,7 +1,6 @@
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
-from data.states.game_state import GameState
 from data.types.pot_types import SidePot
 
 from . import betting
@@ -9,21 +8,18 @@ from .player import Player
 from .pot_manager import PotManager
 from .utils import log_chip_movements
 
+if TYPE_CHECKING:
+    from game.game import Game
+
 
 def handle_post_draw_betting(
-    players: List[Player],
-    pot: int,
-    dealer_index: int,
-    game_state: Optional[GameState] = None,
+    game: "Game",
 ) -> Tuple[int, Optional[List[SidePot]], bool]:
     """
     Handle the post-draw betting round.
 
     Args:
-        players: List of players in the game
-        pot: Current pot amount
-        dealer_index: Index of the dealer
-        game_state: Optional GameState object containing game state information
+        game: Game object
 
     Returns:
         Tuple containing:
@@ -31,19 +27,8 @@ def handle_post_draw_betting(
         - Optional[List[SidePot]]: List of side pots if any were created
         - bool: True if the game should continue to showdown
     """
-    game_state = betting.create_or_update_betting_state(
-        players=players,
-        pot=pot,
-        dealer_index=dealer_index,
-        game_state=game_state,
-        phase="post_draw",
-    )
 
-    return betting.handle_betting_round(
-        players=players,
-        pot=pot,
-        game_state=game_state,
-    )
+    return betting.handle_betting_round(game)
 
 
 def handle_showdown(
@@ -99,11 +84,17 @@ def handle_showdown(
         # If no side pots, create one main pot
         if not side_pots:
             pot_amount = int(pot_manager.pot)
-            side_pots = [SidePot(amount=pot_amount, eligible_players=[p.name for p in active_players])]
+            side_pots = [
+                SidePot(
+                    amount=pot_amount, eligible_players=[p.name for p in active_players]
+                )
+            ]
     except (AttributeError, TypeError):
         # Handle mock pot_manager by creating a single pot from initial chips
         total_pot = sum(initial_chips[p] - p.chips for p in players)
-        side_pots = [SidePot(amount=total_pot, eligible_players=[p.name for p in active_players])]
+        side_pots = [
+            SidePot(amount=total_pot, eligible_players=[p.name for p in active_players])
+        ]
 
     # Distribute each pot
     for pot in side_pots:

@@ -8,8 +8,8 @@ import numpy as np
 from dotenv import load_dotenv
 
 from agents.llm_client import LLMClient
-from agents.prompts import DECISION_PROMPT, DISCARD_PROMPT
-from agents.strategy_cards import StrategyManager
+from agents.llm_response_generator import LLMResponseGenerator
+from agents.prompts import DISCARD_PROMPT
 from agents.strategy_planner import StrategyPlanner
 from config import GameConfig
 from data.memory import ChromaMemoryStore
@@ -17,6 +17,7 @@ from data.model import Game
 from data.types.action_response import ActionResponse, ActionType
 from game.evaluator import HandEvaluation
 from game.player import Player
+from game.utils import get_min_bet, validate_bet_amount
 
 logger = logging.getLogger(__name__)
 
@@ -121,21 +122,6 @@ class Agent(Player):
             }
             self.action_values = {"fold": 0.0, "call": 0.0, "raise": 0.0}
 
-        # Initialize strategy manager
-        #! is this needed if we have strategy planner???
-        self.strategy_manager = StrategyManager(
-            strategy_style or "Calculated and Cautious"
-        )
-
-        # Set active cognitive modules
-        self.strategy_manager.active_modules.update(
-            {
-                "reasoning": use_reasoning,
-                "reflection": use_reflection,
-                "planning": use_planning,
-            }
-        )
-
     def close(self):
         """Clean up external resources explicitly.
 
@@ -170,9 +156,9 @@ class Agent(Player):
                 self.conversation_history.clear()
                 del self.conversation_history
 
-            if hasattr(self, "current_plan"):
-                self.current_plan = None
-                del self.current_plan
+            if hasattr(self, "strategy_planner"):
+                self.strategy_planner.current_plan = None
+                del self.strategy_planner.current_plan
 
             if hasattr(self, "opponent_stats"):
                 self.opponent_stats.clear()
@@ -252,177 +238,55 @@ class Agent(Player):
             pass  # Suppress errors during interpreter shutdown
 
     def decide_action(self, game: "Game") -> ActionResponse:
-        """Determine the next poker action based on the current game state and strategy.
-
-        This method serves as the main decision-making entry point that:
-        1. Evaluates the agent's current hand
-        2. Uses the StrategyPlanner if available for sophisticated decision-making
-        3. Falls back to basic LLM-based decision making if no planner is present
-
-        Args:
-            game: The current game state containing information about:
-                - Table cards
-                - Pot size
-                - Player positions
-                - Betting history
-                - Other relevant game information
-
-        Returns:
-            ActionResponse: A structured response containing:
-                - action: str - The chosen action ('fold', 'call', or 'raise')
-                - amount: int - The bet amount (if action is 'raise')
-
-        Note:
-            The decision-making process prioritizes using the StrategyPlanner
-            for more sophisticated, plan-based decisions. Only falls back to
-            basic LLM decision-making if the planner is disabled or unavailable.
-        """
+        """Determine the next poker action based on the current game state."""
         # Get hand evaluation before making decision
         hand_eval: HandEvaluation = self.hand.evaluate() if self.hand else None
 
-        if self.strategy_planner:
-            return self.strategy_planner.get_action(game, hand_eval)
+        # Plan strategy if strategy planner is enabled
+        if self.use_planning:
+            self.strategy_planner.plan_strategy(self, game, hand_eval)
 
-        # Fallback to basic decision making if no strategy planner
-        return self._basic_decision(game, hand_eval)
+        decided_action = self._decide_action(game, hand_eval)
 
-    def _basic_decision(
-        self, game: "Game", hand_eval: Optional[HandEvaluation] = None
+        return decided_action
+
+    def _decide_action(
+        self,
+        game: "Game",
+        hand_eval: Optional[HandEvaluation] = None,
     ) -> ActionResponse:
-        """Make a poker decision using LLM-based reasoning when strategy planner is unavailable.
-
-        This method serves as a fallback decision-making mechanism that:
-        1. Creates a decision prompt incorporating game state and hand evaluation
-        2. Queries the LLM with retry logic
-        3. Parses and validates the LLM's response
-        4. Converts the decision into a valid ActionResponse
-
-        Args:
-            game: Current game state including table cards, pot size, and betting information
-            hand_eval: Optional evaluation of the agent's current hand strength and potential
-
-        Returns:
-            ActionResponse: Contains the chosen action ('fold', 'call', or 'raise') and
-                bet amount if applicable
-
-        Note:
-            - Expected LLM response format is "DECISION: <action> [amount]"
-            - Valid actions are 'fold', 'call', or 'raise <amount>'
-            - Defaults to 'fold' on invalid responses or errors
-            - For 'raise' actions, amount must be a positive integer
-            - Invalid raise formats/amounts default to 'call'
-        """
+        """Execute an action based on current plan and game state."""
         try:
-            # Create decision prompt
-            prompt = self._create_decision_prompt(game, hand_eval)
-
-            # Add system message for strategy context
-            system_message = (
-                f"You are a {self.strategy_style} poker player making decisions."
+            current_plan = (
+                self.strategy_planner.current_plan if self.use_planning else None
             )
-
-            # Query LLM with retry logic
-            response = self.llm_client.query(
-                prompt=prompt, temperature=0.7, system_message=system_message
-            ).strip()  # Strip whitespace from full response
-
-            # Debug logging
-            logger.debug(f"Raw LLM response:\n{response}")
-
-            # Parse and validate response
-            if "DECISION:" not in response:
-                logger.warning(f"No DECISION: found in response: {response[:100]}...")
-                return ActionResponse(action_type=ActionType.FOLD)
-
-            decision_line = next(
-                line.strip() for line in response.split("\n") if "DECISION:" in line
+            # Delegate action creation to the strategy generator
+            response_str = LLMResponseGenerator.generate_action(
+                player=self,
+                game_state=game.get_state(),
+                current_plan=current_plan,
+                hand_eval=hand_eval,
             )
-            parts = decision_line.replace("DECISION:", "").strip().split()
-            action = parts[0].lower()
+            # Parse the raw response and validate the action
+            action = LLMResponseGenerator.parse_action_response(response_str)
 
-            # Validate action more strictly
-            if action not in ["fold", "call", "raise"]:
-                logger.warning(f"Invalid action '{action}' in response")
-                return ActionResponse(action_type=ActionType.FOLD)
+            # Validate raise amount if it's a raise action
+            if action.action_type == ActionType.RAISE:
+                min_bet = get_min_bet(game)
+                action.raise_amount = validate_bet_amount(action.raise_amount, min_bet)
 
-            # Handle raise amount more strictly
-            if action == "raise":
-                try:
-                    if len(parts) != 2:
-                        logger.warning("Raise command must have exactly one number")
-                        return ActionResponse(action_type=ActionType.CALL)
-
-                    amount = int(parts[1])
-                    if amount <= 0:
-                        logger.warning("Raise amount must be positive")
-                        return ActionResponse(action_type=ActionType.CALL)
-
-                    return ActionResponse(
-                        action_type=ActionType.RAISE, raise_amount=amount
-                    )
-                except ValueError:
-                    logger.warning("Invalid raise amount format")
-                    return ActionResponse(action_type=ActionType.CALL)
-
-            # Map string actions to ActionType enum
-            action_map = {
-                "fold": ActionType.FOLD,
-                "call": ActionType.CALL,
-            }
-
-            return ActionResponse(action_type=action_map[action])
+            logger.info(f"[Action] {action}")
+            return action
 
         except Exception as e:
-            logger.error(f"Error in decide_action: {str(e)}")
-            return ActionResponse(action_type=ActionType.FOLD)
+            logger.error(
+                f"[Action] Error executing action: {str(e)}, defaulting to call"
+            )
+            return ActionResponse(action_type=ActionType.CALL)
 
-    def _create_decision_prompt(
-        self, game: "Game", hand_eval: Optional[HandEvaluation] = None
-    ) -> str:
-        #! is this needed???
-        """Creates a formatted prompt for the LLM to make poker decisions.
-
-        Combines game state, hand evaluation, memory context, opponent modeling,
-        and agent personality traits into a structured prompt for decision-making.
-
-        Args:
-            game: Current game state including table cards, pot size, and player positions
-            hand_eval: Optional evaluation of the agent's current hand strength
-
-        Returns:
-            str: A formatted prompt string using the DECISION_PROMPT template
-
-        Note:
-            The prompt includes:
-            - Agent's strategy style and personality traits
-            - Current game state and hand evaluation
-            - Relevant historical memories of past hands/decisions
-            - Opponent behavior patterns (if opponent modeling is enabled)
-        """
-
-        # Get relevant memories
-        # memories = self.get_relevant_memories(self._create_memory_query(game))
-        # memory_info = (
-        #     "\n".join(f"- {m['text']}" for m in memories)
-        #     if memories
-        #     else "No relevant memories"
-        # )
-
-        # Format opponent info if available
-        # opponent_info = (
-        #     self._get_opponent_patterns()
-        #     if self.use_opponent_modeling
-        #     else "No opponent modeling"
-        # )
-
-        return DECISION_PROMPT.format(
-            strategy_style=self.strategy_style,
-            game_state=game.get_state(),
-            hand_eval=hand_eval,
-            memory_info=None,
-            opponent_info=None,
-            personality_traits=self.personality_traits,
-        )
+    def execute_action(self, action: ActionResponse) -> None:
+        """Execute an action based on action response."""
+        pass
 
     def get_message(self, game) -> str:
         """Generate table talk using LLM.

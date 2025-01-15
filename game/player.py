@@ -146,3 +146,13 @@ class Player:
     def get_state(self) -> PlayerState:
         """Get the current state of this player."""
         return PlayerState.from_player(self)
+
+    @property
+    def position(self) -> PlayerPosition:
+        """Get the player's current position at the table."""
+        return self._position
+
+    @position.setter 
+    def position(self, value: PlayerPosition):
+        """Set the player's position at the table."""
+        self._position = value
