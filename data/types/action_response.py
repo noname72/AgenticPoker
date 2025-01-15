@@ -2,7 +2,7 @@ import logging
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, validator
 
 logger = logging.getLogger(__name__)
 

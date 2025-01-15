@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Union, Optional
 
 from data.model import Game
 from game.player import Player
@@ -55,3 +55,29 @@ def get_min_bet(game: "Game") -> int:
 
     # For raises, minimum is double the current bet
     return game.current_bet * 2
+
+
+def validate_bet_amount(bet_amount: int, min_bet: int, max_bet: Optional[int] = None) -> int:
+    """Validate and adjust bet amounts against game rules.
+
+    Args:
+        bet_amount (int): The proposed bet amount to validate
+        min_bet (int): Minimum allowed bet size
+        max_bet (Optional[int]): Maximum allowed bet size, if any
+
+    Returns:
+        int: The validated bet amount, adjusted if needed
+    """
+    if bet_amount < min_bet:
+        logging.info(
+            f"Bet amount {bet_amount} below minimum {min_bet}, adjusting to min_bet"
+        )
+        return min_bet
+    
+    if max_bet is not None and bet_amount > max_bet:
+        logging.info(
+            f"Bet amount {bet_amount} above maximum {max_bet}, adjusting to max_bet"
+        )
+        return max_bet
+    
+    return bet_amount

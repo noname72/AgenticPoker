@@ -1,9 +1,7 @@
 from typing import Dict
 
-from pydantic import BaseSettings
 
-
-class GameConfig(BaseSettings):
+class GameConfig:
     #! how is this different with game.config.py?
     """Configuration for poker game settings."""
 

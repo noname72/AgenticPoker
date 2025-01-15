@@ -1,39 +1,7 @@
-"""
-Betting module for poker game implementation.
-
-This module handles all betting-related functionality including:
-- Managing betting rounds
-- Processing player actions (fold, call, raise)
-- Handling all-in situations and side pots
-- Collecting blinds and antes
-- Validating bets and raises
-
-The module provides functions to manage the complete betting workflow in a poker game,
-with support for:
-- Multiple betting rounds
-- Side pot calculations
-- Blind and ante collection
-- Bet validation and limits
-- Minimum raise enforcement
-- Last raiser restrictions
-- Detailed logging of all betting actions
-- Showdown situation detection
-
-Key features:
-- Enforces minimum raise amounts (double the last raise)
-- Prevents players from raising twice consecutively unless they're the last active player
-- Tracks and validates betting sequences
-- Handles partial calls and all-in situations
-- Creates side pots automatically when needed
-- Provides detailed logging of betting actions and game state
-- Supports customizable betting limits and raise restrictions
-"""
-
 import logging
-from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple, Union
+from typing import TYPE_CHECKING, List, Optional, Set, Tuple, Union
 
 from config import GameConfig
-from data.states.game_state import GameState
 from data.states.round_state import RoundPhase
 from data.types.action_response import ActionResponse, ActionType
 from data.types.pot_types import SidePot
@@ -41,7 +9,9 @@ from data.types.pot_types import SidePot
 from .player import Player
 
 if TYPE_CHECKING:
+    from agents.agent import Agent
     from game.game import Game
+
 
 logger = logging.getLogger(__name__)
 
@@ -81,22 +51,21 @@ def betting_round(
     #! make this a separate function
     while not round_complete:
 
-        for player in active_players:
-            logging.info(f"---- {player.name} is active ----")
+        for agent in active_players:
+            logging.info(f"---- {agent.name} is active ----")
 
-            should_skip, reason = _should_skip_player(player, needs_to_act)
+            should_skip, reason = _should_skip_player(agent, needs_to_act)
             if should_skip:
-                logging.info(f"{player.name} {reason}, skipping")
+                logging.info(f"{agent.name} {reason}, skipping")
                 continue
 
-            # Get and process player action
-            # ? Validated this
-            action_decision = _get_action_and_amount(game, player)  
+            # Get player action
+            action_decision = agent.decide_action(game)
 
             # Process the action
             #! this is a large function. Is it needed???
             pot, new_current_bet, new_last_raiser = _process_player_action(
-                player,
+                agent,
                 action_decision,
                 current_bet,
                 last_raiser,
@@ -114,17 +83,17 @@ def betting_round(
             if new_last_raiser:
                 last_raiser = new_last_raiser
                 # Reset acted_since_last_raise set
-                acted_since_last_raise = {player}
+                acted_since_last_raise = {agent}
                 # Everyone except the raiser needs to act again
                 needs_to_act = set(
                     p
                     for p in active_players
-                    if p != player and not p.folded and p.chips > 0
+                    if p != agent and not p.folded and p.chips > 0
                 )
             else:
                 # Add player to acted set and remove from needs_to_act
-                acted_since_last_raise.add(player)
-                needs_to_act.discard(player)
+                acted_since_last_raise.add(agent)
+                needs_to_act.discard(agent)
 
             # Check if betting round should continue
             #! make a helper function for this
@@ -213,21 +182,6 @@ def handle_betting_round(
     return new_pot, side_pots, should_continue
 
 
-def _get_action_and_amount(
-    game: "Game", player: Player
-) -> ActionResponse:
-    """Get and validate player action."""
-    try:
-        # Get raw action from player
-        action_response = player.decide_action(game)
-
-        return action_response
-
-    except Exception as e:
-        logger.error(f"Error getting player action: {str(e)}")
-        return ActionResponse(action_type=ActionType.CALL)
-
-
 def validate_bet_to_call(
     current_bet: int, player_bet: int, is_big_blind: bool = False
 ) -> int:
@@ -286,14 +240,13 @@ def _process_player_action(
     new_last_raiser = None
 
     # Get max raise settings from game state
-    max_raise_multiplier = game.config.max_raise_multiplier #! why not used
-    max_raises_per_round = game.config.max_raises_per_round #! why not used
+    max_raise_multiplier = game.config.max_raise_multiplier  #! why not used
+    max_raises_per_round = game.config.max_raises_per_round  #! why not used
     raise_count = game.round_state.raise_count if game.round_state else 0
 
     # Calculate how much player needs to call, accounting for big blind position
     is_big_blind = player.is_big_blind if hasattr(player, "is_big_blind") else False
     to_call = validate_bet_to_call(current_bet, player.bet, is_big_blind)
-
 
     # Log initial state with active player context
     #! move to betting logger
@@ -366,7 +319,9 @@ def _process_player_action(
                     game.round_state.raise_count += 1
 
             status = " (all in)" if player.chips == 0 else ""
-            logging.info(f"{player.name} raises to ${action_decision.raise_amount}{status}")
+            logging.info(
+                f"{player.name} raises to ${action_decision.raise_amount}{status}"
+            )
         else:
             # Invalid raise amount, convert to call
             logging.info(

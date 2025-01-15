@@ -1,5 +1,4 @@
 import logging
-from typing import TYPE_CHECKING
 
 from data.states.player_state import PlayerState
 from data.types.player_types import PlayerPosition
@@ -30,6 +29,7 @@ class Player:
     folded: bool
     hand: Hand
     position: PlayerPosition
+    is_all_in: bool
 
     def __init__(self, name: str, chips: int = 1000) -> None:
         """
@@ -55,9 +55,10 @@ class Player:
         self.folded = False
         self.hand = Hand()
         self.position = PlayerPosition.OTHER
-        self.is_all_in = False
+        self.is_all_in = False  #! is this being set appropriately?
 
     def place_bet(self, amount: int) -> int:
+        #! is this being used? Pass on game and player makes the bet?
         """
         Place a bet, ensuring it doesn't exceed available chips.
 
@@ -118,6 +119,7 @@ class Player:
         logging.debug(f"{self.name}'s bet reset from {previous_bet} to 0")
 
     def reset_for_new_round(self) -> None:
+        #! is this being used?
         """Reset player state for a new round."""
         self.bet = 0
         self.folded = False
@@ -145,31 +147,12 @@ class Player:
         """Get the current state of this player."""
         return PlayerState.from_player(self)
 
-    def update_from_state(self, state: PlayerState) -> None:
-        #! do I really need this???
-        """Update this player's attributes from a PlayerState."""
-        self.name = state.name
-        self.chips = state.chips
-        self.bet = state.bet
-        self.folded = state.folded
+    @property
+    def position(self) -> PlayerPosition:
+        """Get the player's current position at the table."""
+        return self._position
 
-        # Update position and role attributes
-        self.seat_number = state.seat_number
-        self.is_dealer = state.is_dealer
-        self.is_small_blind = state.is_small_blind
-        self.is_big_blind = state.is_big_blind
-
-        # Update betting state
-        self.total_bet_this_round = state.total_bet_this_round
-        self.last_action = state.last_action
-        self.last_raise_amount = state.last_raise_amount
-
-        # Update game status
-        self.is_all_in = state.is_all_in
-        self.chips_at_start_of_hand = state.chips_at_start_of_hand
-
-        # Update historical stats
-        self.hands_played = state.hands_played
-        self.hands_won = state.hands_won
-        self.total_winnings = state.total_winnings
-        self.biggest_pot_won = state.biggest_pot_won
+    @position.setter 
+    def position(self, value: PlayerPosition):
+        """Set the player's position at the table."""
+        self._position = value

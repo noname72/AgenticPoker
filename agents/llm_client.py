@@ -1,13 +1,20 @@
 import logging
+import os
 import time
 from typing import Any, Dict, Optional, Union
 
+from dotenv import load_dotenv
 from openai import AsyncOpenAI, OpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from exceptions import LLMError
 
 logger = logging.getLogger(__name__)
+
+# Load environment variables from .env file
+load_dotenv()
+
+API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 
 class LLMClient:

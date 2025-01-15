@@ -173,12 +173,8 @@ class AgenticPoker:
             draw.handle_draw_phase(players=self.players, deck=self.deck)
 
             # Post-draw betting round
-            game_state = GameState.from_game(self)
             new_pot, side_pots, should_continue = post_draw.handle_post_draw_betting(
-                players=self.players,
-                pot=self.pot_manager.pot,
-                dealer_index=self.dealer_index,
-                game_state=game_state,
+                self
             )
 
             # Update pot manager with new pot and side pots from post-draw betting
@@ -454,3 +450,14 @@ class AgenticPoker:
 
     def get_state(self) -> GameState:
         return GameState.from_game(self)
+
+    def _get_position_name(self, position: int) -> str:
+        """Convert numeric position to descriptive name."""
+        if position == self.dealer_index:
+            return "Dealer"
+        elif position == (self.dealer_index + 1) % len(self.players):
+            return "Small Blind"
+        elif position == (self.dealer_index + 2) % len(self.players):
+            return "Big Blind"
+        else:
+            return f"Position {position}"
