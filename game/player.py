@@ -1,7 +1,10 @@
 import logging
+from typing import List
 
 from data.states.player_state import PlayerState
 from data.types.player_types import PlayerPosition
+from game.evaluator import evaluate_texas_holdem_hand, HandEvaluation
+from game.card import Card
 
 from .hand import Hand
 
@@ -156,3 +159,38 @@ class Player:
     def position(self, value: PlayerPosition):
         """Set the player's position at the table."""
         self._position = value
+
+    def take_action(self, action: str, amount: int = 0) -> None:
+        """
+        Perform a player action (fold, call, raise) with optional bet amount.
+
+        Args:
+            action (str): The action to perform ('fold', 'call', 'raise')
+            amount (int, optional): The amount to bet if raising. Defaults to 0.
+
+        Raises:
+            ValueError: If the action is invalid or amount is negative
+        """
+        if action not in ["fold", "call", "raise"]:
+            raise ValueError(f"Invalid action: {action}")
+        if amount < 0:
+            raise ValueError("Amount cannot be negative")
+
+        if action == "fold":
+            self.fold()
+        elif action == "call":
+            self.place_bet(amount)
+        elif action == "raise":
+            self.place_bet(amount)
+
+    def evaluate_hand(self, community_cards: List[Card]) -> HandEvaluation:
+        """
+        Evaluate the player's hand in Texas Hold'em using community cards.
+
+        Args:
+            community_cards (List[Card]): The community cards on the table
+
+        Returns:
+            HandEvaluation: The evaluation of the player's best hand
+        """
+        return evaluate_texas_holdem_hand(self.hand.cards, community_cards)

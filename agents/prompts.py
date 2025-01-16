@@ -260,3 +260,40 @@ MESSAGE: [amused] The odds of this working get better every orbit
 INTENT: Create doubt about bluffing frequency
 CONFIDENCE: 8
 """
+
+
+# Add a new prompt for Texas Holdem specific decision making
+# Variables:
+# - strategy_style: Agent's current strategy style
+# - game_state: Current game situation including cards, bets, etc.
+# - hand_eval: Current hand evaluation
+# - community_cards: Community cards on the table
+TEXAS_HOLDEM_DECISION_PROMPT = """You are a {strategy_style} Texas Holdem poker player.
+
+Current game state:
+{game_state}
+
+Hand Evaluation:
+{hand_eval}
+
+Community Cards:
+{community_cards}
+
+You must respond with EXACTLY ONE of these formats:
+1. DECISION: fold
+2. DECISION: call
+3. DECISION: raise NUMBER
+
+Examples of valid responses:
+DECISION: fold
+DECISION: call
+DECISION: raise 200
+
+Rules:
+- Use ONLY the exact formats above
+- For raise, include only a number (no words/explanations)
+- Do not include any other text or explanations
+- NUMBER must be a positive integer
+
+What is your decision?
+"""

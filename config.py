@@ -2,7 +2,6 @@ from typing import Dict
 
 
 class GameConfig:
-    #! how is this different with game.config.py?
     """Configuration for poker game settings."""
 
     # Database settings
@@ -26,6 +25,14 @@ class GameConfig:
     # Betting limits
     MIN_RAISE: int = 20
     MAX_RAISE_MULTIPLIER: int = 4  # max raise = current_bet * multiplier
+
+    # Texas Holdem specific settings
+    TEXAS_HOLDEM_STARTING_CHIPS: int = 2000
+    TEXAS_HOLDEM_SMALL_BLIND: int = 25
+    TEXAS_HOLDEM_BIG_BLIND: int = 50
+    TEXAS_HOLDEM_ANTE: int = 5
+    TEXAS_HOLDEM_MIN_RAISE: int = 50
+    TEXAS_HOLDEM_MAX_RAISE_MULTIPLIER: int = 5
 
     class Config:
         env_file = ".env"

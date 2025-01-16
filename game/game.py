@@ -15,7 +15,7 @@ from .utils import log_chip_movements
 
 class AgenticPoker:
     """
-    A comprehensive 5-card draw poker game manager that handles game flow and player interactions.
+    A comprehensive poker game manager that handles game flow and player interactions.
 
     This class manages the complete lifecycle of a poker game, including:
     - Player management and chip tracking
@@ -25,7 +25,7 @@ class AgenticPoker:
     - Winner determination and chip distribution
     - Game state tracking and logging
 
-    The game follows standard 5-card draw poker rules with configurable betting structures
+    The game follows standard poker rules with configurable betting structures
     including blinds, antes, and various betting limits.
 
     Attributes:
@@ -155,44 +155,111 @@ class AgenticPoker:
 
             self.start_round()
 
-            # Pre-draw betting round
-            logging.info(f"====== Pre-draw betting ======\n")
-            new_pot, side_pots, should_continue = pre_draw.handle_pre_draw_betting(self)
+            if self.config.game_type == "5-card-draw":
+                # Pre-draw betting round
+                logging.info(f"====== Pre-draw betting ======\n")
+                new_pot, side_pots, should_continue = pre_draw.handle_pre_draw_betting(self)
 
-            # Update pot manager with new pot and side pots
-            if side_pots:
-                self.pot_manager.side_pots = side_pots
-            self.pot_manager.pot = new_pot
+                # Update pot manager with new pot and side pots
+                if side_pots:
+                    self.pot_manager.side_pots = side_pots
+                self.pot_manager.pot = new_pot
 
-            if not should_continue:
-                self._reset_round()
-                continue
+                if not should_continue:
+                    self._reset_round()
+                    continue
 
-            # Draw phase
-            logging.info(f"====== Draw Phase ======\n")
-            draw.handle_draw_phase(players=self.players, deck=self.deck)
+                # Draw phase
+                logging.info(f"====== Draw Phase ======\n")
+                draw.handle_draw_phase(players=self.players, deck=self.deck)
 
-            # Post-draw betting round
-            new_pot, side_pots, should_continue = post_draw.handle_post_draw_betting(
-                self
-            )
+                # Post-draw betting round
+                new_pot, side_pots, should_continue = post_draw.handle_post_draw_betting(
+                    self
+                )
 
-            # Update pot manager with new pot and side pots from post-draw betting
-            if side_pots:
-                self.pot_manager.side_pots = side_pots
-            self.pot_manager.pot = new_pot
+                # Update pot manager with new pot and side pots from post-draw betting
+                if side_pots:
+                    self.pot_manager.side_pots = side_pots
+                self.pot_manager.pot = new_pot
 
-            if not should_continue:
-                self._reset_round()
-                continue
+                if not should_continue:
+                    self._reset_round()
+                    continue
 
-            # Showdown
-            logging.info(f"====== Showdown ======\n")
-            post_draw.handle_showdown(
-                players=self.players,
-                initial_chips=initial_chips,
-                pot_manager=self.pot_manager,
-            )
+                # Showdown
+                logging.info(f"====== Showdown ======\n")
+                post_draw.handle_showdown(
+                    players=self.players,
+                    initial_chips=initial_chips,
+                    pot_manager=self.pot_manager,
+                )
+
+            elif self.config.game_type == "texas-holdem":
+                # Pre-flop betting round
+                logging.info(f"====== Pre-flop betting ======\n")
+                new_pot, side_pots, should_continue = betting.handle_betting_round(self)
+
+                # Update pot manager with new pot and side pots
+                if side_pots:
+                    self.pot_manager.side_pots = side_pots
+                self.pot_manager.pot = new_pot
+
+                if not should_continue:
+                    self._reset_round()
+                    continue
+
+                # Flop phase
+                logging.info(f"====== Flop Phase ======\n")
+                self._deal_community_cards(3)
+
+                # Post-flop betting round
+                new_pot, side_pots, should_continue = betting.handle_betting_round(self)
+
+                # Update pot manager with new pot and side pots from post-flop betting
+                if side_pots:
+                    self.pot_manager.side_pots = side_pots
+                self.pot_manager.pot = new_pot
+
+                if not should_continue:
+                    self._reset_round()
+                    continue
+
+                # Turn phase
+                logging.info(f"====== Turn Phase ======\n")
+                self._deal_community_cards(1)
+
+                # Post-turn betting round
+                new_pot, side_pots, should_continue = betting.handle_betting_round(self)
+
+                # Update pot manager with new pot and side pots from post-turn betting
+                if side_pots:
+                    self.pot_manager.side_pots = side_pots
+                self.pot_manager.pot = new_pot
+
+                if not should_continue:
+                    self._reset_round()
+                    continue
+
+                # River phase
+                logging.info(f"====== River Phase ======\n")
+                self._deal_community_cards(1)
+
+                # Post-river betting round
+                new_pot, side_pots, should_continue = betting.handle_betting_round(self)
+
+                # Update pot manager with new pot and side pots from post-river betting
+                if side_pots:
+                    self.pot_manager.side_pots = side_pots
+                self.pot_manager.pot = new_pot
+
+                if not should_continue:
+                    self._reset_round()
+                    continue
+
+                # Showdown
+                logging.info(f"====== Showdown ======\n")
+                self._handle_showdown(initial_chips)
 
             self._reset_round()
 
@@ -442,11 +509,24 @@ class AgenticPoker:
 
     def _deal_cards(self) -> None:
         """Deal new hands to all players."""
+        if self.config.game_type == "5-card-draw":
+            for player in self.players:
+                player.bet = 0
+                player.folded = False
+                player.hand = Hand()
+                player.hand.add_cards(self.deck.deal(5))
+        elif self.config.game_type == "texas-holdem":
+            for player in self.players:
+                player.bet = 0
+                player.folded = False
+                player.hand = Hand()
+                player.hand.add_cards(self.deck.deal(2))
+
+    def _deal_community_cards(self, num_cards: int) -> None:
+        """Deal community cards for Texas Holdem."""
+        community_cards = self.deck.deal(num_cards)
         for player in self.players:
-            player.bet = 0
-            player.folded = False
-            player.hand = Hand()
-            player.hand.add_cards(self.deck.deal(5))
+            player.hand.add_cards(community_cards)
 
     def get_state(self) -> GameState:
         return GameState.from_game(self)
@@ -461,3 +541,23 @@ class AgenticPoker:
             return "Big Blind"
         else:
             return f"Position {position}"
+
+    def _handle_showdown(self, initial_chips: Dict[Player, int]) -> None:
+        """Handle the showdown phase for Texas Holdem."""
+        # Evaluate hands and determine the winner
+        best_hand = None
+        best_player = None
+        for player in self.players:
+            if not player.folded:
+                hand_eval = player.hand.evaluate()
+                if not best_hand or hand_eval > best_hand:
+                    best_hand = hand_eval
+                    best_player = player
+
+        # Distribute the pot to the winner
+        if best_player:
+            best_player.chips += self.pot_manager.pot
+            logging.info(f"{best_player.name} wins the pot of ${self.pot_manager.pot} with {best_hand.description}")
+
+        # Log chip movements
+        self._log_chip_movements(initial_chips)

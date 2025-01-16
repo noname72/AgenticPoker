@@ -157,3 +157,48 @@ def evaluate_hand(cards: List[Card]) -> HandEvaluation:
 
     else:  # High card
         return (10, ranks, f"High Card, {ranks[0]}")
+
+
+def evaluate_texas_holdem_hand(hole_cards: List[Card], community_cards: List[Card]) -> HandEvaluation:
+    """
+    Evaluate a Texas Hold'em hand and return its ranking, tiebreakers, and description.
+
+    Args:
+        hole_cards (List[Card]): A list of exactly 2 Card objects representing the player's hole cards.
+        community_cards (List[Card]): A list of exactly 5 Card objects representing the community cards.
+
+    Returns:
+        HandEvaluation: A named tuple containing:
+            - int: Hand rank from 1-10 (1 being best, 10 being worst)
+            - List[int]: Tiebreaker values in descending order of importance
+            - str: Human readable description of the hand
+
+    Raises:
+        ValueError: If the hole cards or community cards don't contain the correct number of cards
+
+    Example:
+        >>> hole_cards = [Card('A', '♠'), Card('K', '♠')]
+        >>> community_cards = [Card('Q', '♠'), Card('J', '♠'), Card('10', '♠'), Card('2', '♦'), Card('3', '♣')]
+        >>> evaluate_texas_holdem_hand(hole_cards, community_cards)
+        (1, [14, 13, 12, 11, 10], 'Royal Flush')
+    """
+    if len(hole_cards) != 2:
+        raise ValueError("Hole cards must contain exactly 2 cards")
+    if len(community_cards) != 5:
+        raise ValueError("Community cards must contain exactly 5 cards")
+
+    # Combine hole cards and community cards
+    all_cards = hole_cards + community_cards
+
+    # Generate all possible 5-card combinations
+    from itertools import combinations
+    possible_hands = combinations(all_cards, 5)
+
+    # Evaluate each combination and keep the best one
+    best_hand = None
+    for hand in possible_hands:
+        hand_evaluation = evaluate_hand(list(hand))
+        if not best_hand or hand_evaluation.rank < best_hand.rank:
+            best_hand = hand_evaluation
+
+    return best_hand
