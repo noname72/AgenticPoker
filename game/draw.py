@@ -1,7 +1,7 @@
-import logging
 from typing import List
 
 from exceptions import InvalidActionError, PokerGameError
+from loggers.draw_logger import DrawLogger
 
 from .deck import Deck
 from .player import Player
@@ -46,13 +46,10 @@ def handle_draw_phase(players: List[Player], deck: Deck) -> None:
     if deck.needs_reshuffle(max_possible_draws):
         # For testing purposes, don't actually shuffle if we have exactly the cards we need
         if len(deck.cards) == max_possible_draws:
-            logging.info(
-                f"Pre-emptive reshuffle skipped - have exact number of cards needed ({max_possible_draws})"
-            )
+            DrawLogger.log_preemptive_reshuffle(max_possible_draws, skip=True)
         else:
-            logging.info(
-                f"Pre-emptive reshuffle: Need up to {max_possible_draws} cards, "
-                f"only {deck.remaining_cards()} remaining"
+            DrawLogger.log_preemptive_reshuffle(
+                max_possible_draws, deck.remaining_cards()
             )
             deck.reshuffle_all()
 
@@ -67,29 +64,24 @@ def handle_draw_phase(players: List[Player], deck: Deck) -> None:
                 discards = player.decide_draw()
                 # Validate discard count
                 if len(discards) > 5:
-                    logging.warning(
-                        f"{player.name} tried to discard {len(discards)} cards. Maximum is 5."
-                    )
+                    DrawLogger.log_discard_validation_error(player.name, len(discards))
                     discards = discards[:5]  # Limit to 5 cards
 
                 # Validate discard indexes
                 if any(idx < 0 or idx >= 5 for idx in discards):
-                    logging.warning(f"{player.name} invalid discard indexes")
-                    logging.info(f"{player.name} keeping current hand")
+                    DrawLogger.log_invalid_indexes(player.name)
                     discards = None
                     continue
 
             except Exception as e:
-                logging.error(f"Error in draw phase for {player.name}: {e}")
+                DrawLogger.log_draw_error(player.name, e)
                 continue
         else:
-            logging.info(
-                "Non-AI player or player without decision method; keeping current hand"
-            )
+            DrawLogger.log_non_ai_player()
 
         # Handle discards and drawing new cards
         if discards:
-            logging.info(f"Draw phase: {player.name} discarding {len(discards)} cards")
+            DrawLogger.log_discard_action(player.name, len(discards))
 
             # Remove discarded cards and add to deck's discard pile
             discarded = [player.hand.cards[idx] for idx in discards]
@@ -100,13 +92,10 @@ def handle_draw_phase(players: List[Player], deck: Deck) -> None:
             if deck.needs_reshuffle(len(discards)):
                 # For testing purposes, don't shuffle if we have exactly the cards we need
                 if len(deck.cards) == len(discards):
-                    logging.info(
-                        f"Reshuffle skipped - have exact number of cards needed ({len(discards)})"
-                    )
+                    DrawLogger.log_reshuffle_status(len(discards), 0, skip=True)
                 else:
-                    logging.info(
-                        f"Deck low on cards ({deck.remaining_cards()} remaining). "
-                        f"Need {len(discards)} cards. Reshuffling..."
+                    DrawLogger.log_reshuffle_status(
+                        len(discards), deck.remaining_cards()
                     )
                     deck.reshuffle_all()
 
@@ -114,12 +103,10 @@ def handle_draw_phase(players: List[Player], deck: Deck) -> None:
             new_cards = deck.deal(len(discards))
             player.hand.add_cards(new_cards)
 
-            logging.info(
-                f"Deck status after {player.name}'s draw: {deck.remaining_cards()} cards remaining"
-            )
+            DrawLogger.log_deck_status(player.name, deck.remaining_cards())
         else:
             # Different message for explicit no-discard decision vs no decision method
             if discards is not None and hasattr(player, "decide_draw"):
-                logging.info("No cards discarded; keeping current hand")
+                DrawLogger.log_keep_hand(player.name)
             else:
-                logging.info(f"{player.name} keeping current hand")
+                DrawLogger.log_keep_hand(player.name, explicit_decision=False)

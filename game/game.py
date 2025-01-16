@@ -5,7 +5,7 @@ from data.states.game_state import GameState
 from data.states.round_state import RoundState
 from game.config import GameConfig
 
-from . import betting, draw, post_draw, pre_draw
+from . import betting, draw, post_draw
 from .deck import Deck
 from .hand import Hand
 from .player import Player
@@ -157,7 +157,7 @@ class AgenticPoker:
 
             # Pre-draw betting round
             logging.info(f"====== Pre-draw betting ======\n")
-            new_pot, side_pots, should_continue = pre_draw.handle_pre_draw_betting(self)
+            new_pot, side_pots, should_continue = betting.handle_betting_round(self)
 
             # Update pot manager with new pot and side pots
             if side_pots:

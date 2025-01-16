@@ -1,12 +1,9 @@
-import logging
 import time
 from typing import TYPE_CHECKING, Optional
 
-from data.types.metrics import GameMetrics, SidePotMetrics
 from data.types.plan import Approach, BetSizing, Plan
-from data.types.player_types import PlayerPosition
 from game.evaluator import HandEvaluation
-from game.utils import get_min_bet
+from loggers.strategy_logger import StrategyLogger
 
 from .llm_response_generator import LLMResponseGenerator
 
@@ -14,8 +11,6 @@ if TYPE_CHECKING:
     from game.game import Game
     from game.player import Player
 
-
-logger = logging.getLogger(__name__)
 
 #! move to config
 DEFAULT_PLAN_DURATION = 30.0
@@ -60,9 +55,7 @@ class StrategyPlanner:
         """Generate or update the agent's strategic plan based on current game state."""
         try:
             if self.current_plan and not self.requires_replanning(game, player):
-                logger.info(
-                    f"[Strategy] Reusing existing plan: {self.current_plan.approach}"
-                )
+                StrategyLogger.log_plan_reuse(self.current_plan)
                 return  # Early return when reusing existing plan
 
             # Use the strategy generator to get new plan data
@@ -72,13 +65,10 @@ class StrategyPlanner:
                 hand_eval=hand_eval,
             )
             self.current_plan = self._create_plan_from_response(plan_data)
-            logger.info(
-                f"[Strategy] New Plan: approach={self.current_plan.approach} "
-                f"reasoning='{self.current_plan.reasoning}'"
-            )
+            StrategyLogger.log_new_plan(self.current_plan)
 
         except Exception as e:
-            logger.error(f"Error generating plan: {str(e)}")
+            StrategyLogger.log_plan_error(e)
             self.current_plan = self._create_default_plan()
 
     def _create_default_plan(self) -> Plan:
@@ -119,25 +109,27 @@ class StrategyPlanner:
         )
 
     def requires_replanning(self, game: "Game", player: "Player") -> bool:
-        """Determine if current game state requires a new strategic plan."""
+        """Determine if current game state requires a new strategic plan.
+
+        TODO: Better check for replanning conditions
+        """
         # Always replan if no current plan exists
         if not self.current_plan:
-            logger.debug("[Planning] No current plan exists - replanning required")
+            StrategyLogger.log_planning_check(
+                "No current plan exists - replanning required"
+            )
             return True
 
         try:
             # Check if plan has expired
             if self.current_plan.is_expired():
-                logger.debug(
-                    "[Planning] Current plan has expired - replanning required"
+                StrategyLogger.log_planning_check(
+                    "Current plan has expired - replanning required"
                 )
                 return True
 
             return False
 
         except Exception as e:
-            logger.error(
-                "[Planning] Error checking replan conditions: %s. Keeping current plan.",
-                str(e),
-            )
+            StrategyLogger.log_replan_error(e)
             return False  # Safe fallback - keep current plan on error

@@ -1,4 +1,3 @@
-import logging
 import os
 import time
 from typing import Any, Dict, Optional, Union
@@ -8,8 +7,7 @@ from openai import AsyncOpenAI, OpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from exceptions import LLMError
-
-logger = logging.getLogger(__name__)
+from loggers.llm_logger import LLMLogger
 
 # Load environment variables from .env file
 load_dotenv()
@@ -79,16 +77,19 @@ class LLMClient:
         """
         # Input validation
         if not prompt:
+            LLMLogger.log_input_validation_error("prompt", prompt)
             raise ValueError("Prompt cannot be empty")
         if not 0 <= temperature <= 1:
+            LLMLogger.log_input_validation_error("temperature", temperature)
             raise ValueError("Temperature must be between 0 and 1")
         if max_tokens < 1:
+            LLMLogger.log_input_validation_error("max_tokens", max_tokens)
             raise ValueError("max_tokens must be positive")
 
         try:
             return self._execute_query(prompt, temperature, max_tokens, system_message)
         except Exception as e:
-            # Convert to LLMError after all retries fail
+            LLMLogger.log_query_error(e, "synchronous")
             raise LLMError(f"Query failed after retries: {str(e)}")
 
     @retry(
@@ -125,16 +126,20 @@ class LLMClient:
             self.metrics["query_times"].append(duration)
             self.metrics["total_tokens"] += response.usage.total_tokens
 
+            LLMLogger.log_metrics_update(duration, response.usage.total_tokens)
             return response.choices[0].message.content
 
         except Exception as e:
             # Only track retry count here
             self.metrics["retry_count"] += 1
-            logger.error(f"LLM query attempt failed: {str(e)}")
+            LLMLogger.log_query_error(e)
 
             # Track failed_queries only on last retry
             if self.metrics["retry_count"] >= self.max_retries:
                 self.metrics["failed_queries"] += 1
+                LLMLogger.log_metrics_update(
+                    time.time() - start_time, 0, success=False, error=e
+                )
 
             raise  # Let tenacity handle the retry
 
@@ -167,11 +172,15 @@ class LLMClient:
             self.metrics["query_times"].append(duration)
             self.metrics["total_tokens"] += response.usage.total_tokens
 
+            LLMLogger.log_metrics_update(duration, response.usage.total_tokens)
             return response.choices[0].message.content
 
         except Exception as e:
             self.metrics["failed_queries"] += 1
-            logger.error(f"Async LLM query failed: {str(e)}")
+            LLMLogger.log_async_query_error(e)
+            LLMLogger.log_metrics_update(
+                time.time() - start_time, 0, success=False, error=e
+            )
             raise
 
     def get_metrics(self) -> Dict[str, Union[int, float, list]]:
