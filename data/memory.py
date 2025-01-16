@@ -1,4 +1,3 @@
-import logging
 import os
 import shutil
 import tempfile
@@ -10,7 +9,7 @@ import chromadb
 from chromadb.config import Settings
 from chromadb.errors import InvalidCollectionException
 
-logger = logging.getLogger(__name__)
+from loggers.memory_logger import MemoryLogger
 
 try:
     # Python 3.10+ type annotation
@@ -91,9 +90,7 @@ class ChromaMemoryStore(MemoryStore):
                     shutil.rmtree(self.persist_dir)
                     time.sleep(0.2)  # Give OS time to release handles
             except PermissionError:
-                logger.warning(
-                    f"Could not remove existing directory: {self.persist_dir}"
-                )
+                MemoryLogger.log_cleanup_warning(self.persist_dir)
                 # Try to clean up contents instead
                 for item in os.listdir(self.persist_dir):
                     try:
@@ -103,13 +100,13 @@ class ChromaMemoryStore(MemoryStore):
                         elif os.path.isdir(path):
                             shutil.rmtree(path)
                     except Exception as e:
-                        logger.warning(f"Could not remove {path}: {e}")
+                        MemoryLogger.log_cleanup_item_error(path, e)
 
         # Create directory
         try:
             os.makedirs(self.persist_dir, exist_ok=True)
         except Exception as e:
-            logger.error(f"Failed to create directory {self.persist_dir}: {e}")
+            MemoryLogger.log_init_error(e, self.persist_dir)
             raise
 
         # Sanitize collection name and ensure uniqueness
@@ -124,9 +121,7 @@ class ChromaMemoryStore(MemoryStore):
                 break
             except Exception as e:
                 if attempt == max_retries - 1:
-                    logger.error(
-                        f"Failed to initialize ChromaDB after {max_retries} attempts: {str(e)}"
-                    )
+                    MemoryLogger.log_chroma_init_error(e)
                     raise
                 time.sleep(1)  # Wait before retry
 
@@ -157,15 +152,13 @@ class ChromaMemoryStore(MemoryStore):
                 try:
                     # Try to get existing collection
                     self.collection = self.client.get_collection(name=self.safe_name)
-                    logger.info(f"Using existing collection: {self.safe_name}")
+                    MemoryLogger.log_collection_status(self.safe_name)
 
                     # Verify collection is working
                     try:
                         self.collection.count()
-                        break  # Collection is working
                     except Exception:
-                        # Collection exists but may be corrupted
-                        logger.warning(
+                        MemoryLogger.log_collection_warning(
                             "Collection exists but may be corrupted, recreating..."
                         )
                         self.client.delete_collection(name=self.safe_name)
@@ -176,7 +169,7 @@ class ChromaMemoryStore(MemoryStore):
                     self.collection = self.client.create_collection(
                         name=self.safe_name, metadata={"hnsw:space": "cosine"}
                     )
-                    logger.info(f"Created new collection: {self.safe_name}")
+                    MemoryLogger.log_collection_status(self.safe_name, is_new=True)
                     break
 
                 except Exception as e:
@@ -191,11 +184,11 @@ class ChromaMemoryStore(MemoryStore):
                     max_id = max(int(id.split("_")[1]) for id in results["ids"])
                     self.id_counter = max_id
             except Exception as e:
-                logger.warning(f"Could not determine max ID: {e}")
+                MemoryLogger.log_max_id_error(e)
                 self.id_counter = 0
 
         except Exception as e:
-            logger.error(f"Failed to initialize ChromaDB: {str(e)}")
+            MemoryLogger.log_chroma_init_error(e)
             raise
 
     def add_memory(self, text: str, metadata: Dict[str, Any]) -> None:
@@ -230,9 +223,7 @@ class ChromaMemoryStore(MemoryStore):
 
             except Exception as e:
                 if attempt == max_retries - 1:
-                    logger.error(
-                        f"Failed to add memory after {max_retries} attempts: {str(e)}"
-                    )
+                    MemoryLogger.log_memory_add_error(e, max_retries)
                     raise
                 time.sleep(0.5)
 
@@ -244,7 +235,7 @@ class ChromaMemoryStore(MemoryStore):
         for attempt in range(max_retries):
             try:
                 if self.collection is None:
-                    logger.warning("Collection is None, reinitializing...")
+                    MemoryLogger.log_collection_reinit()
                     self._initialize_client()
 
                 # Handle dictionary queries by converting to string
@@ -269,7 +260,7 @@ class ChromaMemoryStore(MemoryStore):
 
                 # Check if we got valid results
                 if not results or not results["ids"][0]:
-                    logger.warning(f"No results found for query: {query}")
+                    MemoryLogger.log_query_warning(query)
                     return []
 
                 memories = []
@@ -284,18 +275,16 @@ class ChromaMemoryStore(MemoryStore):
                 return memories
 
             except (InvalidCollectionException, AttributeError) as e:
-                logger.warning(
-                    f"Collection error during query (attempt {attempt + 1}): {str(e)}"
-                )
+                MemoryLogger.log_collection_error(e, attempt)
                 if attempt < max_retries - 1:
                     self._initialize_client()
                     time.sleep(0.2)  # Give time for initialization
                 else:
-                    logger.error("Failed to recover collection after multiple attempts")
+                    MemoryLogger.log_collection_recovery_error()
                     return []
 
             except Exception as e:
-                logger.error(f"Error retrieving memories: {str(e)}")
+                MemoryLogger.log_memory_retrieval_error(e)
                 return []
 
     def clear(self) -> None:
@@ -310,10 +299,9 @@ class ChromaMemoryStore(MemoryStore):
                         self.collection.delete(ids=results["ids"])
                     self.id_counter = 0
                 except Exception as e:
-                    if "no such table" not in str(e):  # Ignore if table already gone
-                        logger.error(f"Failed to clear memories: {str(e)}")
+                    MemoryLogger.log_clear_error(e)
         except Exception as e:
-            logger.error(f"Failed to clear memories: {str(e)}")
+            MemoryLogger.log_clear_error(e)
 
     def close(self) -> None:
         """Close the Chroma client connection and cleanup resources."""
@@ -326,10 +314,8 @@ class ChromaMemoryStore(MemoryStore):
                     # Don't reset the client on close to maintain persistence
                     self.client = None
                 except Exception as e:
-                    if "Python is likely shutting down" not in str(e):
-                        logger.warning(f"Error closing client: {str(e)}")
+                    MemoryLogger.log_client_warning(e)
 
-            logger.info(f"Closed ChromaDB connection for {self.safe_name}")
+            MemoryLogger.log_connection_close(self.safe_name)
         except Exception as e:
-            if "Python is likely shutting down" not in str(e):
-                logger.error(f"Error closing ChromaDB connection: {str(e)}")
+            MemoryLogger.log_close_error(e)
