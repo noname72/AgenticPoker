@@ -30,53 +30,45 @@ class RandomAgent(Player):
             ActionResponse: Action to take ('fold', 'call', or 'raise {amount}')
         """
         try:
-            if isinstance(game, Game):
-                current_bet = game.current_bet
+            current_bet = game.current_bet
 
-                # If we can't afford the current bet, fold
-                if current_bet > self.chips:
-                    logger.info(f"{self.name} cannot afford current bet, folding")
-                    return ActionResponse(action_type=ActionType.FOLD)
+            # If we can't afford the current bet, fold
+            if current_bet > self.chips:
+                logger.info(f"{self.name} cannot afford current bet, folding")
+                return ActionResponse(action_type=ActionType.FOLD)
 
-                # Randomly choose between available actions
-                actions = [ActionType.FOLD, ActionType.CALL]
+            # Randomly choose between available actions
+            actions = [ActionType.FOLD, ActionType.CALL]
 
-                # Only add raise as an option if we have enough chips
-                min_raise = current_bet * 2  # Minimum raise is typically 2x current bet
-                if self.chips >= min_raise:
-                    actions.append(ActionType.RAISE)
+            # Only add raise as an option if we have enough chips
+            min_raise = current_bet * 2  # Minimum raise is typically 2x current bet
+            if self.chips >= min_raise:
+                actions.append(ActionType.RAISE)
 
-                action = random.choice(actions)
-                logger.info(f"{self.name} decided to {action.value}")
+            action = random.choice(actions)
+            logger.info(f"{self.name} randomly decided to {action.value}")
 
-                if action == ActionType.RAISE:
-                    # Calculate valid raise range
-                    max_raise = min(
-                        self.chips, current_bet * 3
-                    )  # Limit to 3x current bet or all chips
-                    if max_raise > min_raise:
-                        raise_amount = random.randrange(
-                            min_raise, max_raise + 1, 10
-                        )  # Step by 10 chips
-                        logger.info(f"{self.name} raised to {raise_amount}")
-                        return ActionResponse(
-                            action_type=ActionType.RAISE, raise_amount=raise_amount
-                        )
-
-                    logger.info(
-                        f"{self.name} raised to {min_raise}, falling back to call"
-                    )
+            if action == ActionType.RAISE:
+                # Calculate valid raise range
+                max_raise = min(
+                    self.chips, current_bet * 3
+                )  # Limit to 3x current bet or all chips
+                if max_raise > min_raise:
+                    raise_amount = random.randrange(
+                        min_raise, max_raise + 1, 10
+                    )  # Step by 10 chips
+                    logger.info(f"{self.name} raised to {raise_amount}")
                     return ActionResponse(
-                        action_type=ActionType.CALL
-                    )  # Fall back to call if raise range is invalid
+                        action_type=ActionType.RAISE, raise_amount=raise_amount
+                    )
 
-                logger.info(f"{self.name} decided to call")
-                return ActionResponse(action_type=ActionType.CALL)
+                logger.info(f"{self.name} raised to {min_raise}, falling back to call")
+                return ActionResponse(
+                    action_type=ActionType.CALL
+                )  # Fall back to call if raise range is invalid
 
-            logger.info(f"{self.name} defaulting to fold for invalid game state")
-            return ActionResponse(
-                action_type=ActionType.FOLD
-            )  # Default to fold for invalid game state
+            logger.info(f"{self.name} decided to call")
+            return ActionResponse(action_type=ActionType.CALL)
 
         except Exception as e:
             logger.error(f"Random decision error: {str(e)}")
