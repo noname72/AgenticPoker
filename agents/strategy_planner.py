@@ -17,7 +17,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#! move to config
 DEFAULT_PLAN_DURATION = 30.0
 REPLAN_STACK_THRESHOLD = 100
 
@@ -56,6 +55,7 @@ class StrategyPlanner:
         player: "Player",
         game: "Game",
         hand_eval: Optional[HandEvaluation] = None,
+        community_cards: Optional[list] = None,
     ) -> None:
         """Generate or update the agent's strategic plan based on current game state."""
         try:
@@ -70,6 +70,7 @@ class StrategyPlanner:
                 player=player,
                 game_state=game.get_state(),
                 hand_eval=hand_eval,
+                community_cards=community_cards,
             )
             self.current_plan = self._create_plan_from_response(plan_data)
             logger.info(

@@ -32,6 +32,7 @@ class GameState(BaseModel):
         active_player_position (Optional[int]): Position index of the currently active player
         max_raise_multiplier (int): Maximum multiplier for raises (default: 3)
         max_raises_per_round (int): Maximum number of raises allowed per round (default: 4)
+        community_cards (Optional[List[str]]): Community cards for Texas Holdem
     """
 
     # Required fields
@@ -49,6 +50,7 @@ class GameState(BaseModel):
     active_player_position: Optional[int] = None
     max_raise_multiplier: int = Field(default=3, gt=0)
     max_raises_per_round: int = Field(default=4, gt=0)
+    community_cards: Optional[List[str]] = None
 
     @validator("players")
     def validate_players(cls, v):
@@ -105,6 +107,7 @@ class GameState(BaseModel):
                 if hasattr(self.round_state, "current_bet")
                 else 0
             ),
+            "community_cards": self.community_cards,
         }
 
     def __getitem__(self, key: str) -> Any:
@@ -198,7 +201,7 @@ class GameState(BaseModel):
 
         # Create or update round state if needed
         if not hasattr(game, "round_state"):
-            game.round_state = RoundState.new_round(game.round_number)
+            game.round_state = RoundState.new_round(game.round_number, game.config.game_type)
 
         # Set positions in round state
         game.round_state.dealer_position = game.dealer_index
@@ -224,6 +227,13 @@ class GameState(BaseModel):
             for pot in (game.pot_manager.side_pots or [])
         ]
 
+        # Add community cards for Texas Holdem
+        community_cards = (
+            [str(card) for card in game.community_cards]
+            if hasattr(game, "community_cards")
+            else None
+        )
+
         return cls(
             small_blind=game.small_blind,
             big_blind=game.big_blind,
@@ -241,6 +251,7 @@ class GameState(BaseModel):
             round_state=game.round_state,
             pot_state=game.pot_manager.get_state(),
             deck_state=game.deck.get_state(),
+            community_cards=community_cards,
         )
 
     class Config:

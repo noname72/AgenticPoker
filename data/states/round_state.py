@@ -45,11 +45,21 @@ class RoundState(BaseModel):
         return v
 
     @classmethod
-    def new_round(cls, round_number: int) -> "RoundState":
+    def new_round(cls, round_number: int, game_type: str) -> "RoundState":
         """Create a new round state for the start of a hand."""
-        return cls(
-            phase=RoundPhase.PREFLOP,
-            current_bet=0,
-            round_number=round_number,
-            raise_count=0,
-        )
+        if game_type == "texas-holdem":
+            return cls(
+                phase=RoundPhase.PREFLOP,
+                current_bet=0,
+                round_number=round_number,
+                raise_count=0,
+            )
+        elif game_type == "5-card-draw":
+            return cls(
+                phase=RoundPhase.PRE_DRAW,
+                current_bet=0,
+                round_number=round_number,
+                raise_count=0,
+            )
+        else:
+            raise ValueError(f"Unsupported game type: {game_type}")
