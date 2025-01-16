@@ -1,4 +1,3 @@
-import logging
 import os
 import time
 from collections import defaultdict
@@ -18,8 +17,7 @@ from data.types.action_response import ActionResponse, ActionType
 from game.evaluator import HandEvaluation
 from game.player import Player
 from game.utils import get_min_bet, validate_bet_amount
-
-logger = logging.getLogger(__name__)
+from loggers.agent_logger import AgentLogger
 
 load_dotenv()
 API_KEY = os.getenv("OPENAI_API_KEY", "")
@@ -173,8 +171,7 @@ class Agent(Player):
                 try:
                     self.memory_store.close()
                 except Exception as e:
-                    if "Python is likely shutting down" not in str(e):
-                        logger.warning(f"Error cleaning up memory store: {str(e)}")
+                    AgentLogger.log_cleanup_error(e, "memory store")
                 finally:
                     del self.memory_store
 
@@ -183,12 +180,10 @@ class Agent(Player):
                 try:
                     del self.client
                 except Exception as e:
-                    if "Python is likely shutting down" not in str(e):
-                        logger.warning(f"Error cleaning up OpenAI client: {str(e)}")
+                    AgentLogger.log_cleanup_error(e, "OpenAI client")
 
         except Exception as e:
-            if "Python is likely shutting down" not in str(e):
-                logger.error(f"Error in cleanup: {str(e)}")
+            AgentLogger.log_general_cleanup_error(e)
 
     def __enter__(self):
         """Context manager entry point.
@@ -275,13 +270,11 @@ class Agent(Player):
                 min_bet = get_min_bet(game)
                 action.raise_amount = validate_bet_amount(action.raise_amount, min_bet)
 
-            logger.info(f"[Action] {action}")
+            AgentLogger.log_action(action)
             return action
 
         except Exception as e:
-            logger.error(
-                f"[Action] Error executing action: {str(e)}, defaulting to call"
-            )
+            AgentLogger.log_action(None, error=e)
             return ActionResponse(action_type=ActionType.CALL)
 
     def execute_action(self, action: ActionResponse) -> None:
@@ -314,7 +307,7 @@ class Agent(Player):
 
             # Parse response - look for MESSAGE: prefix
             if "MESSAGE:" not in response:
-                logger.warning("No MESSAGE: found in response")
+                AgentLogger.log_message_generation()
                 return "..."  # Return a default message instead of empty string
 
             # Extract the message part after MESSAGE:
@@ -325,15 +318,10 @@ class Agent(Player):
             )
             message = message_line.replace("MESSAGE:", "").strip()
 
-            # Validate message
-            if not message:
-                logger.warning("Empty message after parsing")
-                return "..."  # Return a default message
-
             return message
 
         except Exception as e:
-            logger.error(f"Error generating message: {str(e)}")
+            AgentLogger.log_message_generation(error=e)
             return "..."  # Return a default message on error
 
     def _create_message_prompt(self, game_state: str) -> str:
@@ -432,7 +420,7 @@ class Agent(Player):
                 return []
 
         except Exception as e:
-            logger.error(f"Error in decide_draw: {str(e)}")
+            AgentLogger.log_discard_error(e)
             return []
 
     def update_strategy(self, game_outcome: Dict[str, Any]) -> None:
@@ -475,11 +463,8 @@ class Agent(Player):
         }
 
         if response in strategy_map:
-            logger.info(
-                "[Strategy Update] %s changing strategy from %s to %s",
-                self.name,
-                self.strategy_style,
-                strategy_map[response],
+            AgentLogger.log_strategy_update(
+                self.name, self.strategy_style, strategy_map[response]
             )
             self.strategy_style = strategy_map[response]
 
@@ -595,5 +580,5 @@ class Agent(Player):
             return analysis
 
         except Exception as e:
-            logger.error(f"Error in opponent analysis: {str(e)}")
+            AgentLogger.log_opponent_analysis_error(e)
             return default_analysis
