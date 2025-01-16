@@ -1,9 +1,9 @@
-import logging
 from typing import Any, Dict, List, Optional
 
 from data.types.pot_types import PotState, SidePot
 from exceptions import InvalidGameStateError
 from game.player import Player
+from loggers.pot_logger import PotLogger
 
 
 class PotManager:
@@ -72,7 +72,7 @@ class PotManager:
         # Log pot changes for debugging
         old_pot = self.pot
         self.pot += amount
-        logging.debug(f"Pot change: {old_pot} -> {self.pot} (+{amount})")
+        PotLogger.log_pot_change(old_pot, self.pot, amount)
 
     def reset_pot(self) -> None:
         """
@@ -92,7 +92,7 @@ class PotManager:
         self.pot = 0
         self.side_pots = None
 
-        logging.debug(f"Pot reset: Main {old_pot}->0, Side pots {old_side_pots}->None")
+        PotLogger.log_pot_reset(old_pot, old_side_pots)
 
     def calculate_side_pots(self, active_players: List[Player]) -> List[SidePot]:
         """
@@ -182,10 +182,7 @@ class PotManager:
                             amount=pot_size, eligible_players=[p.name for p in eligible]
                         )
                     )
-                    logging.debug(
-                        f"Created new pot: amount={pot_size}, "
-                        f"eligible={[p.name for p in eligible]}"
-                    )
+                    PotLogger.log_new_side_pot(pot_size, [p.name for p in eligible])
                     processed_amounts[amount] = pot_size
 
                 current_amount = amount
@@ -231,10 +228,7 @@ class PotManager:
         """
         if not self.side_pots:
             return
-        logger.info("\nSide pots:")
-        for i, pot in enumerate(self.side_pots, 1):
-            players_str = ", ".join(pot.eligible_players)
-            logger.info(f"  Pot {i}: ${pot.amount} (Eligible: {players_str})")
+        PotLogger.log_side_pots_info(self.side_pots)
 
     def set_pots(
         self, main_pot: int, side_pots: Optional[List[SidePot]] = None
@@ -270,10 +264,7 @@ class PotManager:
         self.pot = main_pot
         self.side_pots = side_pots
 
-        logging.debug(
-            f"Pot update: Main {old_pot}->{main_pot}, "
-            f"Side pots {old_side_pots}->{side_pots}"
-        )
+        PotLogger.log_pot_update(old_pot, main_pot, old_side_pots, side_pots)
 
     def validate_pot_state(
         self, active_players: List[Player], initial_total: Optional[int] = None
@@ -320,16 +311,12 @@ class PotManager:
         # For pot validation, we only care about current round's bets
         # The pot should be at least equal to current bets
         if total_bets > total_in_pots:
-            logging.error(
-                f"Pot mismatch - Total bets: {total_bets}, Total in pots: {total_in_pots}"
-            )
-            logging.error(f"Main pot: {self.pot}")
-            if self.side_pots:
-                logging.error(
-                    f"Side pots: {[(pot.amount, [p.name for p in pot.eligible_players]) for pot in self.side_pots]}"
-                )
-            logging.error(
-                f"Active players: {[(p.name, p.chips, p.bet) for p in active_players]}"
+            PotLogger.log_pot_validation_error(
+                total_bets,
+                total_in_pots,
+                self.pot,
+                self.side_pots,
+                [(p.name, p.chips, p.bet) for p in active_players],
             )
             raise InvalidGameStateError(
                 f"Current bets exceed pot: bets={total_bets}, pots={total_in_pots}"
@@ -341,15 +328,12 @@ class PotManager:
             # Note: Don't add bets since they're already counted in the pot
             current_total = total_chips + total_in_pots
             if current_total != initial_total:
-                logging.error(
-                    f"Total chips mismatch - Initial: {initial_total}, Current: {current_total}"
-                )
-                logging.error(
-                    f"Player chips: {[(p.name, p.chips) for p in active_players]}"
-                )
-                logging.error(f"Pots: Main={self.pot}, Side={self.side_pots}")
-                logging.error(
-                    f"Current bets: {[(p.name, p.bet) for p in active_players]}"
+                PotLogger.log_chip_mismatch(
+                    initial_total,
+                    current_total,
+                    [(p.name, p.chips) for p in active_players],
+                    {"main": self.pot, "side": self.side_pots},
+                    [(p.name, p.bet) for p in active_players],
                 )
                 raise InvalidGameStateError(
                     f"Total chips changed: initial={initial_total}, current={current_total}"
@@ -377,7 +361,7 @@ class PotManager:
             player.bet = 0
 
         # Log for debugging
-        logging.debug(f"End of betting round - New pot total: {self.pot}")
+        PotLogger.log_betting_round_end(self.pot)
 
     def get_state(self) -> PotState:
         """Get the current state of all pots."""

@@ -1,8 +1,8 @@
-import logging
 import random
 from typing import List
 
 from data.types.base_types import DeckState
+from loggers.deck_logger import DeckLogger
 
 from .card import Card
 
@@ -28,7 +28,7 @@ class Deck:
             self.dealt_cards = []
             self.discarded_cards = []
         else:
-            logging.info(f"Shuffling deck with {len(self.cards)} cards")
+            DeckLogger.log_shuffle(len(self.cards))
 
         random.shuffle(self.cards)
         self.last_action = "shuffle"
@@ -47,9 +47,8 @@ class Deck:
             ValueError: If requesting more cards than available
         """
         if num > len(self.cards):
-            raise ValueError(
-                f"Cannot deal {num} cards. Only {len(self.cards)} cards remaining."
-            )
+            DeckLogger.log_deal_error(num, len(self.cards))
+            raise ValueError("Insufficient cards remaining")
 
         dealt = self.cards[:num]
         self.cards = self.cards[num:]
@@ -86,7 +85,7 @@ class Deck:
         self.dealt_cards = []
         self.discarded_cards = []
         self.shuffle()
-        logging.info("Full deck reshuffle - all 52 cards back in play")
+        DeckLogger.log_reshuffle()
 
     def __str__(self) -> str:
         """Return string representation of current deck state."""

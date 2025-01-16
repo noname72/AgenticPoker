@@ -1,19 +1,16 @@
-import logging
 from typing import TYPE_CHECKING, List, Optional, Set, Tuple, Union
 
 from config import GameConfig
 from data.states.round_state import RoundPhase
 from data.types.action_response import ActionResponse, ActionType
 from data.types.pot_types import SidePot
+from loggers.betting_logger import BettingLogger
 
 from .player import Player
 
 if TYPE_CHECKING:
     from agents.agent import Agent
     from game.game import Game
-
-
-logger = logging.getLogger(__name__)
 
 
 def betting_round(
@@ -52,11 +49,8 @@ def betting_round(
     while not round_complete:
 
         for agent in active_players:
-            logging.info(f"---- {agent.name} is active ----")
-
             should_skip, reason = _should_skip_player(agent, needs_to_act)
             if should_skip:
-                logging.info(f"{agent.name} {reason}, skipping")
                 continue
 
             # Get player action
@@ -249,27 +243,24 @@ def _process_player_action(
     to_call = validate_bet_to_call(current_bet, player.bet, is_big_blind)
 
     # Log initial state with active player context
-    #! move to betting logger
-    #! or add to start of player turn since it has hand info
-    logging.info(
-        f"  Active players: {[p.name for p in active_players if not p.folded]}"
+    BettingLogger.log_player_turn(
+        player_name=player.name,
+        hand=player.hand.show() if hasattr(player, "hand") else "Unknown",
+        to_call=to_call,
+        chips=player.chips,
+        current_bet=player.bet,
+        pot=game.pot_manager.pot,
+        active_players=[p.name for p in active_players if not p.folded],
+        last_raiser=last_raiser.name if last_raiser else None,
     )
-    logging.info(f"  Last raiser: {last_raiser.name if last_raiser else 'None'}")
-    logging.info(
-        f"  Hand: {player.hand.show() if hasattr(player, 'hand') else 'Unknown'}"
-    )
-    logging.info(f"  Current bet to call: ${to_call}")
-    logging.info(f"  Player chips: ${player.chips}")
-    logging.info(f"  Player current bet: ${player.bet}")
-    logging.info(f"  Current pot: ${game.pot_manager.pot}")
 
     if action_decision.action_type == ActionType.CHECK:
-        logging.info(f"{player.name} checks")
+        BettingLogger.log_player_action(player.name, "check")
         return game.pot_manager.pot, current_bet, None
 
     elif action_decision.action_type == ActionType.FOLD:
         player.folded = True
-        logging.info(f"{player.name} folds")
+        BettingLogger.log_player_action(player.name, "fold")
 
     elif action_decision.action_type == ActionType.CALL:
         # Player can only bet what they have
@@ -286,8 +277,13 @@ def _process_player_action(
             new_last_raiser = player
 
         status = " (all in)" if player.chips == 0 else ""
-        logging.info(f"{player.name} calls ${bet_amount}{status}")
-        logging.info(f"  Pot after call: ${game.pot_manager.pot}")
+        BettingLogger.log_player_action(
+            player.name,
+            "call",
+            bet_amount,
+            is_all_in=player.chips == 0,
+            pot=game.pot_manager.pot,
+        )
 
     elif action_decision.action_type == ActionType.RAISE:
         # Get current raise count and minimum bet
@@ -296,9 +292,7 @@ def _process_player_action(
 
         # Check if we've hit max raises
         if raise_count >= game.config.max_raises_per_round:
-            logging.info(
-                f"Max raises ({game.config.max_raises_per_round}) reached, converting raise to call"
-            )
+            BettingLogger.log_raise_limit(game.config.max_raises_per_round)
             return _process_call(player, current_bet, game.pot_manager.pot)
 
         # Calculate minimum raise amount (current bet + minimum raise increment)
@@ -319,14 +313,15 @@ def _process_player_action(
                     game.round_state.raise_count += 1
 
             status = " (all in)" if player.chips == 0 else ""
-            logging.info(
-                f"{player.name} raises to ${action_decision.raise_amount}{status}"
+            BettingLogger.log_player_action(
+                player.name,
+                "raise",
+                action_decision.raise_amount,
+                is_all_in=player.chips == 0,
             )
         else:
             # Invalid raise amount, convert to call
-            logging.info(
-                f"Raise amount ${action_decision.raise_amount} below minimum (${min_raise}), converting to call"
-            )
+            BettingLogger.log_invalid_raise(action_decision.raise_amount, min_raise)
             return _process_call(player, current_bet, game.pot_manager.pot)
 
     # Update all-in status considering active players
@@ -338,12 +333,12 @@ def _process_player_action(
                 p for p in active_players if not p.folded and p.chips > 0
             ]
             if len(active_with_chips) <= 1:
-                logging.info("Showdown situation: Only one player with chips remaining")
+                BettingLogger.log_showdown()
 
     # Log updated state
-    logging.info(f"  Pot after action: ${game.pot_manager.pot}")
-    logging.info(f"  {player.name}'s remaining chips: ${player.chips}")
-    logging.info("")
+    BettingLogger.log_state_after_action(
+        player.name, game.pot_manager.pot, player.chips
+    )
 
     # Update game state if provided, but DON'T increment raise count here
     if game.round_state:
@@ -401,41 +396,9 @@ def calculate_side_pots(
             previous_bet = bet_level
 
     if side_pots:
-        logging.debug("Side pots created:")
-        for i, pot in enumerate(side_pots, start=1):
-            logging.debug(
-                f"  Pot {i}: ${pot.amount} - Eligible: {pot.eligible_players}"
-            )
+        BettingLogger.log_side_pots(side_pots)
 
     return side_pots
-
-
-def log_action(
-    player: Player, action: str, amount: int = 0, current_bet: int = 0, pot: int = 0
-) -> None:
-    """
-    Log player actions with optional all-in indicators.
-    """
-    action_str = (
-        f"{player.name}'s turn:\n"
-        f"  Current bet to call: ${current_bet}\n"
-        f"  Player chips: ${player.chips}\n"
-        f"  Player current bet: ${player.bet}\n"
-        f"  Current pot: ${pot}"
-    )
-
-    if action == "fold":
-        action_str += f"\n{player.name} folds"
-    elif action == "call":
-        all_in = amount >= player.chips
-        status = " (all in)" if all_in else ""
-        action_str += f"\n{player.name} calls ${amount}{status}"
-    elif action == "raise":
-        all_in = amount >= player.chips
-        status = " (all in)" if all_in else ""
-        action_str += f"\n{player.name} raises to ${amount}{status}"
-
-    logging.info(action_str)
 
 
 def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante):
@@ -443,24 +406,17 @@ def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante
     collected = 0
     num_players = len(players)
 
-    # Collect antes first
+    # Collect antes
     if ante > 0:
-        logging.info("\nCollecting antes:")
+        BettingLogger.log_collecting_antes()
         for player in players:
             ante_amount = min(ante, player.chips)
             player.chips -= ante_amount
             collected += ante_amount
 
-            status = " (all in)" if player.chips == 0 else ""
-            if ante_amount < ante:
-                logging.info(
-                    f"  {player.name} posts partial ante of ${ante_amount}{status}"
-                )
-            else:
-                logging.info(f" {player.name} posts ante of ${ante_amount}{status}")
-
-        # Add extra line break after antes
-        logging.info("")
+            BettingLogger.log_blind_or_ante(
+                player.name, ante, ante_amount, is_ante=True
+            )
 
     # Small blind
     sb_index = (dealer_index + 1) % num_players
@@ -469,13 +425,9 @@ def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante
     actual_sb = sb_player.place_bet(sb_amount)
     collected += actual_sb
 
-    status = " (all in)" if sb_player.chips == 0 else ""
-    if actual_sb < small_blind:
-        logging.info(
-            f"{sb_player.name} posts partial small blind of ${actual_sb}{status}"
-        )
-    else:
-        logging.info(f"{sb_player.name} posts small blind of ${actual_sb}{status}")
+    BettingLogger.log_blind_or_ante(
+        sb_player.name, small_blind, actual_sb, is_small_blind=True
+    )
 
     # Big blind
     bb_index = (dealer_index + 2) % num_players
@@ -484,17 +436,9 @@ def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante
     actual_bb = bb_player.place_bet(bb_amount)
     collected += actual_bb
 
-    status = " (all in)" if bb_player.chips == 0 else ""
-    if actual_bb < big_blind:
-        logging.info(
-            f"{bb_player.name} posts partial big blind of ${actual_bb}{status}"
-        )
-    else:
-        logging.info(f"{bb_player.name} posts big blind of ${actual_bb}{status}")
+    BettingLogger.log_blind_or_ante(bb_player.name, big_blind, actual_bb)
 
-    # Add extra line break after blinds
-    logging.info("")
-
+    BettingLogger.log_line_break()
     return collected
 
 
@@ -523,9 +467,9 @@ def _process_call(
     pot += actual_bet
 
     # Log the action
-    status = " (all in)" if player.chips == 0 else ""
-    logger.info(f"{player.name} calls ${bet_amount}{status}")
-    logger.info(f"  Pot after call: ${pot}")
+    BettingLogger.log_player_action(
+        player.name, "call", bet_amount, is_all_in=player.chips == 0, pot=pot
+    )
 
     return pot, current_bet, None
 
@@ -589,9 +533,11 @@ def _should_skip_player(player: Player, needs_to_act: Set[Player]) -> Tuple[bool
         Tuple[bool, str]: (should_skip, reason)
     """
     if player.folded or player.chips == 0:
+        BettingLogger.log_skip_player(player.name, "folded or has no chips")
         return True, "folded or has no chips"
 
     if player not in needs_to_act:
+        BettingLogger.log_skip_player(player.name, "doesn't need to act")
         return True, "doesn't need to act"
 
     return False, ""
