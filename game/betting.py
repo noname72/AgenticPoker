@@ -56,6 +56,7 @@ from data.types.pot_types import SidePot
 from loggers.betting_logger import BettingLogger
 
 from .player import Player
+from .player_queue import PlayerQueue
 
 if TYPE_CHECKING:
     from game.game import Game
@@ -99,11 +100,14 @@ def betting_round(
         needs_to_act.discard(big_blind_player)  # Remove BB initially
         acted_since_last_raise.add(big_blind_player)  # Mark BB as having acted
 
+    # Initialize PlayerQueue with active players
+    player_queue = PlayerQueue(active_players)
+
     # Main betting loop
     while not round_complete:
         _process_betting_cycle(
             game,
-            active_players,
+            player_queue,
             needs_to_act,
             acted_since_last_raise,
             last_raiser,
@@ -111,7 +115,7 @@ def betting_round(
         )
 
         # Consolidated round-completion check
-        round_complete = _is_round_complete(needs_to_act, active_players)
+        round_complete = player_queue.is_round_complete()
 
     # If any all-ins occurred, compute side pots
     if all_in_players:
@@ -142,7 +146,7 @@ def _is_round_complete(
 
 def _process_betting_cycle(
     game: "Game",
-    active_players: List[Player],
+    player_queue: PlayerQueue,
     needs_to_act: Set[Player],
     acted_since_last_raise: Set[Player],
     last_raiser: Optional[Player],
@@ -159,7 +163,7 @@ def _process_betting_cycle(
 
     Args:
         game: Game instance containing current game state
-        active_players: List of players still in the hand
+        player_queue: PlayerQueue instance managing player turns
         needs_to_act: Set of players that still need to act
         acted_since_last_raise: Set of players who have acted since last raise
         last_raiser: The player who made the last raise, if any
@@ -170,7 +174,11 @@ def _process_betting_cycle(
         - Updates tracking sets for betting round management
         - Logs player actions and game state changes
     """
-    for agent in active_players:
+    while not player_queue.is_round_complete():
+        agent = player_queue.get_next_player()
+        if not agent:
+            break
+
         should_skip, reason = _should_skip_player(agent, needs_to_act)
         if should_skip:
             continue
@@ -181,7 +189,7 @@ def _process_betting_cycle(
             chips=agent.chips,
             current_bet=agent.bet,
             pot=game.pot_manager.pot,
-            active_players=[p.name for p in active_players if not p.folded],
+            active_players=[p.name for p in player_queue.players if not p.folded],
             last_raiser=last_raiser.name if last_raiser else None,
         )
 
@@ -191,7 +199,7 @@ def _process_betting_cycle(
         last_raiser, needs_to_act, acted_since_last_raise = _update_action_tracking(
             agent,
             action_decision.action_type,
-            active_players,
+            player_queue.players,
             needs_to_act,
             acted_since_last_raise,
             big_blind_player,
@@ -199,7 +207,7 @@ def _process_betting_cycle(
         )
 
         _should_continue_betting(
-            active_players, acted_since_last_raise, last_raiser, needs_to_act
+            player_queue.players, acted_since_last_raise, last_raiser, needs_to_act
         )
 
         BettingLogger.log_line_break()
