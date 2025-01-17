@@ -1,15 +1,13 @@
 from typing import TYPE_CHECKING, List, Optional, Set, Tuple, Union
 
-from config import GameConfig
 from data.states.round_state import RoundPhase
-from data.types.action_response import ActionResponse, ActionType
+from data.types.action_response import ActionType
 from data.types.pot_types import SidePot
 from loggers.betting_logger import BettingLogger
 
 from .player import Player
 
 if TYPE_CHECKING:
-    from agents.agent import Agent
     from game.game import Game
 
 
@@ -18,13 +16,21 @@ def betting_round(
 ) -> Union[int, Tuple[int, List[SidePot]]]:
     """Manages a complete round of betting among active players.
 
+    This function handles the core betting mechanics for a poker round, including:
+    - Processing actions from each active player
+    - Tracking betting amounts and pot size
+    - Managing all-in situations and side pot creation
+    - Ensuring proper betting order and round completion
+
     Args:
-        game
+        game: The Game instance containing all game state, including players,
+             pot manager, and round state.
 
     Returns:
         Either:
         - int: The new pot amount (if no side pots were created)
-        - Tuple[int, List[SidePot]]: The new pot amount and list of side pots
+        - Tuple[int, List[SidePot]]: The new pot amount and list of side pots created
+          from all-in situations
     """
     active_players: List[Player] = [p for p in game.players if not p.folded]
     all_in_players: List[Player] = [p for p in active_players if p.is_all_in]
@@ -39,45 +45,13 @@ def betting_round(
     acted_since_last_raise: Set[Player] = set()
 
     # Main betting loop
-    #! make this a separate function
     while not round_complete:
+        _process_betting_cycle(
+            game, active_players, needs_to_act, acted_since_last_raise, last_raiser
+        )
 
-        for agent in active_players:
-            should_skip, reason = _should_skip_player(agent, needs_to_act)
-            if should_skip:
-                continue
-
-            # Get player action
-            BettingLogger.log_active_player(agent.name)
-            #! combine agent betting into a single method
-            #! decides and acts
-            action_decision = agent.decide_action(game)
-
-            # Process the action
-            agent.execute(action_decision, game)
-
-            # Update action tracking
-            last_raiser, needs_to_act, acted_since_last_raise = _update_action_tracking(
-                agent,
-                action_decision.action_type,
-                active_players,
-                needs_to_act,
-                acted_since_last_raise,
-            )
-
-            # Check if betting round should continue
-            _should_continue_betting(
-                active_players, acted_since_last_raise, last_raiser, needs_to_act
-            )
-
-        # End round conditions
-        if not needs_to_act:
-            round_complete = True
-
-        # Or if we only have one or zero players with chips left
-        active_with_chips = [p for p in active_players if p.chips > 0]
-        if len(active_with_chips) <= 1:
-            round_complete = True
+        # Consolidated round-completion check
+        round_complete = _is_round_complete(needs_to_act, active_players)
 
     # If any all-ins occurred, compute side pots
     if all_in_players:
@@ -86,25 +60,97 @@ def betting_round(
         )
 
 
+def _is_round_complete(
+    needs_to_act: Set[Player],
+    active_players: List[Player],
+) -> bool:
+    """
+    Returns True if any stopping condition is met:
+    - No players need to act
+    - 0 or 1 players left with chips
+    """
+    return len(needs_to_act) == 0 or sum(p.chips > 0 for p in active_players) <= 1
+
+
+def _process_betting_cycle(
+    game: "Game",
+    active_players: List[Player],
+    needs_to_act: Set[Player],
+    acted_since_last_raise: Set[Player],
+    last_raiser: Optional[Player],
+) -> None:
+    """
+    Process a single cycle of betting for all active players.
+
+    This function handles each player's turn in the current betting cycle.
+    It no longer returns a value because the round completion logic is
+    managed entirely in betting_round.
+    """
+    for agent in active_players:
+        should_skip, reason = _should_skip_player(agent, needs_to_act)
+        if should_skip:
+            continue
+
+        BettingLogger.log_player_turn(
+            player_name=agent.name,
+            hand=agent.hand.show() if hasattr(agent, "hand") else "Unknown",
+            chips=agent.chips,
+            current_bet=agent.bet,
+            pot=game.pot_manager.pot,
+            active_players=[p.name for p in active_players if not p.folded],
+            last_raiser=last_raiser.name if last_raiser else None,
+        )
+
+        action_decision = agent.decide_action(game)
+        agent.execute(action_decision, game)
+
+        last_raiser, needs_to_act, acted_since_last_raise = _update_action_tracking(
+            agent,
+            action_decision.action_type,
+            active_players,
+            needs_to_act,
+            acted_since_last_raise,
+        )
+
+        _should_continue_betting(
+            active_players, acted_since_last_raise, last_raiser, needs_to_act
+        )
+
+        BettingLogger.log_line_break()
+
+
 def handle_betting_round(
     game: "Game",
 ) -> Tuple[int, Optional[List[SidePot]], bool]:
-    """Manages a complete betting round for all players and determines if the
-    game should continue.
+    """Manages a complete betting round and updates game state accordingly.
+
+    This function serves as the main entry point for handling a betting round.
+    It performs input validation, manages the betting process, and updates the
+    game state with the results.
 
     Args:
-        game: Game object
+        game: Game object containing all game state and player information
 
     Returns:
         Tuple containing:
-        - int: New pot amount
-        - Optional[List[SidePot]]: Any side pots created
-        - bool: Whether the game should continue
+        - int: New pot amount after the betting round
+        - Optional[List[SidePot]]: Any side pots created during all-in situations,
+          or None if no side pots were created
+        - bool: Whether the game should continue (True if multiple players remain)
+
+    Raises:
+        ValueError: If there are no players or if the pot amount is negative
+        TypeError: If any element in the players list is not a Player instance
     """
     if not game.players:
         raise ValueError("Cannot run betting round with no players")
-    if game.pot_manager.pot < 0:
+
+    # Initialize pot to 0 if None
+    if game.pot_manager.pot is None:
+        game.pot_manager.pot = 0
+    elif game.pot_manager.pot < 0:
         raise ValueError("Pot amount cannot be negative")
+
     if any(not isinstance(p, Player) for p in game.players):
         raise TypeError("All elements in players list must be Player instances")
 
@@ -136,19 +182,20 @@ def handle_betting_round(
     return new_pot, side_pots, should_continue
 
 
-def validate_bet_to_call(
-    current_bet: int, player_bet: int, is_big_blind: bool = False
-) -> int:
+def validate_bet_to_call(current_bet: int, player_bet: int) -> int:
     """Calculates the amount a player needs to add to call the current bet.
+
+    This function determines how many more chips a player needs to commit to match
+    the current betting amount, accounting for any chips they've already bet in
+    this round.
 
     Args:
         current_bet: The current bet amount that needs to be matched
         player_bet: The amount the player has already bet in this round
-        is_big_blind: Whether the player is in the big blind position
 
     Returns:
-        int: The additional amount the player needs to bet to call.
-            Returns 0 for big blind when no raises have occurred.
+        int: The additional amount the player needs to bet to call. Returns 0 if
+             the player has already bet enough.
     """
     bet_to_call = max(
         0, current_bet - player_bet
@@ -156,211 +203,25 @@ def validate_bet_to_call(
     return bet_to_call
 
 
-def _process_player_action(
-    player: Player,
-    action_decision: ActionResponse,
-    current_bet: int,
-    last_raiser: Optional[Player],
-    active_players: List[Player],
-    all_in_players: List[Player],
-    game: "Game",
-) -> Tuple[int, int, Optional[Player]]:
-    """Processes a player's betting action and updates game state accordingly.
-
-    Handles the mechanics of:
-    - Processing folds, calls, and raises
-    - Managing all-in situations
-    - Updating pot and bet amounts
-    - Enforcing betting limits
-    - Logging actions and state changes
-
-    Args:
-        player: Player making the action
-        action: The action ('fold', 'call', or 'raise')
-        amount: Bet amount (total bet for raises)
-        pot: Current pot amount
-        current_bet: Current bet to match
-        last_raiser: Last player who raised
-        active_players: List of players still in hand
-        all_in_players: List of players who are all-in
-        game: Game object
-
-    Returns:
-        Tuple containing:
-        - int: Updated pot amount
-        - int: New current bet amount
-        - Optional[Player]: New last raiser (if any)
-    """
-    new_last_raiser = None
-
-    # Get max raise settings from game state
-    max_raise_multiplier = game.config.max_raise_multiplier  #! why not used
-    max_raises_per_round = game.config.max_raises_per_round  #! why not used
-    raise_count = game.round_state.raise_count if game.round_state else 0
-
-    # Calculate how much player needs to call, accounting for big blind position
-    is_big_blind = player.is_big_blind if hasattr(player, "is_big_blind") else False
-    to_call = validate_bet_to_call(current_bet, player.bet, is_big_blind)
-
-    # Log initial state with active player context
-    BettingLogger.log_player_turn(
-        player_name=player.name,
-        hand=player.hand.show() if hasattr(player, "hand") else "Unknown",
-        to_call=to_call,
-        chips=player.chips,
-        current_bet=player.bet,
-        pot=game.pot_manager.pot,
-        active_players=[p.name for p in active_players if not p.folded],
-        last_raiser=last_raiser.name if last_raiser else None,
-    )
-
-    if action_decision.action_type == ActionType.CHECK:
-        BettingLogger.log_player_action(player.name, "check")
-        return game.pot_manager.pot, current_bet, None
-
-    elif action_decision.action_type == ActionType.FOLD:
-        player.folded = True
-        BettingLogger.log_player_action(player.name, "fold")
-
-    elif action_decision.action_type == ActionType.CALL:
-        # Player can only bet what they have
-        bet_amount = min(to_call, player.chips)
-        actual_bet = player.place_bet(bet_amount)
-
-        # Add the bet to the pot
-        game.pot_manager.pot += actual_bet
-
-        # If they went all-in trying to call, count it as a raise
-        if player.chips == 0 and bet_amount < to_call:
-            new_last_raiser = player
-
-        status = " (all in)" if player.chips == 0 else ""
-        BettingLogger.log_player_action(
-            player.name,
-            "call",
-            bet_amount,
-            is_all_in=player.chips == 0,
-            pot=game.pot_manager.pot,
-        )
-
-    elif action_decision.action_type == ActionType.RAISE:
-        # Get current raise count and minimum bet
-        raise_count = game.round_state.raise_count if game.round_state else 0
-        min_bet = game.config.min_bet
-
-        # Check if we've hit max raises
-        if raise_count >= game.config.max_raises_per_round:
-            BettingLogger.log_raise_limit(game.config.max_raises_per_round)
-            return _process_call(player, current_bet, game.pot_manager.pot)
-
-        # Calculate minimum raise amount (current bet + minimum raise increment)
-        min_raise = current_bet + min_bet
-
-        # Process valid raise
-        if action_decision.raise_amount >= min_raise:
-            # Calculate how much more they need to add
-            to_add = action_decision.raise_amount - player.bet
-            actual_bet = player.place_bet(to_add)
-            game.pot_manager.pot += actual_bet
-
-            # Update current bet and raise count
-            if action_decision.raise_amount > current_bet:
-                current_bet = action_decision.raise_amount
-                new_last_raiser = player
-                if game.round_state is not None:
-                    game.round_state.raise_count += 1
-
-            status = " (all in)" if player.chips == 0 else ""
-            BettingLogger.log_player_action(
-                player.name,
-                "raise",
-                action_decision.raise_amount,
-                is_all_in=player.chips == 0,
-            )
-        else:
-            # Invalid raise amount, convert to call
-            BettingLogger.log_invalid_raise(action_decision.raise_amount, min_raise)
-            return _process_call(player, current_bet, game.pot_manager.pot)
-
-    # Update all-in status considering active players
-    if player.chips == 0 and not player.folded:
-        if player not in all_in_players:
-            all_in_players.append(player)
-            # Check if this creates a showdown situation
-            active_with_chips = [
-                p for p in active_players if not p.folded and p.chips > 0
-            ]
-            if len(active_with_chips) <= 1:
-                BettingLogger.log_showdown()
-
-    # Log updated state
-    BettingLogger.log_state_after_action(
-        player.name, game.pot_manager.pot, player.chips
-    )
-
-    # Update game state if provided, but DON'T increment raise count here
-    if game.round_state:
-        game.round_state.current_bet = current_bet
-        if new_last_raiser:
-            game.round_state.last_raiser = new_last_raiser.name
-            # Remove this line to prevent double-counting raises
-            # game_state.round_state.raise_count += 1
-
-    return game.pot_manager.pot, current_bet, new_last_raiser
-
-
-def calculate_side_pots(
-    active_players: List[Player], all_in_players: List[Player]
-) -> List[SidePot]:
-    """Creates side pots when one or more players are all-in.
-
-    Args:
-        active_players: List of players still in the hand
-        all_in_players: List of players who are all-in
-
-    Returns:
-        List[SidePot]: List of side pots, each containing:
-            - amount: The amount in this pot
-            - eligible_players: Players who can win this pot
-    """
-    # Sort all-in players by their total bet
-    all_in_players.sort(key=lambda p: p.bet)
-
-    # Get all active players who haven't folded
-    active_non_folded = [p for p in active_players if not p.folded]
-
-    side_pots = []
-    previous_bet = 0
-
-    # Process each bet level (including all-in amounts)
-    # Include both all-in players and active players to get all bet levels
-    bet_levels = sorted(set(p.bet for p in active_non_folded))
-
-    for bet_level in bet_levels:
-        if bet_level > previous_bet:
-            # Find eligible players for this level
-            # A player is eligible if they bet at least this amount
-            eligible_players = [p.name for p in active_non_folded if p.bet >= bet_level]
-
-            # Calculate pot amount for this level
-            # Each eligible player contributes the difference between this level and previous level
-            level_amount = (bet_level - previous_bet) * len(eligible_players)
-
-            if level_amount > 0:
-                side_pots.append(
-                    SidePot(amount=level_amount, eligible_players=eligible_players)
-                )
-
-            previous_bet = bet_level
-
-    if side_pots:
-        BettingLogger.log_side_pots(side_pots)
-
-    return side_pots
-
-
 def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante, game):
-    """Collects mandatory bets (blinds and antes) from players."""
+    """Collects mandatory bets (blinds and antes) from players.
+
+    This function handles the collection of forced bets at the start of a hand:
+    - Collects antes from all players (if applicable)
+    - Collects small blind from the player after the dealer
+    - Collects big blind from the player after the small blind
+
+    Args:
+        players: List of all players in the game
+        dealer_index: Position of the dealer button
+        small_blind: Amount of the small blind
+        big_blind: Amount of the big blind
+        ante: Amount of the ante (0 if no ante)
+        game: Game instance for updating game state
+
+    Returns:
+        int: Total amount collected from blinds and antes
+    """
     collected = 0
     num_players = len(players)
 
@@ -400,42 +261,6 @@ def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante
     return collected
 
 
-def _process_call(
-    player: Player, current_bet: int, pot: int, game: "Game"
-) -> Tuple[int, int, Optional[Player]]:
-    """Process a call action from a player.
-
-    Args:
-        player: Player making the call
-        current_bet: Current bet amount to match
-        pot: Current pot amount
-
-    Returns:
-        Tuple containing:
-        - int: Updated pot amount
-        - int: Current bet (unchanged)
-        - Optional[Player]: Last raiser (None for calls)
-    """
-    # Calculate how much more they need to add to call
-    to_call = current_bet - player.bet
-    bet_amount = min(to_call, player.chips)
-
-    # Place the bet
-    actual_bet = player.place_bet(bet_amount, game)
-    pot += actual_bet
-
-    # Log the action
-    BettingLogger.log_player_action(
-        player.name, "call", bet_amount, is_all_in=player.chips == 0, pot=pot
-    )
-
-    return pot, current_bet, None
-
-    # Reset flags after round
-    if big_blind_player:
-        big_blind_player.is_big_blind = False
-
-
 def _get_big_blind_player(
     game: "Game", active_players: List[Player]
 ) -> Optional[Player]:
@@ -463,21 +288,6 @@ def _get_big_blind_player(
             return big_blind_player
 
     return None
-
-
-def _get_current_bet(game: "Game") -> int:
-    """Get the current bet amount, using game state or default value.
-
-    Args:
-        game: Game instance
-
-    Returns:
-        int: The current bet amount
-    """
-    current_bet = game.current_bet
-    if current_bet <= 0:
-        current_bet = game.min_bet if game else GameConfig.min_bet
-    return current_bet
 
 
 def _should_skip_player(player: Player, needs_to_act: Set[Player]) -> Tuple[bool, str]:
