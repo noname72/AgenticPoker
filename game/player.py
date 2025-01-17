@@ -1,7 +1,9 @@
 import logging
 
 from data.states.player_state import PlayerState
+from data.types.action_response import ActionResponse, ActionType
 from data.types.player_types import PlayerPosition
+from loggers.player_logger import PlayerLogger
 
 from .hand import Hand
 
@@ -30,6 +32,8 @@ class Player:
     hand: Hand
     position: PlayerPosition
     is_all_in: bool
+    checked: bool
+    called: bool
 
     def __init__(self, name: str, chips: int = 1000) -> None:
         """
@@ -55,47 +59,112 @@ class Player:
         self.folded = False
         self.hand = Hand()
         self.position = PlayerPosition.OTHER
-        self.is_all_in = False  #! is this being set appropriately?
+        self.is_all_in = False
+        self.checked = False
+        self.called = False
 
-    def place_bet(self, amount: int) -> int:
-        #! is this being used? Pass on game and player makes the bet?
+        PlayerLogger.log_player_creation(name, chips)
+
+    def place_bet(self, amount: int, game) -> int:
         """
         Place a bet, ensuring it doesn't exceed available chips.
-
-        Args:
-            amount (int): Amount to bet
-
-        Returns:
-            int: Actual amount bet (may be less than requested if limited by chips)
-
-        Raises:
-            ValueError: If amount is negative
         """
         if amount < 0:
+            PlayerLogger.log_invalid_bet(self.name, "Cannot place negative bet")
             raise ValueError("Cannot place negative bet")
 
         # Ensure we don't bet more than available chips
         amount = min(amount, self.chips)
 
         # If this is a raise, ensure it's at least double the current bet
-        #! is this needed???
-        if hasattr(self, "current_bet") and amount <= self.current_bet:
+        if hasattr(game, "current_bet") and amount <= game.current_bet:
             logging.debug(
-                f"Raise amount {amount} too small compared to current bet {self.current_bet}"
+                f"Raise amount {amount} too small compared to current bet {game.current_bet}"
             )
-            amount = self.current_bet * 2
+            amount = game.current_bet * 2
             amount = min(
                 amount, self.chips
             )  # Still ensure we don't exceed available chips
 
         self.chips -= amount
         self.bet += amount
-        logging.debug(
-            f"{self.name} bets ${amount} (total bet: ${self.bet}, chips left: ${self.chips})"
+        # Add the bet to the pot
+        game.pot_manager.pot += amount
+
+        PlayerLogger.log_bet_placement(
+            self.name, amount, self.bet, self.chips, game.pot_manager.pot
         )
+
         return amount
 
-    def fold(self) -> None:
+    def execute(self, action_response: ActionResponse, game):
+        try:
+            PlayerLogger.log_action_execution(
+                self.name, action_response.action_type.name
+            )
+            if action_response.action_type == ActionType.RAISE:
+                self._raise(action_response.raise_amount, game)
+            elif action_response.action_type == ActionType.CALL:
+                self._call(game.current_bet, game)
+            elif action_response.action_type == ActionType.CHECK:
+                self._check()
+            elif action_response.action_type == ActionType.FOLD:
+                self._fold()
+        except Exception as e:
+            PlayerLogger.log_action_error(
+                self.name, action_response.action_type.name, e
+            )
+            raise
+
+    def _raise(self, amount: int, game) -> None:
+        """
+        Mark the player as raised for the current hand.
+        """
+        # Get current raise count and minimum bet
+        raise_count = game.round_state.raise_count if game.round_state else 0
+        min_bet = game.config.min_bet
+
+        # Check if we've hit max raises
+        if raise_count >= game.config.max_raises_per_round:
+            self._call(game.current_bet, game)
+            return
+
+        min_raise = game.current_bet + min_bet
+
+        if amount >= min_raise:
+            self.place_bet(amount, game)
+
+            if amount > game.current_bet:
+                game.last_raiser = self
+
+                if game.round_state is not None:
+                    game.round_state.raise_count += 1
+                    game.round_state.last_raiser = self.name
+
+            if self.chips == 0:
+                self.is_all_in = True
+                PlayerLogger.log_all_in(self.name, amount)
+        else:
+            self._call(game.current_bet, game)
+
+    def _call(self, amount: int, game) -> None:
+        """
+        Mark the player as called for the current hand.
+        """
+        self.place_bet(amount, game)
+        self.called = True
+
+        if self.chips == 0:
+            PlayerLogger.log_all_in(self.name, amount)
+
+    def _check(self) -> None:
+        """
+        Mark the player as checked for the current hand.
+        """
+        PlayerLogger.log_action_execution(self.name, "check")
+        self.checked = True
+
+    def _fold(self) -> None:
         """
         Mark the player as folded for the current hand.
 
@@ -103,7 +172,7 @@ class Player:
             - Sets player's folded status to True
             - Logs the fold action
         """
-        logging.debug(f"{self.name} folded")
+        PlayerLogger.log_action_execution(self.name, "fold")
         self.folded = True
 
     def reset_bet(self) -> None:
@@ -116,10 +185,9 @@ class Player:
         """
         previous_bet = self.bet
         self.bet = 0
-        logging.debug(f"{self.name}'s bet reset from {previous_bet} to 0")
+        PlayerLogger.log_state_reset(self.name, previous_bet, "bet reset")
 
     def reset_for_new_round(self) -> None:
-        #! is this being used?
         """Reset player state for a new round."""
         self.bet = 0
         self.folded = False
@@ -127,11 +195,32 @@ class Player:
         self.last_action = None
         self.last_raise_amount = None
         self.is_all_in = False
+        self.checked = False
+        self.called = False
         self.is_dealer = False
         self.is_small_blind = False
         self.is_big_blind = False
         self.chips_at_start_of_hand = self.chips
-        logging.debug(f"{self.name}'s state reset for new round")
+
+        PlayerLogger.log_state_reset(self.name, context="new round")
+
+    @property
+    def position(self) -> PlayerPosition:
+        """Get the player's current position at the table."""
+        return self._position
+
+    @position.setter
+    def position(self, value: PlayerPosition):
+        """Set the player's position at the table."""
+        old_position = getattr(self, "_position", None)
+        self._position = value
+        PlayerLogger.log_position_change(
+            self.name, value.name, old_position.name if old_position else None
+        )
+
+    def get_state(self) -> PlayerState:
+        """Get the current state of this player."""
+        return PlayerState.from_player(self)
 
     def __str__(self) -> str:
         """
@@ -142,17 +231,3 @@ class Player:
                  and whether they have folded
         """
         return f"{self.name} (chips: {self.chips}, folded: {self.folded})"
-
-    def get_state(self) -> PlayerState:
-        """Get the current state of this player."""
-        return PlayerState.from_player(self)
-
-    @property
-    def position(self) -> PlayerPosition:
-        """Get the player's current position at the table."""
-        return self._position
-
-    @position.setter 
-    def position(self, value: PlayerPosition):
-        """Set the player's position at the table."""
-        self._position = value

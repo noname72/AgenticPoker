@@ -10,6 +10,11 @@ class BettingLogger:
     """Handles all logging operations for betting-related actions."""
 
     @staticmethod
+    def log_active_player(player_name: str) -> None:
+        """Log when a player becomes active."""
+        logger.info(f"---- {player_name} is active ----")
+
+    @staticmethod
     def log_player_turn(
         player_name: str,
         hand: str,
@@ -21,7 +26,6 @@ class BettingLogger:
         last_raiser: Optional[str] = None,
     ) -> None:
         """Log the start of a player's turn with all relevant information."""
-        logger.info(f"---- {player_name} is active ----")
         logger.info(f"  Active players: {active_players}")
         logger.info(f"  Last raiser: {last_raiser if last_raiser else 'None'}")
         logger.info(f"  Hand: {hand}")

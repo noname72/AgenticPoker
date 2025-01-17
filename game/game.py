@@ -63,6 +63,7 @@ class AgenticPoker:
     round_starting_stacks: Dict[Player, int]
     config: GameConfig
     current_bet: int
+    last_raiser: Optional[Player]
 
     def __init__(
         self,
@@ -114,6 +115,7 @@ class AgenticPoker:
         self.round_number = 0  # Initialize only round_number
         self.max_rounds = self.config.max_rounds
         self.ante = self.config.ante
+        self.last_raiser = None
 
         # Log game configuration
         logging.info(f"\n{'='*50}")
@@ -260,6 +262,7 @@ class AgenticPoker:
             small_blind=self.small_blind,
             big_blind=self.big_blind,
             ante=self.ante,
+            game=self,
         )
 
         # Set the current bet to the big blind amount

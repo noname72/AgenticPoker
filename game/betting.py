@@ -38,12 +38,6 @@ def betting_round(
     needs_to_act: Set[Player] = set(active_players)
     acted_since_last_raise: Set[Player] = set()
 
-    # Get current bet amount
-    current_bet: int = _get_current_bet(game)
-
-    # Track the highest bet seen in this round
-    highest_bet: int = current_bet
-
     # Main betting loop
     #! make this a separate function
     while not round_complete:
@@ -54,59 +48,27 @@ def betting_round(
                 continue
 
             # Get player action
+            BettingLogger.log_active_player(agent.name)
+            #! combine agent betting into a single method
+            #! decides and acts
             action_decision = agent.decide_action(game)
 
             # Process the action
-            #! this is a large function. Is it needed???
-            pot, new_current_bet, new_last_raiser = _process_player_action(
+            agent.execute(action_decision, game)
+
+            # Update action tracking
+            last_raiser, needs_to_act, acted_since_last_raise = _update_action_tracking(
                 agent,
-                action_decision,
-                current_bet,
-                last_raiser,
+                action_decision.action_type,
                 active_players,
-                all_in_players,
-                game,
+                needs_to_act,
+                acted_since_last_raise,
             )
-
-            # Update highest bet seen
-            if new_current_bet > highest_bet:
-                highest_bet = new_current_bet
-
-            # Update last raiser
-            #! make a helper function for this
-            if new_last_raiser:
-                last_raiser = new_last_raiser
-                # Reset acted_since_last_raise set
-                acted_since_last_raise = {agent}
-                # Everyone except the raiser needs to act again
-                needs_to_act = set(
-                    p
-                    for p in active_players
-                    if p != agent and not p.folded and p.chips > 0
-                )
-            else:
-                # Add player to acted set and remove from needs_to_act
-                acted_since_last_raise.add(agent)
-                needs_to_act.discard(agent)
 
             # Check if betting round should continue
-            #! make a helper function for this
-            active_non_folded = set(
-                p for p in active_players if not p.folded and p.chips > 0
+            _should_continue_betting(
+                active_players, acted_since_last_raise, last_raiser, needs_to_act
             )
-            all_acted = acted_since_last_raise == active_non_folded
-
-            # If everyone has acted since last raise, give last raiser final chance
-            if (
-                all_acted
-                and last_raiser
-                and not last_raiser.folded
-                and last_raiser.chips > 0
-            ):
-                needs_to_act = {last_raiser}
-                last_raiser = None  # Reset to prevent infinite loop
-            elif all_acted:
-                needs_to_act.clear()  # No one else needs to act
 
         # End round conditions
         if not needs_to_act:
@@ -119,11 +81,9 @@ def betting_round(
 
     # If any all-ins occurred, compute side pots
     if all_in_players:
-        #! shouldnt pot manager handle this?
-        side_pots = calculate_side_pots(active_players, all_in_players)
-        return pot, side_pots
-
-    return pot
+        game.pot_manager.side_pots = game.pot_manager.calculate_side_pots(
+            active_players
+        )
 
 
 def handle_betting_round(
@@ -265,9 +225,7 @@ def _process_player_action(
     elif action_decision.action_type == ActionType.CALL:
         # Player can only bet what they have
         bet_amount = min(to_call, player.chips)
-        actual_bet = player.place_bet(
-            bet_amount
-        )  #! should the player do this and not betting?
+        actual_bet = player.place_bet(bet_amount)
 
         # Add the bet to the pot
         game.pot_manager.pot += actual_bet
@@ -401,7 +359,7 @@ def calculate_side_pots(
     return side_pots
 
 
-def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante):
+def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante, game):
     """Collects mandatory bets (blinds and antes) from players."""
     collected = 0
     num_players = len(players)
@@ -422,7 +380,7 @@ def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante
     sb_index = (dealer_index + 1) % num_players
     sb_player = players[sb_index]
     sb_amount = min(small_blind, sb_player.chips)
-    actual_sb = sb_player.place_bet(sb_amount)
+    actual_sb = sb_player.place_bet(sb_amount, game)
     collected += actual_sb
 
     BettingLogger.log_blind_or_ante(
@@ -433,7 +391,7 @@ def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante
     bb_index = (dealer_index + 2) % num_players
     bb_player = players[bb_index]
     bb_amount = min(big_blind, bb_player.chips)
-    actual_bb = bb_player.place_bet(bb_amount)
+    actual_bb = bb_player.place_bet(bb_amount, game)
     collected += actual_bb
 
     BettingLogger.log_blind_or_ante(bb_player.name, big_blind, actual_bb)
@@ -443,7 +401,7 @@ def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante
 
 
 def _process_call(
-    player: Player, current_bet: int, pot: int
+    player: Player, current_bet: int, pot: int, game: "Game"
 ) -> Tuple[int, int, Optional[Player]]:
     """Process a call action from a player.
 
@@ -463,7 +421,7 @@ def _process_call(
     bet_amount = min(to_call, player.chips)
 
     # Place the bet
-    actual_bet = player.place_bet(bet_amount)
+    actual_bet = player.place_bet(bet_amount, game)
     pot += actual_bet
 
     # Log the action
@@ -541,3 +499,72 @@ def _should_skip_player(player: Player, needs_to_act: Set[Player]) -> Tuple[bool
         return True, "doesn't need to act"
 
     return False, ""
+
+
+def _update_action_tracking(
+    agent: Player,
+    action_type: ActionType,
+    active_players: List[Player],
+    needs_to_act: Set[Player],
+    acted_since_last_raise: Set[Player],
+) -> Tuple[Optional[Player], Set[Player], Set[Player]]:
+    """Updates player action tracking sets after a betting action.
+
+    Args:
+        agent: The player who just acted
+        action_type: The type of action taken
+        active_players: List of players still in the hand
+        needs_to_act: Set of players that still need to act
+        acted_since_last_raise: Set of players who have acted since last raise
+
+    Returns:
+        Tuple containing:
+        - Optional[Player]: The new last raiser (if any)
+        - Set[Player]: Updated needs_to_act set
+        - Set[Player]: Updated acted_since_last_raise set
+    """
+    last_raiser = None
+
+    if action_type == ActionType.RAISE:
+        last_raiser = agent
+        # Reset acted_since_last_raise set
+        acted_since_last_raise = {agent}
+        # Everyone except the raiser needs to act again
+        needs_to_act = set(
+            p for p in active_players if p != agent and not p.folded and p.chips > 0
+        )
+    else:
+        # Add player to acted set and remove from needs_to_act
+        acted_since_last_raise.add(agent)
+        needs_to_act.discard(agent)
+
+    return last_raiser, needs_to_act, acted_since_last_raise
+
+
+def _should_continue_betting(
+    active_players: List[Player],
+    acted_since_last_raise: Set[Player],
+    last_raiser: Optional[Player],
+    needs_to_act: Set[Player],
+) -> None:
+    """Determines if betting should continue and updates who needs to act.
+
+    Args:
+        active_players: List of players still in the hand
+        acted_since_last_raise: Set of players who have acted since last raise
+        last_raiser: The last player who raised
+        needs_to_act: Set of players that still need to act
+
+    Side Effects:
+        Updates needs_to_act set based on betting conditions
+    """
+    # Get active non-folded players with chips
+    active_non_folded = set(p for p in active_players if not p.folded and p.chips > 0)
+    all_acted = acted_since_last_raise == active_non_folded
+
+    # If everyone has acted since last raise, give last raiser final chance
+    if all_acted and last_raiser and not last_raiser.folded and last_raiser.chips > 0:
+        needs_to_act.clear()
+        needs_to_act.add(last_raiser)
+    elif all_acted:
+        needs_to_act.clear()  # No one else needs to act
