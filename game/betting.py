@@ -46,18 +46,12 @@ def betting_round(
 
     # Main betting loop
     while not round_complete:
-        round_complete = _process_betting_round(
+        _process_betting_cycle(
             game, active_players, needs_to_act, acted_since_last_raise, last_raiser
         )
 
-        # End round conditions
-        if not needs_to_act:
-            round_complete = True
-
-        # Or if we only have one or zero players with chips left
-        active_with_chips = [p for p in active_players if p.chips > 0]
-        if len(active_with_chips) <= 1:
-            round_complete = True
+        # Consolidated round-completion check
+        round_complete = _is_round_complete(needs_to_act, active_players)
 
     # If any all-ins occurred, compute side pots
     if all_in_players:
@@ -66,35 +60,37 @@ def betting_round(
         )
 
 
-def _process_betting_round(
+def _is_round_complete(
+    needs_to_act: Set[Player],
+    active_players: List[Player],
+) -> bool:
+    """
+    Returns True if any stopping condition is met:
+    - No players need to act
+    - 0 or 1 players left with chips
+    """
+    return len(needs_to_act) == 0 or sum(p.chips > 0 for p in active_players) <= 1
+
+
+def _process_betting_cycle(
     game: "Game",
     active_players: List[Player],
     needs_to_act: Set[Player],
     acted_since_last_raise: Set[Player],
     last_raiser: Optional[Player],
-) -> bool:
-    """Process a single round of betting for all active players.
+) -> None:
+    """
+    Process a single cycle of betting for all active players.
 
-    This function handles the core betting loop, where each player gets to act in turn.
-    It manages player actions, tracks betting patterns, and determines when the round
-    should end.
-
-    Args:
-        game: The current game instance containing game state
-        active_players: List of players still in the hand (not folded)
-        needs_to_act: Set of players that still need to take an action
-        acted_since_last_raise: Set of players who have acted since the last raise
-        last_raiser: The last player who made a raise action, if any
-
-    Returns:
-        bool: True if the betting round should complete, False if it should continue
+    This function handles each player's turn in the current betting cycle.
+    It no longer returns a value because the round completion logic is
+    managed entirely in betting_round.
     """
     for agent in active_players:
         should_skip, reason = _should_skip_player(agent, needs_to_act)
         if should_skip:
             continue
 
-        # Get player action
         BettingLogger.log_player_turn(
             player_name=agent.name,
             hand=agent.hand.show() if hasattr(agent, "hand") else "Unknown",
@@ -108,7 +104,6 @@ def _process_betting_round(
         action_decision = agent.decide_action(game)
         agent.execute(action_decision, game)
 
-        # Update action tracking
         last_raiser, needs_to_act, acted_since_last_raise = _update_action_tracking(
             agent,
             action_decision.action_type,
@@ -117,14 +112,11 @@ def _process_betting_round(
             acted_since_last_raise,
         )
 
-        # Check if betting round should continue
         _should_continue_betting(
             active_players, acted_since_last_raise, last_raiser, needs_to_act
         )
 
         BettingLogger.log_line_break()
-
-    return False
 
 
 def handle_betting_round(
@@ -152,8 +144,13 @@ def handle_betting_round(
     """
     if not game.players:
         raise ValueError("Cannot run betting round with no players")
-    if game.pot_manager.pot < 0:
+
+    # Initialize pot to 0 if None
+    if game.pot_manager.pot is None:
+        game.pot_manager.pot = 0
+    elif game.pot_manager.pot < 0:
         raise ValueError("Pot amount cannot be negative")
+
     if any(not isinstance(p, Player) for p in game.players):
         raise TypeError("All elements in players list must be Player instances")
 
