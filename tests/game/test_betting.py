@@ -645,3 +645,102 @@ def test_betting_round_all_players_all_in(
         assert actual_count == expected_count, f"Side pot {i} player count mismatch"
 
     print("\n=== Test completed successfully ===")
+
+
+def test_collect_blinds_and_antes_insufficient_chips(
+    mock_game, mock_players, mock_betting_logger
+):
+    """
+    Tests collection of blinds when players don't have enough chips.
+    Verifies:
+    - Players post what they can when they can't afford full blind
+    - Correct amounts are collected and logged
+    - Player states are updated appropriately
+    """
+    mock_game.players = mock_players
+    dealer_index = 0
+    small_blind = 50
+    big_blind = 100
+    ante = 0  # Remove ante for now to simplify test
+
+    # Set up players with insufficient chips
+    mock_players[1].chips = 30  # Can't afford full small blind
+    mock_players[2].chips = 60  # Can't afford full big blind
+
+    collected = collect_blinds_and_antes(
+        mock_players, dealer_index, small_blind, big_blind, ante, mock_game
+    )
+
+    # Verify partial blind payments
+    assert mock_players[1].bet == 30  # Posted what they could for SB
+    assert mock_players[2].bet == 60  # Posted what they could for BB
+    assert mock_players[1].chips == 0
+    assert mock_players[2].chips == 0
+    assert collected == 90  # 30 (partial SB) + 60 (partial BB)
+
+    # Verify betting logger was called correctly
+    mock_betting_logger.log_blind_or_ante.assert_any_call(
+        mock_players[1].name, small_blind, 30, is_small_blind=True
+    )
+    mock_betting_logger.log_blind_or_ante.assert_any_call(
+        mock_players[2].name, big_blind, 60
+    )
+
+
+def test_collect_blinds_and_antes_insufficient_ante(
+    mock_game, mock_players, mock_betting_logger
+):
+    """
+    Tests ante collection when players can't afford the full ante.
+    Verifies:
+    - Players post partial antes when they can't afford full amount
+    - Correct total is collected
+    - Player states are updated appropriately
+    """
+    mock_game.players = mock_players
+    dealer_index = 0
+    small_blind = 50
+    big_blind = 100
+    ante = 20
+
+    # Set up a player with insufficient chips for ante
+    mock_players[0].chips = 10  # Can only afford partial ante
+
+    collected = collect_blinds_and_antes(
+        mock_players, dealer_index, small_blind, big_blind, ante, mock_game
+    )
+
+    expected_total = (
+        10  # Partial ante from player 0
+        + (ante * (len(mock_players) - 1))  # Full antes from other players
+        + small_blind
+        + big_blind
+    )
+    assert collected == expected_total
+    assert mock_players[0].chips == 0
+    mock_betting_logger.log_collecting_antes.assert_called_once()
+
+
+def test_collect_blinds_and_antes_dealer_wrap(
+    mock_game, mock_players, mock_betting_logger
+):
+    """
+    Tests blind collection when dealer position causes wrap-around.
+    Verifies:
+    - Correct players post blinds when dealer is near end of player list
+    - Blind positions wrap correctly to start of player list
+    """
+    mock_game.players = mock_players
+    dealer_index = len(mock_players) - 1  # Last player is dealer
+    small_blind = 50
+    big_blind = 100
+    ante = 10
+
+    collected = collect_blinds_and_antes(
+        mock_players, dealer_index, small_blind, big_blind, ante, mock_game
+    )
+
+    # Small blind should be player 0, big blind should be player 1
+    assert mock_players[0].bet == small_blind
+    assert mock_players[1].bet == big_blind
+    assert collected == (ante * len(mock_players)) + small_blind + big_blind

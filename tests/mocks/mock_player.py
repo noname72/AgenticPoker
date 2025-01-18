@@ -3,8 +3,8 @@ from unittest.mock import MagicMock
 from data.states.player_state import PlayerState
 from data.states.round_state import RoundPhase
 from data.types.player_types import PlayerPosition
-from tests.mocks.mock_hand import MockHand
 from game.player import Player
+from tests.mocks.mock_hand import MockHand
 
 
 class MockPlayer(Player):
@@ -63,7 +63,7 @@ class MockPlayer(Player):
         """Initialize mock player with configurable parameters."""
         # Call parent class constructor first
         super().__init__(name=name, chips=chips)
-        
+
         # Initialize mock methods that can be configured in tests
         self.place_bet = MagicMock(side_effect=self._default_place_bet)
         self.execute = MagicMock()
@@ -122,18 +122,9 @@ class MockPlayer(Player):
         # Ensure we don't bet more than available chips
         amount = min(amount, self.chips)
 
+        # Track the bet and reduce chips
         self.chips -= amount
-
-        # For antes, don't add to bet amount
-        if (
-            hasattr(game, "round_state")
-            and game.round_state.phase == RoundPhase.PREFLOP
-        ):
-            # Only add to bet amount if it's a blind
-            if amount in (game.config.small_blind, game.config.big_blind):
-                self.bet = amount  # Set bet directly for blinds
-        else:
-            self.bet += amount
+        self.bet += amount
 
         # Add the bet to the pot if game has pot_manager
         if hasattr(game, "pot_manager"):
