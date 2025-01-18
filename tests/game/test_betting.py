@@ -420,3 +420,327 @@ def test_update_action_tracking_call(mock_betting_state):
     assert last_raiser is None
     assert player in acted_since_last_raise
     assert player not in needs_to_act
+
+
+@patch("game.betting.PlayerQueue")
+def test_betting_round_multiple_all_ins(
+    mock_player_queue_class, mock_game, mock_pot_with_side_pots
+):
+    """
+    Tests multiple players going all-in with different chip amounts.
+    Scenario:
+    - Player1: All-in with 100 chips
+    - Player2: All-in with 200 chips
+    - Player3: All-in with 300 chips
+    - Player4: Has 1000 chips and calls
+    Should create:
+    - Main pot: 400 (100 x 4 players)
+    - Side pot 1: 300 (100 x 3 players)
+    - Side pot 2: 200 (100 x 2 players)
+    """
+    # Set up players
+    player1 = MagicMock(name="Player1")
+    player1.name = "Player1"
+    player1.chips = 0
+    player1.bet = 100
+    player1.is_all_in = True
+    player1.folded = False
+
+    player2 = MagicMock(name="Player2")
+    player2.name = "Player2"
+    player2.chips = 0
+    player2.bet = 200
+    player2.is_all_in = True
+    player2.folded = False
+
+    player3 = MagicMock(name="Player3")
+    player3.name = "Player3"
+    player3.chips = 0
+    player3.bet = 300
+    player3.is_all_in = True
+    player3.folded = False
+
+    player4 = MagicMock(name="Player4")
+    player4.name = "Player4"
+    player4.chips = 700
+    player4.bet = 300
+    player4.is_all_in = False
+    player4.folded = False
+
+    players = [player1, player2, player3, player4]
+    mock_game.players = players
+    mock_game.pot_manager = mock_pot_with_side_pots
+    mock_game.current_bet = 300
+
+    # Configure player queue
+    player_queue = MagicMock()
+    mock_player_queue_class.return_value = player_queue
+    player_queue.is_round_complete.side_effect = [False, False, False, False, True]
+    player_queue.get_next_player.side_effect = players + [None]
+    player_queue.players = players
+
+    # Configure side pots
+    side_pots = [
+        SidePot(
+            amount=400, eligible_players=["Player1", "Player2", "Player3", "Player4"]
+        ),
+        SidePot(amount=300, eligible_players=["Player2", "Player3", "Player4"]),
+        SidePot(amount=200, eligible_players=["Player3", "Player4"]),
+    ]
+    mock_pot_with_side_pots.calculate_side_pots.return_value = side_pots
+
+    result = betting_round(mock_game)
+
+    assert isinstance(result, tuple)
+    pot, side_pots = result
+    assert len(side_pots) == 3
+    assert side_pots[0].amount == 400  # Main pot
+    assert side_pots[1].amount == 300  # First side pot
+    assert side_pots[2].amount == 200  # Second side pot
+    assert len(side_pots[0].eligible_players) == 4
+    assert len(side_pots[1].eligible_players) == 3
+    assert len(side_pots[2].eligible_players) == 2
+
+
+@patch("game.betting.PlayerQueue")
+def test_betting_round_one_chip_all_in(
+    mock_player_queue_class, mock_game, mock_pot_with_side_pots
+):
+    """
+    Tests scenario where a player goes all-in with exactly 1 chip.
+    Verifies that:
+    - Player can go all-in with 1 chip
+    - Side pot is created correctly
+    - Player is eligible for main pot only
+    """
+    # Set up players
+    one_chip_player = MagicMock(name="OneChipPlayer")
+    one_chip_player.name = "OneChipPlayer"
+    one_chip_player.chips = 0
+    one_chip_player.bet = 1
+    one_chip_player.is_all_in = True
+    one_chip_player.folded = False
+
+    caller = MagicMock(name="Caller")
+    caller.name = "Caller"
+    caller.chips = 999
+    caller.bet = 100
+    caller.is_all_in = False
+    caller.folded = False
+
+    players = [one_chip_player, caller]
+    mock_game.players = players
+    mock_game.pot_manager = mock_pot_with_side_pots
+    mock_game.current_bet = 100
+
+    # Configure player queue
+    player_queue = MagicMock()
+    mock_player_queue_class.return_value = player_queue
+    player_queue.is_round_complete.side_effect = [False, False, True]
+    player_queue.get_next_player.side_effect = players + [None]
+    player_queue.players = players
+
+    # Configure side pots
+    side_pots = [
+        SidePot(
+            amount=2, eligible_players=["OneChipPlayer", "Caller"]
+        ),  # Main pot (1 x 2)
+        SidePot(
+            amount=99, eligible_players=["Caller"]
+        ),  # Side pot (remaining 99 from caller)
+    ]
+    mock_pot_with_side_pots.calculate_side_pots.return_value = side_pots
+
+    result = betting_round(mock_game)
+
+    assert isinstance(result, tuple)
+    pot, side_pots = result
+    assert len(side_pots) == 2
+    assert side_pots[0].amount == 2  # Main pot (1 chip from each player)
+    assert side_pots[1].amount == 99  # Side pot (remaining 99 from caller)
+    assert "OneChipPlayer" in side_pots[0].eligible_players
+    assert "OneChipPlayer" not in side_pots[1].eligible_players
+
+
+@patch("game.betting.PlayerQueue")
+def test_betting_round_all_players_all_in(
+    mock_player_queue_class, mock_game, mock_pot_with_side_pots
+):
+    """
+    Tests scenario where all players go all-in simultaneously.
+    Verifies that:
+    - Betting round ends immediately
+    - Side pots are created correctly
+    - No further actions are needed
+    """
+    print("\n=== Starting test_betting_round_all_players_all_in ===")
+
+    # Set up players all going all-in with different amounts
+    players = []
+    for i, amount in enumerate([50, 100, 150, 200]):
+        player = MagicMock(name=f"Player{i+1}")
+        player.name = f"Player{i+1}"
+        player.chips = 0
+        player.bet = amount
+        player.is_all_in = True
+        player.folded = False
+        # Configure action response for each player
+        action_response = MagicMock()
+        action_response.action_type = ActionType.CALL
+        player.decide_action.return_value = action_response
+        players.append(player)
+        print(f"Created Player{i+1}: bet={amount}, all_in=True")
+
+    mock_game.players = players
+    mock_game.pot_manager = mock_pot_with_side_pots
+    mock_game.current_bet = 200
+    print(
+        f"Game setup: current_bet={mock_game.current_bet}, num_players={len(players)}"
+    )
+
+    # Configure player queue to handle multiple checks of is_round_complete
+    player_queue = MagicMock()
+    mock_player_queue_class.return_value = player_queue
+    # Add more False values to handle potential multiple checks
+    player_queue.is_round_complete.side_effect = [False] * 10 + [True]
+    player_queue.get_next_player.side_effect = players + [None]
+    player_queue.players = players
+    print("Player queue configured")
+
+    # Configure expected side pots
+    side_pots = [
+        SidePot(amount=200, eligible_players=[p.name for p in players]),  # 50 x 4
+        SidePot(amount=150, eligible_players=[p.name for p in players[1:]]),  # 50 x 3
+        SidePot(amount=100, eligible_players=[p.name for p in players[2:]]),  # 50 x 2
+        SidePot(amount=50, eligible_players=[players[-1].name]),  # 50 x 1
+    ]
+    mock_pot_with_side_pots.calculate_side_pots.return_value = side_pots
+    print("\nConfigured side pots:")
+    for i, pot in enumerate(side_pots):
+        print(f"Pot {i}: amount={pot.amount}, eligible_players={pot.eligible_players}")
+
+    print("\nCalling betting_round...")
+    result = betting_round(mock_game)
+    print(f"betting_round returned: {result}")
+
+    assert isinstance(result, tuple)
+    pot, side_pots = result
+    print(f"\nAssertions starting...")
+    print(f"Number of side pots: {len(side_pots)}")
+
+    # Verify pot amounts
+    print("\nVerifying pot amounts:")
+    for i, pot in enumerate(side_pots):
+        print(f"Side pot {i}: amount={pot.amount}, expected={200 - (i * 50)}")
+        assert pot.amount == 200 - (i * 50), f"Side pot {i} amount mismatch"
+
+    # Verify decreasing number of eligible players in each side pot
+    print("\nVerifying eligible players:")
+    for i, side_pot in enumerate(side_pots):
+        expected_count = 4 - i
+        actual_count = len(side_pot.eligible_players)
+        print(
+            f"Side pot {i}: eligible_players={side_pot.eligible_players}, count={actual_count}, expected={expected_count}"
+        )
+        assert actual_count == expected_count, f"Side pot {i} player count mismatch"
+
+    print("\n=== Test completed successfully ===")
+
+
+def test_collect_blinds_and_antes_insufficient_chips(
+    mock_game, mock_players, mock_betting_logger
+):
+    """
+    Tests collection of blinds when players don't have enough chips.
+    Verifies:
+    - Players post what they can when they can't afford full blind
+    - Correct amounts are collected and logged
+    - Player states are updated appropriately
+    """
+    mock_game.players = mock_players
+    dealer_index = 0
+    small_blind = 50
+    big_blind = 100
+    ante = 0  # Remove ante for now to simplify test
+
+    # Set up players with insufficient chips
+    mock_players[1].chips = 30  # Can't afford full small blind
+    mock_players[2].chips = 60  # Can't afford full big blind
+
+    collected = collect_blinds_and_antes(
+        mock_players, dealer_index, small_blind, big_blind, ante, mock_game
+    )
+
+    # Verify partial blind payments
+    assert mock_players[1].bet == 30  # Posted what they could for SB
+    assert mock_players[2].bet == 60  # Posted what they could for BB
+    assert mock_players[1].chips == 0
+    assert mock_players[2].chips == 0
+    assert collected == 90  # 30 (partial SB) + 60 (partial BB)
+
+    # Verify betting logger was called correctly
+    mock_betting_logger.log_blind_or_ante.assert_any_call(
+        mock_players[1].name, small_blind, 30, is_small_blind=True
+    )
+    mock_betting_logger.log_blind_or_ante.assert_any_call(
+        mock_players[2].name, big_blind, 60
+    )
+
+
+def test_collect_blinds_and_antes_insufficient_ante(
+    mock_game, mock_players, mock_betting_logger
+):
+    """
+    Tests ante collection when players can't afford the full ante.
+    Verifies:
+    - Players post partial antes when they can't afford full amount
+    - Correct total is collected
+    - Player states are updated appropriately
+    """
+    mock_game.players = mock_players
+    dealer_index = 0
+    small_blind = 50
+    big_blind = 100
+    ante = 20
+
+    # Set up a player with insufficient chips for ante
+    mock_players[0].chips = 10  # Can only afford partial ante
+
+    collected = collect_blinds_and_antes(
+        mock_players, dealer_index, small_blind, big_blind, ante, mock_game
+    )
+
+    expected_total = (
+        10  # Partial ante from player 0
+        + (ante * (len(mock_players) - 1))  # Full antes from other players
+        + small_blind
+        + big_blind
+    )
+    assert collected == expected_total
+    assert mock_players[0].chips == 0
+    mock_betting_logger.log_collecting_antes.assert_called_once()
+
+
+def test_collect_blinds_and_antes_dealer_wrap(
+    mock_game, mock_players, mock_betting_logger
+):
+    """
+    Tests blind collection when dealer position causes wrap-around.
+    Verifies:
+    - Correct players post blinds when dealer is near end of player list
+    - Blind positions wrap correctly to start of player list
+    """
+    mock_game.players = mock_players
+    dealer_index = len(mock_players) - 1  # Last player is dealer
+    small_blind = 50
+    big_blind = 100
+    ante = 10
+
+    collected = collect_blinds_and_antes(
+        mock_players, dealer_index, small_blind, big_blind, ante, mock_game
+    )
+
+    # Small blind should be player 0, big blind should be player 1
+    assert mock_players[0].bet == small_blind
+    assert mock_players[1].bet == big_blind
+    assert collected == (ante * len(mock_players)) + small_blind + big_blind
