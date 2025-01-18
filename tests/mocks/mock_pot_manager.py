@@ -79,31 +79,41 @@ class MockPotManager:
     def _default_calculate_side_pots(
         self, active_players: List[MockPlayer]
     ) -> List[SidePot]:
-        """Default behavior for calculating side pots."""
+        """Default behavior for calculating side pots.
+
+        Creates side pots based on all-in players and bet amounts:
+        1. First pot includes all players up to the all-in amount
+        2. Second pot includes only players who bet more
+        """
         if not active_players:
             self.side_pots = []
             return []
 
-        # Basic side pot calculation for all-in players
-        all_in_players = [p for p in active_players if p.is_all_in]
-        if all_in_players:
-            # Create a simple side pot for each all-in player
-            new_side_pots = []
-            for player in all_in_players:
-                eligible = [
+        # Sort players by their bet amounts (lowest to highest)
+        sorted_players = sorted(active_players, key=lambda p: p.bet)
+        new_side_pots = []
+        current_amount = 0
+
+        for i, player in enumerate(sorted_players):
+            if player.bet > current_amount:
+                # Calculate who's eligible for this pot level
+                eligible_players = [
                     p.name
-                    for p in active_players
+                    for p in sorted_players[i:]
                     if not p.folded and p.bet >= player.bet
                 ]
-                new_side_pots.append(
-                    SidePot(
-                        amount=player.bet * len(eligible), eligible_players=eligible
-                    )
-                )
-            self.side_pots = new_side_pots
-            return new_side_pots
 
-        return self.side_pots if self.side_pots else []
+                # Calculate pot amount for this level
+                pot_amount = (player.bet - current_amount) * len(eligible_players)
+
+                if pot_amount > 0:
+                    new_side_pots.append(
+                        SidePot(amount=pot_amount, eligible_players=eligible_players)
+                    )
+                current_amount = player.bet
+
+        self.side_pots = new_side_pots
+        return new_side_pots
 
     def _default_reset_pot(self) -> None:
         """Default behavior for resetting the pot."""

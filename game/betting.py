@@ -167,6 +167,7 @@ def _process_betting_cycle(
 
         should_skip, reason = _should_skip_player(agent, needs_to_act)
         if should_skip:
+            needs_to_act.discard(agent)  # Remove the player from needs_to_act
             continue
 
         BettingLogger.log_player_turn(
@@ -253,12 +254,13 @@ def handle_betting_round(
         side_pots = None
 
     # Update game state
+    game.pot_manager.pot = new_pot  # Update pot value
     game.pot_manager.main_pot = new_pot
     if side_pots:
         game.pot_manager.side_pots = [
             {
                 "amount": pot.amount,
-                "eligible_players": pot.eligible_players,  # Already strings, no need to convert
+                "eligible_players": pot.eligible_players,
             }
             for pot in side_pots
         ]
