@@ -114,34 +114,20 @@ def betting_round(
             big_blind_player,
         )
 
-        # Consolidated round-completion check
-        round_complete = player_queue.is_round_complete()
+        # Check if all players have acted and betting is complete
+        active_non_folded = set(
+            p for p in active_players if not p.folded and p.chips > 0
+        )
+        round_complete = (
+            len(needs_to_act) == 0 and acted_since_last_raise == active_non_folded
+        )
 
     # If any all-ins occurred, compute side pots
     if all_in_players:
-        game.pot_manager.side_pots = game.pot_manager.calculate_side_pots(
-            active_players
-        )
+        side_pots = game.pot_manager.calculate_side_pots(active_players)
+        return game.pot_manager.pot, side_pots
 
-
-def _is_round_complete(
-    needs_to_act: Set[Player],
-    active_players: List[Player],
-) -> bool:
-    """Determines if the current betting round should end.
-
-    A betting round is complete when either:
-    1. No players need to act (all players have acted and bets are equal)
-    2. Only 0 or 1 players remain with chips (others are all-in or folded)
-
-    Args:
-        needs_to_act: Set of players that still need to act
-        active_players: List of players still in the hand
-
-    Returns:
-        bool: True if the round should end, False if betting should continue
-    """
-    return len(needs_to_act) == 0 or sum(p.chips > 0 for p in active_players) <= 1
+    return game.pot_manager.pot
 
 
 def _process_betting_cycle(
@@ -327,17 +313,23 @@ def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante
     collected = 0
     num_players = len(players)
 
+    # Reset all player bets first
+    for player in players:
+        player.bet = 0
+
     # Collect antes
     if ante > 0:
         BettingLogger.log_collecting_antes()
         for player in players:
             ante_amount = min(ante, player.chips)
-            player.chips -= ante_amount
-            collected += ante_amount
-
+            collected += player.place_bet(ante_amount, game)
             BettingLogger.log_blind_or_ante(
                 player.name, ante, ante_amount, is_ante=True
             )
+
+    # Reset bets after antes
+    for player in players:
+        player.bet = 0
 
     # Small blind
     sb_index = (dealer_index + 1) % num_players
