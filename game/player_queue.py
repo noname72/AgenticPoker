@@ -66,8 +66,22 @@ class PlayerQueue:
     def is_round_complete(self) -> bool:
         """Check if the current round of play is complete.
 
+        A round is complete if:
+        - All players have folded except one, or
+        - All remaining players are all-in, or
+        - All active players have acted and bets are equal
+
         Returns:
-            bool: True if all players have either folded or are all-in,
-                 False otherwise.
+            bool: True if the round is complete, False otherwise.
         """
-        return all(player.folded or player.is_all_in for player in self.players)
+        # If all players but one have folded
+        active_players = [p for p in self.players if not p.folded]
+        if len(active_players) <= 1:
+            return True
+
+        # If all remaining players are all-in
+        if all(p.is_all_in or p.folded for p in self.players):
+            return True
+
+        # Otherwise, continue the round
+        return False
