@@ -231,3 +231,19 @@ class Player:
                  and whether they have folded
         """
         return f"{self.name} (chips: {self.chips}, folded: {self.folded})"
+
+    def __eq__(self, other):
+        """Compare two players for equality.
+
+        Players are considered equal if they have the same name.
+        """
+        if not isinstance(other, Player):
+            return False
+        return self.name == other.name
+
+    def __hash__(self):
+        """Hash function for Player objects.
+
+        This is required when implementing __eq__ to maintain hashability.
+        """
+        return hash(self.name)
