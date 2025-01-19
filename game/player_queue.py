@@ -190,3 +190,44 @@ class PlayerQueue:
                  indicating the betting round can end.
         """
         return self.acted_since_last_raise == set(self.active_players)
+
+    def __iter__(self):
+        """Make PlayerQueue iterable through all players.
+
+        Yields each player in the queue in order, regardless of their state
+        (active, all-in, or folded).
+
+        Yields:
+            Player: Each player in the queue in sequence
+        """
+        for player in self.players:
+            yield player
+
+    def __len__(self) -> int:
+        """Get the number of players in the queue.
+
+        Returns:
+            int: Number of players in the queue
+        """
+        return len(self.players)
+
+    def __getitem__(self, index: int) -> Player:
+        """Get a player from the queue by index.
+
+        Args:
+            index (int): The index of the player to retrieve
+
+        Returns:
+            Player: The player at the specified index
+        """
+        return self.players[index]
+
+    def __contains__(self, player: Player) -> bool:
+        """Check if a player is in the queue.
+
+        Returns:
+            bool: True if the player is in the queue, False otherwise
+        """
+        return player in self.players
+    
+        
