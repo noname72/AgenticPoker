@@ -935,3 +935,64 @@ def mock_pot_with_side_pots(mock_pot_manager, mock_side_pot):
         for pot in side_pots
     ]
     return mock_pot_manager
+
+
+@pytest.fixture
+def mock_blind_config():
+    """Create a standard blind/ante configuration for testing.
+    
+    Returns a tuple of (dealer_index, small_blind, big_blind, ante) with common 
+    defaults used in tests:
+    - dealer_index: 0 (first player is dealer)
+    - small_blind: 50 chips
+    - big_blind: 100 chips  
+    - ante: 10 chips
+
+    Example:
+        def test_collect_blinds(mock_blind_config, mock_players):
+            dealer_index, small_blind, big_blind, ante = mock_blind_config
+            collected = collect_blinds_and_antes(
+                mock_players, dealer_index, small_blind, big_blind, ante, mock_game
+            )
+            assert collected == small_blind + big_blind + (ante * len(mock_players))
+
+    Returns:
+        Tuple[int, int, int, int]: (dealer_index, small_blind, big_blind, ante)
+    """
+    return (0, 50, 100, 10)
+
+
+@pytest.fixture
+def mock_insufficient_chips_players():
+    """Create a list of players with intentionally low chip counts.
+    
+    Creates three players with different chip amounts:
+    - Player1: 1000 chips (normal stack)
+    - Player2: 30 chips (not enough for small blind of 50)
+    - Player3: 60 chips (not enough for big blind of 100)
+    
+    This fixture is useful for testing:
+    - Partial blind payments
+    - Insufficient ante scenarios
+    - All-in situations with small stacks
+    
+    Example:
+        def test_partial_blinds(mock_insufficient_chips_players, mock_game):
+            mock_game.players = mock_insufficient_chips_players
+            collected = collect_blinds_and_antes(
+                mock_insufficient_chips_players, 0, 50, 100, 0, mock_game
+            )
+            assert collected == 90  # 30 (partial SB) + 60 (partial BB)
+            assert mock_insufficient_chips_players[1].chips == 0  # All-in with SB
+            assert mock_insufficient_chips_players[2].chips == 0  # All-in with BB
+
+    Returns:
+        List[MockPlayer]: Three players with configured chip stacks
+    """
+    from tests.mocks.mock_player import MockPlayer
+    
+    p1 = MockPlayer("Player1", chips=1000)  # Normal stack
+    p2 = MockPlayer("Player2", chips=30)    # Not enough for SB=50
+    p3 = MockPlayer("Player3", chips=60)    # Not enough for BB=100
+    
+    return [p1, p2, p3]

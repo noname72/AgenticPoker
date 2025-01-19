@@ -28,7 +28,7 @@ def test_validate_bet_to_call():
     assert validate_bet_to_call(50, 100) == 0
 
 
-def test_collect_blinds_and_antes(mock_game, mock_players, mock_betting_logger):
+def test_collect_blinds_and_antes(mock_blind_config, mock_game, mock_players, mock_betting_logger):
     """
     Tests collection of blinds and antes from players.
     Assumes:
@@ -36,11 +36,8 @@ def test_collect_blinds_and_antes(mock_game, mock_players, mock_betting_logger):
     - Players at indices 1 and 2 can post small and big blinds respectively
     - All players have sufficient chips for blinds and antes
     """
+    dealer_index, small_blind, big_blind, ante = mock_blind_config
     mock_game.players = mock_players
-    dealer_index = 0
-    small_blind = 50
-    big_blind = 100
-    ante = 10
 
     collected = collect_blinds_and_antes(
         mock_players, dealer_index, small_blind, big_blind, ante, mock_game
@@ -816,7 +813,7 @@ def test_betting_round_all_players_all_in(
 
 
 def test_collect_blinds_and_antes_insufficient_chips(
-    mock_game, mock_players, mock_betting_logger
+    mock_blind_config, mock_game, mock_insufficient_chips_players, mock_betting_logger
 ):
     """
     Tests collection of blinds when players don't have enough chips.
@@ -825,38 +822,32 @@ def test_collect_blinds_and_antes_insufficient_chips(
     - Correct amounts are collected and logged
     - Player states are updated appropriately
     """
-    mock_game.players = mock_players
-    dealer_index = 0
-    small_blind = 50
-    big_blind = 100
-    ante = 0  # Remove ante for now to simplify test
-
-    # Set up players with insufficient chips
-    mock_players[1].chips = 30  # Can't afford full small blind
-    mock_players[2].chips = 60  # Can't afford full big blind
+    dealer_index, small_blind, big_blind, ante = mock_blind_config
+    mock_game.players = mock_insufficient_chips_players
+    ante = 0  # Override ante for this test to simplify
 
     collected = collect_blinds_and_antes(
-        mock_players, dealer_index, small_blind, big_blind, ante, mock_game
+        mock_insufficient_chips_players, dealer_index, small_blind, big_blind, ante, mock_game
     )
 
     # Verify partial blind payments
-    assert mock_players[1].bet == 30  # Posted what they could for SB
-    assert mock_players[2].bet == 60  # Posted what they could for BB
-    assert mock_players[1].chips == 0
-    assert mock_players[2].chips == 0
+    assert mock_insufficient_chips_players[1].bet == 30  # Posted what they could for SB
+    assert mock_insufficient_chips_players[2].bet == 60  # Posted what they could for BB
+    assert mock_insufficient_chips_players[1].chips == 0
+    assert mock_insufficient_chips_players[2].chips == 0
     assert collected == 90  # 30 (partial SB) + 60 (partial BB)
 
     # Verify betting logger was called correctly
     mock_betting_logger.log_blind_or_ante.assert_any_call(
-        mock_players[1].name, small_blind, 30, is_small_blind=True
+        mock_insufficient_chips_players[1].name, small_blind, 30, is_small_blind=True
     )
     mock_betting_logger.log_blind_or_ante.assert_any_call(
-        mock_players[2].name, big_blind, 60
+        mock_insufficient_chips_players[2].name, big_blind, 60
     )
 
 
 def test_collect_blinds_and_antes_insufficient_ante(
-    mock_game, mock_players, mock_betting_logger
+    mock_blind_config, mock_game, mock_insufficient_chips_players, mock_betting_logger
 ):
     """
     Tests ante collection when players can't afford the full ante.
@@ -865,32 +856,34 @@ def test_collect_blinds_and_antes_insufficient_ante(
     - Correct total is collected
     - Player states are updated appropriately
     """
-    mock_game.players = mock_players
-    dealer_index = 0
-    small_blind = 50
-    big_blind = 100
-    ante = 20
-
-    # Set up a player with insufficient chips for ante
-    mock_players[0].chips = 10  # Can only afford partial ante
+    dealer_index, small_blind, big_blind, ante = mock_blind_config
+    mock_game.players = mock_insufficient_chips_players
+    
+    # First player can only afford partial ante
+    mock_insufficient_chips_players[0].chips = 5  # Override to test ante specifically
 
     collected = collect_blinds_and_antes(
-        mock_players, dealer_index, small_blind, big_blind, ante, mock_game
+        mock_insufficient_chips_players, dealer_index, small_blind, big_blind, ante, mock_game
     )
 
+    # Calculate expected total:
+    # - Player 1: 5 chips for ante (all-in)
+    # - Player 2: 10 chips for ante + 20 remaining for SB (all-in)
+    # - Player 3: 10 chips for ante + 50 remaining for BB (all-in)
     expected_total = (
-        10  # Partial ante from player 0
-        + (ante * (len(mock_players) - 1))  # Full antes from other players
-        + small_blind
-        + big_blind
+        5   # Partial ante from player 1 (all-in)
+        + 10  # Full ante from player 2
+        + 20  # Remaining chips from player 2 for SB
+        + 10  # Full ante from player 3
+        + 50  # Remaining chips from player 3 for BB
     )
-    assert collected == expected_total
-    assert mock_players[0].chips == 0
+    assert collected == expected_total  # Should be 95
+    assert mock_insufficient_chips_players[0].chips == 0
     mock_betting_logger.log_collecting_antes.assert_called_once()
 
 
 def test_collect_blinds_and_antes_dealer_wrap(
-    mock_game, mock_players, mock_betting_logger
+    mock_blind_config, mock_game, mock_players, mock_betting_logger
 ):
     """
     Tests blind collection when dealer position causes wrap-around.
@@ -898,11 +891,9 @@ def test_collect_blinds_and_antes_dealer_wrap(
     - Correct players post blinds when dealer is near end of player list
     - Blind positions wrap correctly to start of player list
     """
+    _, small_blind, big_blind, ante = mock_blind_config
+    dealer_index = len(mock_players) - 1  # Override dealer to last player
     mock_game.players = mock_players
-    dealer_index = len(mock_players) - 1  # Last player is dealer
-    small_blind = 50
-    big_blind = 100
-    ante = 10
 
     collected = collect_blinds_and_antes(
         mock_players, dealer_index, small_blind, big_blind, ante, mock_game
