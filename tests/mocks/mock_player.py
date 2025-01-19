@@ -104,9 +104,28 @@ class MockPlayer(Player):
         return PlayerState.from_player(self)
 
     def __eq__(self, other):
+        """Compare players based on their name and state.
+
+        Two players are considered equal if they have:
+        - Same name
+        - Same chip count
+        - Same folded state
+        - Same all-in state
+        - Same bet amount
+        """
         if not isinstance(other, MockPlayer):
             return False
-        return self.name == other.name
+        return (
+            self.name == other.name
+            and self.chips == other.chips
+            and self.folded == other.folded
+            and self.is_all_in == other.is_all_in
+            and self.bet == other.bet
+        )
+
+    def __repr__(self):
+        """Provide readable string representation for debugging."""
+        return f"MockPlayer(name='{self.name}', chips={self.chips}, folded={self.folded}, all_in={self.is_all_in})"
 
     def __hash__(self):
         return hash(self.name)

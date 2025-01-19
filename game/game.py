@@ -159,12 +159,7 @@ class AgenticPoker:
 
             # Pre-draw betting round
             logging.info(f"====== Pre-draw betting ======\n")
-            new_pot, side_pots, should_continue = betting.handle_betting_round(self)
-
-            # Update pot manager with new pot and side pots
-            if side_pots:
-                self.pot_manager.side_pots = side_pots
-            self.pot_manager.pot = new_pot
+            should_continue = betting.handle_betting_round(self)
 
             if not should_continue:
                 self._reset_round()
@@ -175,14 +170,7 @@ class AgenticPoker:
             draw.handle_draw_phase(players=self.players, deck=self.deck)
 
             # Post-draw betting round
-            new_pot, side_pots, should_continue = post_draw.handle_post_draw_betting(
-                self
-            )
-
-            # Update pot manager with new pot and side pots from post-draw betting
-            if side_pots:
-                self.pot_manager.side_pots = side_pots
-            self.pot_manager.pot = new_pot
+            should_continue = post_draw.handle_post_draw_betting(self)
 
             if not should_continue:
                 self._reset_round()

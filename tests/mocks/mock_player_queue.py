@@ -1,154 +1,148 @@
-from typing import List, Optional
+from typing import List, Optional, Set
 from unittest.mock import MagicMock
 
 from tests.mocks.mock_player import MockPlayer
 
 
 class MockPlayerQueue:
-    """A mock implementation of the PlayerQueue class for testing purposes.
+    """Mock implementation of PlayerQueue for testing.
 
-    This mock provides the same interface as the real PlayerQueue but with configurable
-    behaviors for testing. It manages a circular queue of mock players and allows easy
-    configuration of player rotation and round state.
-
-    Usage:
-        # Basic initialization with mock players
-        players = [
-            MockPlayer("Player1", chips=1000),
-            MockPlayer("Player2", chips=1000),
-            MockPlayer("Player3", chips=1000)
-        ]
-        queue = MockPlayerQueue(players)
-
-        # Configure specific behaviors
-        queue.configure_for_test(
-            players=players,  # Set specific players
-            index=1,  # Start from second player
-            round_complete=False  # Set round state
-        )
-
-        # Configure sequence of next players
-        specific_players = [players[1], players[2], players[0]]
-        queue.set_next_players(specific_players)
-
-        # Configure round completion
-        queue.set_round_complete(True)
-
-        # Test queue state
-        assert len(queue) == 3
-        assert queue.get_next_player() == players[1]
-
-        # Verify method calls
-        queue.get_next_player.assert_called_once()
-        queue.remove_player.assert_not_called()
-
-    Default Behaviors:
-        - get_next_player: Returns next player in rotation
-        - remove_player: Removes player and adjusts index
-        - reset_queue: Resets index to 0
-        - is_round_complete: Checks if all players folded or all-in
+    Provides the same interface as PlayerQueue but with configurable behaviors
+    and tracking capabilities for testing. Manages player rotation and betting
+    action tracking.
 
     Attributes:
-        players (List[MockPlayer]): List of mock players in the queue
-        index (int): Current position in rotation
-
-    All methods are MagicMocks that can be configured with custom return values
-    or side effects as needed for testing.
+        players: List of all players in the queue
+        index: Current position in rotation
+        needs_to_act: Players who still need to act
+        acted_since_last_raise: Players who acted since last raise
+        active_players: Players who haven't folded/all-in
+        all_in_players: Players who are all-in
+        folded_players: Players who have folded
     """
 
     def __init__(self, players: List[MockPlayer]):
-        """Initialize the mock player queue.
-
-        Args:
-            players: List of MockPlayer objects to be included in the queue
-        """
-        self.players = players.copy()  # Make a copy to avoid modifying original list
+        """Initialize the mock queue with a list of players."""
+        self.players = players.copy()
         self.index = 0
+
+        # Add tracking sets to match real PlayerQueue
+        self.needs_to_act: Set[MockPlayer] = set(players)
+        self.acted_since_last_raise: Set[MockPlayer] = set()
+
+        # Add player state lists
+        self._update_player_lists()
 
         # Create mock methods that can be configured in tests
         self.get_next_player = MagicMock()
         self.remove_player = MagicMock()
-        self.reset_queue = MagicMock()
         self.is_round_complete = MagicMock(return_value=False)
+        self.mark_player_acted = MagicMock()
+        self.reset_action_tracking = MagicMock()
+        self.all_players_acted = MagicMock(return_value=False)
 
         # Set up default behaviors
         self.get_next_player.side_effect = self._default_get_next_player
         self.remove_player.side_effect = self._default_remove_player
-        self.reset_queue.side_effect = self._default_reset_queue
         self.is_round_complete.side_effect = self._default_is_round_complete
+        self.mark_player_acted.side_effect = self._default_mark_player_acted
+        self.reset_action_tracking.side_effect = self._default_reset_action_tracking
+        self.all_players_acted.side_effect = self._default_all_players_acted
+
+    def _update_player_lists(self) -> None:
+        """Update the categorized lists of players based on their current state.
+
+        Updates active_players, all_in_players, and folded_players lists.
+        Resets the index to maintain consistent clockwise rotation.
+        """
+        self.active_players = [
+            p for p in self.players if not p.folded and not p.is_all_in
+        ]
+        self.all_in_players = [p for p in self.players if p.is_all_in]
+        self.folded_players = [p for p in self.players if p.folded]
+        self.index = 0  # Reset index when player states change
 
     def _default_get_next_player(self) -> Optional[MockPlayer]:
-        """Default behavior for getting next player."""
-        if not self.players:
+        """Default behavior for getting next player.
+
+        Returns the next active player in the queue, skipping folded and all-in players.
+        Maintains circular rotation by wrapping around to the start when reaching the end.
+
+        Returns:
+            Optional[MockPlayer]: Next active player, or None if no active players remain
+        """
+        if not self.active_players:
             return None
-        player = self.players[self.index]
-        self.index = (self.index + 1) % len(self.players)
-        return player
+
+        # Try to find next active player starting from current index
+        start_index = self.index
+        while True:
+            # Get current player
+            if self.index >= len(self.players):
+                self.index = 0
+            current_player = self.players[self.index]
+
+            # Move index to next position for next call
+            self.index = (self.index + 1) % len(self.players)
+
+            # If we found an active player, return them
+            if current_player in self.active_players:
+                return current_player
+
+            # If we've checked all players and found none active, return None
+            if self.index == start_index:
+                return None
 
     def _default_remove_player(self, player: MockPlayer) -> None:
         """Default behavior for removing a player."""
         if player in self.players:
             player_index = self.players.index(player)
             self.players.remove(player)
+            self.needs_to_act.discard(player)  # Remove from needs_to_act
+            self.acted_since_last_raise.discard(
+                player
+            )  # Remove from acted_since_last_raise
+
+            # Adjust index if needed
             if player_index < self.index:
                 self.index -= 1
             if self.index >= len(self.players):
                 self.index = 0
 
-    def _default_reset_queue(self) -> None:
-        """Default behavior for resetting the queue."""
-        self.index = 0
+            self._update_player_lists()
 
     def _default_is_round_complete(self) -> bool:
         """Default behavior for checking if round is complete."""
         return all(player.folded or player.is_all_in for player in self.players)
 
-    def configure_for_test(
-        self,
-        players: Optional[List[MockPlayer]] = None,
-        index: Optional[int] = None,
-        round_complete: Optional[bool] = None,
+    def _default_mark_player_acted(
+        self, player: MockPlayer, is_raise: bool = False
     ) -> None:
-        """Configure the mock queue for testing with a single method.
+        """Default behavior for marking a player's action."""
+        self.needs_to_act.discard(player)
+        self.acted_since_last_raise.add(player)
 
-        Args:
-            players: Optional list of players to set
-            index: Optional index to set
-            round_complete: Optional boolean to set round complete status
-        """
-        if players is not None:
-            self.players = players.copy()
+        if is_raise:
+            self.acted_since_last_raise = {player}
+            self.needs_to_act = set(p for p in self.active_players if p != player)
 
-        if index is not None:
-            self.index = index
+    def _default_reset_action_tracking(self) -> None:
+        """Default behavior for resetting action tracking."""
+        self.needs_to_act = set(self.active_players)
+        self.acted_since_last_raise.clear()
 
-        if round_complete is not None:
-            self.is_round_complete.return_value = round_complete
+    def _default_all_players_acted(self) -> bool:
+        """Default behavior for checking if all players have acted."""
+        return self.acted_since_last_raise == set(self.active_players)
 
-    def set_next_players(self, players: List[MockPlayer]) -> None:
-        """Configure the sequence of players to be returned by get_next_player.
+    def get_active_count(self) -> int:
+        """Get the number of active players."""
+        return len(self.active_players)
 
-        Args:
-            players: List of players to be returned in sequence
-        """
-        self.get_next_player.reset_mock()
-        self.get_next_player.side_effect = players
+    def get_all_in_count(self) -> int:
+        """Get the number of all-in players."""
+        return len(self.all_in_players)
 
-    def set_round_complete(self, is_complete: bool) -> None:
-        """Configure whether the round is complete.
-
-        Args:
-            is_complete: Boolean indicating if round is complete
-        """
-        self.is_round_complete.return_value = is_complete
-
-    def __len__(self) -> int:
-        """Get the number of players in the queue."""
-        return len(self.players)
-
-    def __str__(self) -> str:
-        """Get a string representation of the queue state."""
-        return (
-            f"MockPlayerQueue: {len(self.players)} players, "
-            f"current index: {self.index}"
-        )
+    def get_folded_count(self) -> int:
+        """Get the number of folded players."""
+        return len(self.folded_players)
