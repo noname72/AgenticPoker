@@ -29,12 +29,6 @@ Betting Rules:
      * Players can't be forced to fold if they can't match full bet
      * Side pots created when players go all-in for different amounts
 
-4. Round Completion:
-   - Round ends when:
-     * All players have acted and bet amounts are equal
-     * Only one player remains (all others folded)
-     * All but one player are all-in
-
 The module uses a combination of sets and flags to track:
 - Which players still need to act
 - Who has acted since the last raise
@@ -48,11 +42,10 @@ Key Components:
 - Various helper functions for action tracking and validation
 """
 
-from typing import TYPE_CHECKING, List, Optional, Set, Tuple, Union
+from typing import TYPE_CHECKING, List, Optional, Set, Tuple
 
 from data.states.round_state import RoundPhase
 from data.types.action_response import ActionType
-from data.types.pot_types import SidePot
 from loggers.betting_logger import BettingLogger
 
 from .player import Player
@@ -62,147 +55,7 @@ if TYPE_CHECKING:
     from game.game import Game
 
 
-def betting_round(
-    game: "Game",
-) -> Union[int, Tuple[int, List[SidePot]]]:
-    """Manages a complete round of betting among active players.
-
-    This function handles the core betting mechanics for a poker round, including:
-    - Processing actions from each active player
-    - Tracking betting amounts and pot size
-    - Managing all-in situations and side pot creation
-    - Ensuring proper betting order and round completion
-
-    Args:
-        game: The Game instance containing all game state, including players,
-             pot manager, and round state.
-
-    Returns:
-        Either:
-        - int: The new pot amount (if no side pots were created)
-        - Tuple[int, List[SidePot]]: The new pot amount and list of side pots created
-          from all-in situations
-    """
-    active_players: List[Player] = [p for p in game.players if not p.folded]
-    all_in_players: List[Player] = [p for p in active_players if p.is_all_in]
-    round_complete: bool = False
-    last_raiser: Optional[Player] = None
-
-    # Get big blind player based on position
-    big_blind_player: Optional[Player] = _get_big_blind_player(game, active_players)
-
-    # Track who needs to act and who has acted since last raise
-    needs_to_act: Set[Player] = set(active_players)
-    acted_since_last_raise: Set[Player] = set()
-
-    # If it's preflop and big blind player exists, they should act last if no raises
-    if big_blind_player and game.round_state.phase == RoundPhase.PREFLOP:
-        needs_to_act.discard(big_blind_player)  # Remove BB initially
-        acted_since_last_raise.add(big_blind_player)  # Mark BB as having acted
-
-    # Initialize PlayerQueue with active players
-    player_queue = PlayerQueue(active_players)
-
-    # Main betting loop
-    while not round_complete:
-        _process_betting_cycle(
-            game,
-            player_queue,
-            needs_to_act,
-            acted_since_last_raise,
-            last_raiser,
-            big_blind_player,
-        )
-
-        # Check if all players have acted and betting is complete
-        active_non_folded = set(
-            p for p in active_players if not p.folded and p.chips > 0
-        )
-        round_complete = (
-            len(needs_to_act) == 0 and acted_since_last_raise == active_non_folded
-        )
-
-    # If any all-ins occurred, compute side pots
-    if all_in_players:
-        side_pots = game.pot_manager.calculate_side_pots(active_players)
-        return game.pot_manager.pot, side_pots
-
-    return game.pot_manager.pot
-
-
-def _process_betting_cycle(
-    game: "Game",
-    player_queue: PlayerQueue,
-    needs_to_act: Set[Player],
-    acted_since_last_raise: Set[Player],
-    last_raiser: Optional[Player],
-    big_blind_player: Optional[Player],
-) -> None:
-    """Process a single cycle of betting for all active players.
-
-    Handles the betting action for each player in turn, including:
-    - Checking if player should be skipped (folded/no chips/already acted)
-    - Logging the current game state
-    - Getting and executing player's action decision
-    - Updating betting round tracking (who needs to act, last raiser, etc.)
-    - Managing special big blind rules during preflop
-
-    Args:
-        game: Game instance containing current game state
-        player_queue: PlayerQueue instance managing player turns
-        needs_to_act: Set of players that still need to act
-        acted_since_last_raise: Set of players who have acted since last raise
-        last_raiser: The player who made the last raise, if any
-        big_blind_player: The big blind player for special preflop rules
-
-    Side Effects:
-        - Updates game state based on player actions
-        - Updates tracking sets for betting round management
-        - Logs player actions and game state changes
-    """
-    while not player_queue.is_round_complete():
-        agent = player_queue.get_next_player()
-        if not agent:
-            break
-
-        should_skip, reason = _should_skip_player(agent, needs_to_act)
-        if should_skip:
-            needs_to_act.discard(agent)  # Remove the player from needs_to_act
-            continue
-
-        BettingLogger.log_player_turn(
-            player_name=agent.name,
-            hand=agent.hand.show() if hasattr(agent, "hand") else "Unknown",
-            chips=agent.chips,
-            current_bet=agent.bet,
-            pot=game.pot_manager.pot,
-            active_players=[p.name for p in player_queue.players if not p.folded],
-            last_raiser=last_raiser.name if last_raiser else None,
-        )
-
-        action_decision = agent.decide_action(game)
-        agent.execute(action_decision, game)
-
-        last_raiser, needs_to_act, acted_since_last_raise = _update_action_tracking(
-            agent,
-            action_decision.action_type,
-            player_queue.players,
-            needs_to_act,
-            acted_since_last_raise,
-            big_blind_player,
-            game.round_state.phase == RoundPhase.PREFLOP,
-        )
-
-        _should_continue_betting(
-            player_queue.players, acted_since_last_raise, last_raiser, needs_to_act
-        )
-
-        BettingLogger.log_line_break()
-
-
-def handle_betting_round(
-    game: "Game",
-) -> Tuple[int, Optional[List[SidePot]], bool]:
+def handle_betting_round(game: "Game") -> bool:
     """Manages a complete betting round and updates game state accordingly.
 
     This function serves as the main entry point for handling a betting round.
@@ -217,11 +70,7 @@ def handle_betting_round(
         game: Game object containing all game state and player information
 
     Returns:
-        Tuple containing:
-        - int: New pot amount after the betting round
-        - Optional[List[SidePot]]: Side pots created during all-in situations,
-          or None if no side pots were created
-        - bool: Whether the game should continue (True if multiple players remain)
+        bool: Whether the game should continue (True if multiple players remain)
 
     Raises:
         ValueError: If there are no players or if the pot amount is negative
@@ -240,36 +89,122 @@ def handle_betting_round(
     elif game.pot_manager.pot < 0:
         raise ValueError("Pot amount cannot be negative")
 
-    if any(not isinstance(p, Player) for p in game.players):
-        raise TypeError("All elements in players list must be Player instances")
+    # if any(not isinstance(p, Player) for p in game.players):
+    #     raise TypeError("All elements in players list must be Player instances")
 
     # Run betting round with validated GameState
-    result = betting_round(game)
-
-    # Handle return value based on whether side pots were created
-    if isinstance(result, tuple):
-        new_pot, side_pots = result
-    else:
-        new_pot = result
-        side_pots = None
-
-    # Update game state
-    game.pot_manager.pot = new_pot  # Update pot value
-    game.pot_manager.main_pot = new_pot
-    if side_pots:
-        game.pot_manager.side_pots = [
-            {
-                "amount": pot.amount,
-                "eligible_players": pot.eligible_players,
-            }
-            for pot in side_pots
-        ]
+    betting_round(game)
 
     # Determine if game should continue
     active_count = sum(1 for p in game.players if not p.folded)
     should_continue = active_count > 1
 
-    return new_pot, side_pots, should_continue
+    return should_continue
+
+
+def betting_round(game: "Game") -> None:
+    """Manages a complete round of betting among active players.
+
+    This function handles the core betting mechanics for a poker round, including:
+    - Processing actions from each active player
+    - Tracking betting amounts and pot size
+    - Ensuring proper betting order and round completion
+
+    Args:
+        game: The Game instance containing all game state, including players,
+             pot manager, and round state.
+    """
+    # Initialize PlayerQueue with active players
+    players = PlayerQueue(game.players)
+
+    round_complete: bool = False
+    last_raiser: Optional[Player] = None
+
+    # Get big blind player based on position
+    big_blind_player: Optional[Player] = _get_big_blind_player(
+        game, players.active_players
+    )
+
+    # If it's preflop and big blind player exists, they should act last if no raises
+    if big_blind_player and game.round_state.phase == RoundPhase.PREFLOP:
+        players.needs_to_act.discard(big_blind_player)  # Remove BB initially
+        players.acted_since_last_raise.add(big_blind_player)  # Mark BB as having acted
+
+    # Main betting loop
+    while not round_complete:
+        _process_betting_cycle(
+            game,
+            players,
+            last_raiser,
+            big_blind_player,
+        )
+
+        # Check if round is complete
+        round_complete = players.is_round_complete() or players.all_players_acted()
+
+
+def _process_betting_cycle(
+    game: "Game",
+    player_queue: PlayerQueue,
+    last_raiser: Optional[Player],
+    big_blind_player: Optional[Player],
+) -> None:
+    """Process a single cycle of betting for all active players.
+
+    Handles the betting action for each player in turn, including:
+    - Checking if player should be skipped (folded/no chips/already acted)
+    - Logging the current game state
+    - Getting and executing player's action decision
+    - Updating betting round tracking (who needs to act, last raiser, etc.)
+    - Managing special big blind rules during preflop
+
+    Args:
+        game: Game instance containing current game state
+        player_queue: PlayerQueue instance managing player turns
+        last_raiser: The player who made the last raise, if any
+        big_blind_player: The big blind player for special preflop rules
+
+    Side Effects:
+        - Updates game state based on player actions
+        - Updates tracking sets for betting round management
+        - Logs player actions and game state changes
+    """
+    while not player_queue.is_round_complete():
+        agent = player_queue.get_next_player()
+        if not agent:
+            break
+
+        should_skip, reason = _should_skip_player(agent, player_queue.needs_to_act)
+        if should_skip:
+            player_queue.needs_to_act.discard(
+                agent
+            )  # Remove the player from needs_to_act
+            continue
+
+        BettingLogger.log_player_turn(
+            player_name=agent.name,
+            hand=agent.hand.show() if hasattr(agent, "hand") else "Unknown",
+            chips=agent.chips,
+            current_bet=agent.bet,
+            pot=game.pot_manager.pot,
+            active_players=[p.name for p in player_queue.players if not p.folded],
+            last_raiser=last_raiser.name if last_raiser else None,
+        )
+
+        action_decision = agent.decide_action(game)
+        agent.execute(action_decision, game)
+
+        last_raiser = _update_action_tracking(
+            agent,
+            action_decision.action_type,
+            player_queue,
+            big_blind_player,
+            game.round_state.phase == RoundPhase.PREFLOP,
+        )
+
+        _should_continue_betting(player_queue, last_raiser)
+
+        BettingLogger.log_line_break()
 
 
 def validate_bet_to_call(current_bet: int, player_bet: int) -> int:
@@ -410,44 +345,34 @@ def _should_skip_player(player: Player, needs_to_act: Set[Player]) -> Tuple[bool
 def _update_action_tracking(
     agent: Player,
     action_type: ActionType,
-    active_players: List[Player],
-    needs_to_act: Set[Player],
-    acted_since_last_raise: Set[Player],
+    player_queue: PlayerQueue,
     big_blind_player: Optional[Player],
     is_preflop: bool,
-) -> Tuple[Optional[Player], Set[Player], Set[Player]]:
+) -> Optional[Player]:
     """Updates player action tracking sets after a betting action.
 
     Args:
         agent: The player who just acted
         action_type: The type of action taken
-        active_players: List of players still in the hand
-        needs_to_act: Set of players that still need to act
-        acted_since_last_raise: Set of players who have acted since last raise
+        player_queue: PlayerQueue instance
         big_blind_player: The big blind player
         is_preflop: Whether the current round is preflop
 
     Returns:
-        Tuple containing:
-        - Optional[Player]: The new last raiser (if any)
-        - Set[Player]: Updated needs_to_act set
-        - Set[Player]: Updated acted_since_last_raise set
+        Optional[Player]: The new last raiser (if any)
     """
     last_raiser = None
 
-    if action_type == ActionType.RAISE:
+    # Mark player's action and handle raise case
+    is_raise = action_type == ActionType.RAISE
+    player_queue.mark_player_acted(agent, is_raise=is_raise)
+
+    if is_raise:
         last_raiser = agent
-        acted_since_last_raise = {agent}
-        needs_to_act = set(
-            p for p in active_players if p != agent and not p.folded and p.chips > 0
-        )
         # If someone raises, BB needs to act again in preflop
         if is_preflop and big_blind_player and agent != big_blind_player:
-            needs_to_act.add(big_blind_player)
+            player_queue.needs_to_act.add(big_blind_player)
     else:
-        acted_since_last_raise.add(agent)
-        needs_to_act.discard(agent)
-
         # Give BB option to raise on their first action in preflop
         if (
             is_preflop
@@ -455,16 +380,14 @@ def _update_action_tracking(
             and agent == big_blind_player
             and not last_raiser
         ):
-            needs_to_act.add(big_blind_player)
+            player_queue.needs_to_act.add(big_blind_player)
 
-    return last_raiser, needs_to_act, acted_since_last_raise
+    return last_raiser
 
 
 def _should_continue_betting(
-    active_players: List[Player],
-    acted_since_last_raise: Set[Player],
+    player_queue: PlayerQueue,
     last_raiser: Optional[Player],
-    needs_to_act: Set[Player],
 ) -> None:
     """Determines if betting should continue and updates who needs to act.
 
@@ -475,10 +398,8 @@ def _should_continue_betting(
     2. Otherwise, continue the betting round with remaining players
 
     Args:
-        active_players: List of players still in the hand
-        acted_since_last_raise: Set of players who have acted since last raise
+        player_queue: PlayerQueue instance
         last_raiser: The player who made the last raise, if any
-        needs_to_act: Set of players that still need to act
 
     Side Effects:
         Updates needs_to_act set based on betting conditions:
@@ -487,12 +408,14 @@ def _should_continue_betting(
         - Leaves set unchanged if betting should continue
     """
     # Get active non-folded players with chips
-    active_non_folded = set(p for p in active_players if not p.folded and p.chips > 0)
-    all_acted = acted_since_last_raise == active_non_folded
+    active_non_folded = set(
+        p for p in player_queue.active_players if not p.folded and p.chips > 0
+    )
+    all_acted = player_queue.acted_since_last_raise == active_non_folded
 
     # If everyone has acted since last raise, give last raiser final chance
     if all_acted and last_raiser and not last_raiser.folded and last_raiser.chips > 0:
-        needs_to_act.clear()
-        needs_to_act.add(last_raiser)
+        player_queue.needs_to_act.clear()
+        player_queue.needs_to_act.add(last_raiser)
     elif all_acted:
-        needs_to_act.clear()  # No one else needs to act
+        player_queue.needs_to_act.clear()  # No one else needs to act

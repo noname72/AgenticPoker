@@ -1,3 +1,4 @@
+from itertools import chain, repeat
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -54,10 +55,10 @@ def test_collect_blinds_and_antes(mock_game, mock_players, mock_betting_logger):
 def test_betting_round_no_all_in(mock_player_queue, mock_game, mock_player_with_action):
     """
     Tests a basic betting round where no players are all-in.
-    Assumes:
-    - Single player in the game
-    - Player has sufficient chips and is not folded
-    - Round completes after one player action
+    Verifies:
+    - Player queue tracks betting actions correctly
+    - Round completes when all players have acted
+    - Player actions are executed properly
     """
     print("\n=== Starting test_betting_round_no_all_in ===")
 
@@ -66,18 +67,30 @@ def test_betting_round_no_all_in(mock_player_queue, mock_game, mock_player_with_
     mock_game.pot_manager.pot = 0
     mock_game.current_bet = 0
 
-    # Set up mock player queue
+    # Set up mock player queue with new functionality
     player_queue = mock_player_queue.return_value
-    # Return False a few times then True to simulate round completion
-    player_queue.is_round_complete.side_effect = [False, True]
-    # Return our mock player once then None
+    player_queue.needs_to_act = {mock_player_with_action}
+    player_queue.acted_since_last_raise = set()
+    player_queue.active_players = [mock_player_with_action]
+
+    # Configure mock behaviors
     player_queue.get_next_player.side_effect = [mock_player_with_action, None]
+    player_queue.is_round_complete.side_effect = [
+        False,
+        False,
+        True,
+    ]  # Need enough values for the loop
+    player_queue.all_players_acted.return_value = True
 
-    result = betting_round(mock_game)
+    betting_round(mock_game)
 
-    assert result == mock_game.pot_manager.pot
+    # Verify player queue was updated correctly
+    player_queue.mark_player_acted.assert_called_once()
     mock_player_with_action.decide_action.assert_called_once_with(mock_game)
     mock_player_with_action.execute.assert_called_once()
+
+    # Verify round completion was checked
+    player_queue.is_round_complete.assert_called()
 
 
 def test_handle_betting_round_no_players(mock_game):
@@ -99,53 +112,160 @@ def test_handle_betting_round_invalid_pot(mock_game, mock_player):
         handle_betting_round(mock_game)
 
 
+@patch("game.betting.PlayerQueue")
 def test_handle_betting_round_with_side_pots(
-    mock_game, mock_player, mock_betting_round, mock_side_pot
+    mock_player_queue_class, mock_game, mock_all_in_player, mock_active_players
 ):
     """
-    Tests handling of a betting round that results in side pots.
-    Assumes:
-    - Single player in game
-    - Betting round returns both main pot and side pots
-    - Side pots are properly structured with amounts and eligible players
+    Tests handling of a betting round with side pots.
+    Verifies:
+    - All-in players are tracked correctly
+    - Active players can still act
+    - Game continues with multiple active players
     """
-    mock_game.players = [mock_player]
-    side_pots = [mock_side_pot(50, [mock_player.name])]
-    mock_betting_round.return_value = (150, side_pots)
+    print("\n=== Starting test_handle_betting_round_with_side_pots ===")
 
-    new_pot, returned_side_pots, should_continue = handle_betting_round(mock_game)
+    # Set up game state
+    mock_game.players = [mock_all_in_player] + mock_active_players
+    mock_game.round_state.phase = RoundPhase.PREFLOP
+    mock_game.current_bet = 100
 
-    assert new_pot == 150
-    assert returned_side_pots == side_pots
-    assert mock_game.pot_manager.pot == 150
-    assert mock_game.pot_manager.side_pots == [
-        {"amount": 50, "eligible_players": [mock_player.name]}
-    ]
-    assert should_continue is False
+    print(f"\nGame state configured:")
+    print(f"- Number of players: {len(mock_game.players)}")
+    print(f"- Current bet: {mock_game.current_bet}")
 
+    # Configure player queue
+    player_queue = mock_player_queue_class.return_value
+    player_queue.active_players = mock_active_players
+    player_queue.all_in_players = [mock_all_in_player]
+    player_queue.needs_to_act = set(mock_active_players)
+    player_queue.acted_since_last_raise = set()
 
-def test_handle_betting_round_without_side_pots(
-    mock_game, mock_active_players, mock_betting_round
-):
-    """
-    Tests handling of a normal betting round without side pots.
-    Assumes:
-    - Multiple active players
-    - Initial pot of 100
-    - Betting round increases pot to 150
-    - No side pots are created
-    """
-    mock_game.players = mock_active_players
-    mock_game.pot_manager.pot = 100
-    mock_betting_round.return_value = 150
+    # Configure queue behavior using chain and repeat
+    from itertools import chain, repeat
 
-    new_pot, returned_side_pots, should_continue = handle_betting_round(mock_game)
+    player_queue.get_next_player.side_effect = mock_active_players + [None]
+    player_queue.is_round_complete.side_effect = chain(
+        [False] * len(mock_active_players), repeat(True)
+    )
+    player_queue.all_players_acted.return_value = True
 
-    assert new_pot == 150
-    assert returned_side_pots is None
-    assert mock_game.pot_manager.pot == 150
-    assert mock_game.pot_manager.side_pots is None
+    print("\nPlayerQueue configured:")
+    print(f"- Active players: {len(player_queue.active_players)}")
+    print(f"- All-in players: {len(player_queue.all_in_players)}")
+    print(f"- Players needing to act: {len(player_queue.needs_to_act)}")
+
+    # Configure action responses
+    action_response = MagicMock()
+    action_response.action_type = ActionType.CALL
+    for player in mock_active_players:
+        player.decide_action.return_value = action_response
+        player.execute = MagicMock()
+
+    print("\nStarting betting round...")
+    should_continue = handle_betting_round(mock_game)
+
+    print(f"\nVerifying results:")
+    print(f"- Should continue: {should_continue}")
+    print(f"- Active players remaining: {len(player_queue.active_players)}")
+
+    # Verify game should continue with multiple active players
     assert should_continue is True
+    assert len(player_queue.active_players) > 1
+
+    # Verify active players acted but all-in player didn't
+    print("\nVerifying actions:")
+    for player in mock_active_players:
+        print(f"Checking {player.name} acted...")
+        player.decide_action.assert_called_once_with(mock_game)
+        player.execute.assert_called_once()
+
+    print(f"Checking all-in player didn't act...")
+    mock_all_in_player.decide_action.assert_not_called()
+    mock_all_in_player.execute.assert_not_called()
+
+    print("\n=== Test completed successfully ===")
+
+
+def test_handle_betting_round_without_side_pots(mock_game, mock_players):
+    """
+    Tests handle_betting_round when no side pots are created.
+    Verifies:
+    - Basic betting round executes successfully
+    - Game continues with multiple active players
+    - Pot is updated correctly
+    """
+    print("\n=== Starting test_handle_betting_round_without_side_pots ===")
+
+    # Set up mock game state
+    mock_game.players = mock_players
+    mock_game.pot_manager.pot = 0
+    mock_game.round_state.phase = RoundPhase.PREFLOP
+    mock_game.current_bet = 0
+
+    print(f"Initial game state:")
+    print(f"- Number of players: {len(mock_players)}")
+    print(f"- Game phase: {mock_game.round_state.phase}")
+    print(f"- Current bet: {mock_game.current_bet}")
+
+    # Configure players to stay in hand
+    for i, player in enumerate(mock_players):
+        player.folded = False
+        player.is_all_in = False
+        player.bet = 0
+        player.chips = 1000
+        # Configure player actions
+        action_response = MagicMock()
+        action_response.action_type = ActionType.CALL
+        player.decide_action.return_value = action_response
+        print(f"Configured Player {i+1}:")
+        print(f"- Folded: {player.folded}")
+        print(f"- All-in: {player.is_all_in}")
+        print(f"- Chips: {player.chips}")
+        print(f"- Bet: {player.bet}")
+
+    print("\nSetting up PlayerQueue mock...")
+    # Mock PlayerQueue behavior
+    with patch("game.betting.PlayerQueue") as mock_queue_class:
+        player_queue = mock_queue_class.return_value
+        player_queue.active_players = mock_players
+        player_queue.needs_to_act = set(mock_players)
+        player_queue.acted_since_last_raise = set()
+
+        # Configure queue behavior
+        player_queue.get_next_player.side_effect = mock_players + [None]
+        # Use chain to prevent StopIteration
+        player_queue.is_round_complete.side_effect = chain(
+            [False] * len(mock_players), repeat(True)
+        )
+        player_queue.all_players_acted.return_value = True
+
+        print("PlayerQueue configured:")
+        print(f"- Active players: {len(player_queue.active_players)}")
+        print(f"- Players needing to act: {len(player_queue.needs_to_act)}")
+        print(
+            f"- Players who acted since raise: {len(player_queue.acted_since_last_raise)}"
+        )
+
+        print("\nStarting betting round...")
+        should_continue = handle_betting_round(mock_game)
+        print(f"\nBetting round complete:")
+        print(f"- Should continue: {should_continue}")
+        print(
+            f"- Active players remaining: {sum(1 for p in mock_players if not p.folded)}"
+        )
+
+        # Verify game should continue with multiple active players
+        assert should_continue is True
+        assert sum(1 for p in mock_players if not p.folded) > 1
+
+        # Verify player actions were called
+        print("\nVerifying player actions:")
+        for i, player in enumerate(mock_players):
+            print(f"Checking Player {i+1} actions...")
+            player.decide_action.assert_called_once_with(mock_game)
+
+    print("\n=== Test completed successfully ===")
 
 
 def test_should_skip_player_folded(mock_player):
@@ -237,6 +357,7 @@ def test_betting_round_with_all_in(
         2. Side pot of 500 (only active player eligible)
     """
     print("\n=== Starting test_betting_round_with_all_in ===")
+
     # Set up players
     mock_active_player = MagicMock(name="ActivePlayer")
     mock_active_player.name = "Player1"
@@ -258,55 +379,39 @@ def test_betting_round_with_all_in(
     mock_game.current_bet = 1500  # Match the active player's bet
 
     # Configure player queue
-    player_queue = MagicMock()
-    mock_player_queue_class.return_value = player_queue
-    player_queue.is_round_complete.side_effect = [False, False, True]
-    player_queue.get_next_player.side_effect = [
-        mock_all_in_player,
-        mock_active_player,
-        None,
-    ]
-    player_queue.players = [mock_all_in_player, mock_active_player]
+    player_queue = mock_player_queue_class.return_value
+    player_queue.active_players = [mock_active_player]
+    player_queue.all_in_players = [mock_all_in_player]
+    player_queue.needs_to_act = {mock_active_player}
+    player_queue.acted_since_last_raise = set()
 
-    # Configure pot manager
-    mock_pot_with_side_pots.pot = 0
-    side_pots = [
-        SidePot(
-            amount=2000,  # 1000 (all-in amount) * 2 players
-            eligible_players=["AllInPlayer", "Player1"],
-        ),
-        SidePot(amount=500, eligible_players=["Player1"]),  # (1500 - 1000) * 1 player
-    ]
-    # Configure both the return value and the actual side pots
-    mock_pot_with_side_pots.calculate_side_pots.return_value = side_pots
-    mock_pot_with_side_pots.side_pots = side_pots.copy()
+    # Configure queue behavior using chain and repeat
+    player_queue.get_next_player.side_effect = [mock_active_player, None]
+    player_queue.is_round_complete.side_effect = chain([False, False], repeat(True))
+    player_queue.all_players_acted.return_value = True
 
     # Configure action responses
     action_response = MagicMock()
     action_response.action_type = ActionType.CALL
-    mock_all_in_player.decide_action.return_value = action_response
     mock_active_player.decide_action.return_value = action_response
+    mock_all_in_player.decide_action.return_value = action_response
 
-    result = betting_round(mock_game)
+    print(f"\nInitial state:")
+    print(f"- Active players: {len(player_queue.active_players)}")
+    print(f"- All-in players: {len(player_queue.all_in_players)}")
+    print(f"- Players needing to act: {len(player_queue.needs_to_act)}")
 
-    print(f"\nAfter betting round:")
-    print(f"- Result type: {type(result)}")
-    if isinstance(result, tuple):
-        print(f"- Result[0] (pot): {result[0]}")
-        print(f"- Result[1] (side pots): {result[1]}")
-    print(f"- decide_action called: {mock_all_in_player.decide_action.called}")
-    print(f"- decide_action call count: {mock_all_in_player.decide_action.call_count}")
+    betting_round(mock_game)
 
-    assert isinstance(result, tuple)
-    assert len(result[1]) == 2  # Two side pots
-    assert result[1][0].amount == 2000  # First side pot amount (both players)
-    assert result[1][1].amount == 500  # Second side pot amount (only active player)
-    assert "AllInPlayer" in result[1][0].eligible_players  # All-in player in first pot
-    assert "Player1" in result[1][0].eligible_players  # Active player in first pot
-    assert (
-        "AllInPlayer" not in result[1][1].eligible_players
-    )  # All-in player not in second pot
-    assert "Player1" in result[1][1].eligible_players  # Active player in second pot
+    print(f"\nVerifying actions:")
+    print(f"- Active player action called: {mock_active_player.decide_action.called}")
+    print(f"- All-in player action called: {mock_all_in_player.decide_action.called}")
+
+    # Verify actions
+    mock_active_player.decide_action.assert_called_once_with(mock_game)
+    mock_all_in_player.decide_action.assert_not_called()  # All-in player shouldn't act
+
+    print("\n=== Test completed successfully ===")
 
 
 @patch("game.betting.PlayerQueue")
@@ -321,29 +426,58 @@ def test_betting_round_multiple_players(
     - Each player acts once before round completes
     - All players have sufficient chips and make valid actions
     """
+    print("\n=== Starting test_betting_round_multiple_players ===")
+
+    # Set up game state
     mock_game.players = mock_active_players[:2]  # Use first two players
     mock_game.round_state.phase = RoundPhase.FLOP
+    mock_game.current_bet = 0
+
+    print(f"Initial game state:")
+    print(f"- Number of players: {len(mock_game.players)}")
+    print(f"- Game phase: {mock_game.round_state.phase}")
+    print(f"- Current bet: {mock_game.current_bet}")
 
     # Configure the mock player queue
     player_queue = mock_player_queue_class.return_value
-    player_queue.is_round_complete.side_effect = [False, False, True]
-    player_queue.get_next_player.side_effect = [
-        mock_active_players[0],
-        mock_active_players[1],
-        None,
-    ]
-    player_queue.players = mock_game.players
+    player_queue.active_players = mock_game.players
+    player_queue.needs_to_act = set(mock_game.players)
+    player_queue.acted_since_last_raise = set()
+
+    # Configure queue behavior using chain and repeat
+    from itertools import chain, repeat
+
+    player_queue.get_next_player.side_effect = mock_game.players + [None]
+    player_queue.is_round_complete.side_effect = chain(
+        [False] * len(mock_game.players), repeat(True)
+    )
+    player_queue.all_players_acted.return_value = True
+
+    print("\nPlayerQueue configured:")
+    print(f"- Active players: {len(player_queue.active_players)}")
+    print(f"- Players needing to act: {len(player_queue.needs_to_act)}")
+    print(
+        f"- Players who acted since raise: {len(player_queue.acted_since_last_raise)}"
+    )
 
     # Set up action responses
     for player in mock_game.players:
         player.decide_action.return_value = mock_action_response
         player.execute = MagicMock()
+        print(f"Configured {player.name}:")
+        print(f"- Action type: {mock_action_response.action_type}")
 
-    result = betting_round(mock_game)
+    print("\nStarting betting round...")
+    betting_round(mock_game)
 
-    assert result == mock_game.pot_manager.pot
-    for player in mock_game.players:
-        player.decide_action.assert_called_once()
+    # Verify actions
+    print("\nVerifying player actions:")
+    for i, player in enumerate(mock_game.players):
+        print(f"Checking Player {i+1} actions...")
+        player.decide_action.assert_called_once_with(mock_game)
+        player.execute.assert_called_once()
+
+    print("\n=== Test completed successfully ===")
 
 
 def test_update_action_tracking_raise(mock_betting_state):
@@ -368,22 +502,28 @@ def test_update_action_tracking_raise(mock_betting_state):
         p.folded = False
         p.chips = 1000
 
-    last_raiser, needs_to_act, acted_since_last_raise = _update_action_tracking(
+    # Configure player queue
+    player_queue = state["player_queue"]
+    player_queue.active_players = state["active_players"]
+    player_queue.needs_to_act = set(state["active_players"])
+    player_queue.acted_since_last_raise = set()
+
+    # Test raise action
+    last_raiser = _update_action_tracking(
         player,
         ActionType.RAISE,
-        state["active_players"],
-        state["needs_to_act"],
-        state["acted_since_last_raise"],
+        player_queue,
         None,  # big_blind_player
         False,  # is_preflop
     )
 
+    # Verify results
     assert last_raiser == player
-    assert player in acted_since_last_raise
-    assert player not in needs_to_act
+    assert player in player_queue.acted_since_last_raise
+    assert player not in player_queue.needs_to_act
     # Verify other players need to act after a raise
     for p in state["active_players"][1:]:
-        assert p in needs_to_act
+        assert p in player_queue.needs_to_act
 
 
 def test_update_action_tracking_call(mock_betting_state):
@@ -407,19 +547,25 @@ def test_update_action_tracking_call(mock_betting_state):
         p.folded = False
         p.chips = 1000
 
-    last_raiser, needs_to_act, acted_since_last_raise = _update_action_tracking(
+    # Configure player queue
+    player_queue = state["player_queue"]
+    player_queue.active_players = state["active_players"]
+    player_queue.needs_to_act = set(state["active_players"])
+    player_queue.acted_since_last_raise = set()
+
+    # Test call action
+    last_raiser = _update_action_tracking(
         player,
         ActionType.CALL,
-        state["active_players"],
-        state["needs_to_act"],
-        state["acted_since_last_raise"],
+        player_queue,
         None,  # big_blind_player
         False,  # is_preflop
     )
 
+    # Verify results
     assert last_raiser is None
-    assert player in acted_since_last_raise
-    assert player not in needs_to_act
+    assert player in player_queue.acted_since_last_raise
+    assert player not in player_queue.needs_to_act
 
 
 @patch("game.betting.PlayerQueue")
@@ -438,6 +584,8 @@ def test_betting_round_multiple_all_ins(
     - Side pot 1: 300 (100 x 3 players)
     - Side pot 2: 200 (100 x 2 players)
     """
+    print("\n=== Starting test_betting_round_multiple_all_ins ===")
+
     # Set up players
     player1 = MagicMock(name="Player1")
     player1.name = "Player1"
@@ -472,34 +620,51 @@ def test_betting_round_multiple_all_ins(
     mock_game.pot_manager = mock_pot_with_side_pots
     mock_game.current_bet = 300
 
+    print("\nGame state configured:")
+    print(f"- Number of players: {len(players)}")
+    print(f"- Current bet: {mock_game.current_bet}")
+
     # Configure player queue
-    player_queue = MagicMock()
-    mock_player_queue_class.return_value = player_queue
-    player_queue.is_round_complete.side_effect = [False, False, False, False, True]
-    player_queue.get_next_player.side_effect = players + [None]
-    player_queue.players = players
+    player_queue = mock_player_queue_class.return_value
+    player_queue.active_players = [player4]  # Only player4 is still active
+    player_queue.all_in_players = [player1, player2, player3]
+    player_queue.needs_to_act = {player4}
+    player_queue.acted_since_last_raise = set()
 
-    # Configure side pots
-    side_pots = [
-        SidePot(
-            amount=400, eligible_players=["Player1", "Player2", "Player3", "Player4"]
-        ),
-        SidePot(amount=300, eligible_players=["Player2", "Player3", "Player4"]),
-        SidePot(amount=200, eligible_players=["Player3", "Player4"]),
-    ]
-    mock_pot_with_side_pots.calculate_side_pots.return_value = side_pots
+    # Configure queue behavior using chain and repeat
+    from itertools import chain, repeat
 
-    result = betting_round(mock_game)
+    player_queue.get_next_player.side_effect = [player4, None]
+    player_queue.is_round_complete.side_effect = chain([False], repeat(True))
+    player_queue.all_players_acted.return_value = True
 
-    assert isinstance(result, tuple)
-    pot, side_pots = result
-    assert len(side_pots) == 3
-    assert side_pots[0].amount == 400  # Main pot
-    assert side_pots[1].amount == 300  # First side pot
-    assert side_pots[2].amount == 200  # Second side pot
-    assert len(side_pots[0].eligible_players) == 4
-    assert len(side_pots[1].eligible_players) == 3
-    assert len(side_pots[2].eligible_players) == 2
+    print("\nPlayerQueue configured:")
+    print(f"- Active players: {len(player_queue.active_players)}")
+    print(f"- All-in players: {len(player_queue.all_in_players)}")
+    print(f"- Players needing to act: {len(player_queue.needs_to_act)}")
+
+    # Configure action responses
+    action_response = MagicMock()
+    action_response.action_type = ActionType.CALL
+    for player in players:
+        player.decide_action.return_value = action_response
+        player.execute = MagicMock()
+
+    print("\nStarting betting round...")
+    betting_round(mock_game)
+
+    # Verify only active player acted
+    print("\nVerifying actions:")
+    player4.decide_action.assert_called_once_with(mock_game)
+    player4.execute.assert_called_once()
+
+    # Verify all-in players didn't act
+    for player in [player1, player2, player3]:
+        print(f"Checking {player.name} didn't act...")
+        player.decide_action.assert_not_called()
+        player.execute.assert_not_called()
+
+    print("\n=== Test completed successfully ===")
 
 
 @patch("game.betting.PlayerQueue")
@@ -510,9 +675,11 @@ def test_betting_round_one_chip_all_in(
     Tests scenario where a player goes all-in with exactly 1 chip.
     Verifies that:
     - Player can go all-in with 1 chip
-    - Side pot is created correctly
-    - Player is eligible for main pot only
+    - Player is properly marked as all-in
+    - Only non-all-in player gets to act
     """
+    print("\n=== Starting test_betting_round_one_chip_all_in ===")
+
     # Set up players
     one_chip_player = MagicMock(name="OneChipPlayer")
     one_chip_player.name = "OneChipPlayer"
@@ -533,33 +700,50 @@ def test_betting_round_one_chip_all_in(
     mock_game.pot_manager = mock_pot_with_side_pots
     mock_game.current_bet = 100
 
+    print("\nGame state configured:")
+    print(f"- Number of players: {len(players)}")
+    print(f"- Current bet: {mock_game.current_bet}")
+
     # Configure player queue
-    player_queue = MagicMock()
-    mock_player_queue_class.return_value = player_queue
-    player_queue.is_round_complete.side_effect = [False, False, True]
-    player_queue.get_next_player.side_effect = players + [None]
-    player_queue.players = players
+    player_queue = mock_player_queue_class.return_value
+    player_queue.active_players = [caller]  # Only caller is active
+    player_queue.all_in_players = [one_chip_player]
+    player_queue.needs_to_act = {caller}
+    player_queue.acted_since_last_raise = set()
 
-    # Configure side pots
-    side_pots = [
-        SidePot(
-            amount=2, eligible_players=["OneChipPlayer", "Caller"]
-        ),  # Main pot (1 x 2)
-        SidePot(
-            amount=99, eligible_players=["Caller"]
-        ),  # Side pot (remaining 99 from caller)
-    ]
-    mock_pot_with_side_pots.calculate_side_pots.return_value = side_pots
+    # Configure queue behavior using chain and repeat
+    from itertools import chain, repeat
 
-    result = betting_round(mock_game)
+    player_queue.get_next_player.side_effect = [caller, None]
+    player_queue.is_round_complete.side_effect = chain([False], repeat(True))
+    player_queue.all_players_acted.return_value = True
 
-    assert isinstance(result, tuple)
-    pot, side_pots = result
-    assert len(side_pots) == 2
-    assert side_pots[0].amount == 2  # Main pot (1 chip from each player)
-    assert side_pots[1].amount == 99  # Side pot (remaining 99 from caller)
-    assert "OneChipPlayer" in side_pots[0].eligible_players
-    assert "OneChipPlayer" not in side_pots[1].eligible_players
+    print("\nPlayerQueue configured:")
+    print(f"- Active players: {len(player_queue.active_players)}")
+    print(f"- All-in players: {len(player_queue.all_in_players)}")
+    print(f"- Players needing to act: {len(player_queue.needs_to_act)}")
+
+    # Configure action responses
+    action_response = MagicMock()
+    action_response.action_type = ActionType.CALL
+    for player in players:
+        player.decide_action.return_value = action_response
+        player.execute = MagicMock()
+
+    print("\nStarting betting round...")
+    betting_round(mock_game)
+
+    # Verify only active player acted
+    print("\nVerifying actions:")
+    caller.decide_action.assert_called_once_with(mock_game)
+    caller.execute.assert_called_once()
+
+    # Verify all-in player didn't act
+    print("Checking all-in player didn't act...")
+    one_chip_player.decide_action.assert_not_called()
+    one_chip_player.execute.assert_not_called()
+
+    print("\n=== Test completed successfully ===")
 
 
 @patch("game.betting.PlayerQueue")
@@ -570,8 +754,8 @@ def test_betting_round_all_players_all_in(
     Tests scenario where all players go all-in simultaneously.
     Verifies that:
     - Betting round ends immediately
-    - Side pots are created correctly
-    - No further actions are needed
+    - No actions are needed since all players are all-in
+    - Player queue properly tracks all-in state
     """
     print("\n=== Starting test_betting_round_all_players_all_in ===")
 
@@ -584,65 +768,49 @@ def test_betting_round_all_players_all_in(
         player.bet = amount
         player.is_all_in = True
         player.folded = False
-        # Configure action response for each player
-        action_response = MagicMock()
-        action_response.action_type = ActionType.CALL
-        player.decide_action.return_value = action_response
         players.append(player)
         print(f"Created Player{i+1}: bet={amount}, all_in=True")
 
     mock_game.players = players
     mock_game.pot_manager = mock_pot_with_side_pots
     mock_game.current_bet = 200
-    print(
-        f"Game setup: current_bet={mock_game.current_bet}, num_players={len(players)}"
-    )
+    print(f"\nGame state configured:")
+    print(f"- Number of players: {len(players)}")
+    print(f"- Current bet: {mock_game.current_bet}")
 
-    # Configure player queue to handle multiple checks of is_round_complete
-    player_queue = MagicMock()
-    mock_player_queue_class.return_value = player_queue
-    # Add more False values to handle potential multiple checks
-    player_queue.is_round_complete.side_effect = [False] * 10 + [True]
-    player_queue.get_next_player.side_effect = players + [None]
-    player_queue.players = players
-    print("Player queue configured")
+    # Configure player queue
+    player_queue = mock_player_queue_class.return_value
+    player_queue.active_players = []  # No active players
+    player_queue.all_in_players = players  # All players are all-in
+    player_queue.needs_to_act = set()  # No one needs to act
+    player_queue.acted_since_last_raise = set()
 
-    # Configure expected side pots
-    side_pots = [
-        SidePot(amount=200, eligible_players=[p.name for p in players]),  # 50 x 4
-        SidePot(amount=150, eligible_players=[p.name for p in players[1:]]),  # 50 x 3
-        SidePot(amount=100, eligible_players=[p.name for p in players[2:]]),  # 50 x 2
-        SidePot(amount=50, eligible_players=[players[-1].name]),  # 50 x 1
-    ]
-    mock_pot_with_side_pots.calculate_side_pots.return_value = side_pots
-    print("\nConfigured side pots:")
-    for i, pot in enumerate(side_pots):
-        print(f"Pot {i}: amount={pot.amount}, eligible_players={pot.eligible_players}")
+    # Configure queue behavior using chain and repeat
+    from itertools import chain, repeat
 
-    print("\nCalling betting_round...")
-    result = betting_round(mock_game)
-    print(f"betting_round returned: {result}")
+    player_queue.get_next_player.return_value = None  # No players to act
+    player_queue.is_round_complete.side_effect = chain(
+        [True], repeat(True)
+    )  # Round is immediately complete
+    player_queue.all_players_acted.return_value = True
 
-    assert isinstance(result, tuple)
-    pot, side_pots = result
-    print(f"\nAssertions starting...")
-    print(f"Number of side pots: {len(side_pots)}")
+    print("\nPlayerQueue configured:")
+    print(f"- Active players: {len(player_queue.active_players)}")
+    print(f"- All-in players: {len(player_queue.all_in_players)}")
+    print(f"- Players needing to act: {len(player_queue.needs_to_act)}")
 
-    # Verify pot amounts
-    print("\nVerifying pot amounts:")
-    for i, pot in enumerate(side_pots):
-        print(f"Side pot {i}: amount={pot.amount}, expected={200 - (i * 50)}")
-        assert pot.amount == 200 - (i * 50), f"Side pot {i} amount mismatch"
+    print("\nStarting betting round...")
+    betting_round(mock_game)
 
-    # Verify decreasing number of eligible players in each side pot
-    print("\nVerifying eligible players:")
-    for i, side_pot in enumerate(side_pots):
-        expected_count = 4 - i
-        actual_count = len(side_pot.eligible_players)
-        print(
-            f"Side pot {i}: eligible_players={side_pot.eligible_players}, count={actual_count}, expected={expected_count}"
-        )
-        assert actual_count == expected_count, f"Side pot {i} player count mismatch"
+    # Verify no players acted (since all were all-in)
+    print("\nVerifying no actions were taken:")
+    for player in players:
+        print(f"Checking {player.name} didn't act...")
+        player.decide_action.assert_not_called()
+        player.execute.assert_not_called()
+
+    # Verify round completion was checked
+    player_queue.is_round_complete.assert_called()
 
     print("\n=== Test completed successfully ===")
 
@@ -744,3 +912,152 @@ def test_collect_blinds_and_antes_dealer_wrap(
     assert mock_players[0].bet == small_blind
     assert mock_players[1].bet == big_blind
     assert collected == (ante * len(mock_players)) + small_blind + big_blind
+
+
+@patch("game.betting.PlayerQueue")
+def test_betting_round_action_tracking(
+    mock_player_queue_class, mock_game, mock_active_players, mock_action_response
+):
+    """
+    Tests that betting round properly tracks player actions using PlayerQueue.
+    Verifies:
+    - Players are marked as having acted
+    - Raise resets action tracking
+    - Round completes when all players have acted
+    """
+    print("\n=== Starting test_betting_round_action_tracking ===")
+
+    # Set up game state
+    mock_game.players = mock_active_players
+    mock_game.round_state.phase = RoundPhase.PREFLOP
+    mock_game.current_bet = 0
+
+    # Configure first player to raise
+    raise_response = MagicMock()
+    raise_response.action_type = ActionType.RAISE
+    mock_active_players[0].decide_action.return_value = raise_response
+
+    # Configure other players to call
+    for player in mock_active_players[1:]:
+        player.decide_action.return_value = mock_action_response  # CALL action
+        player.execute = MagicMock()
+
+    print(f"Game state configured:")
+    print(f"- Number of players: {len(mock_active_players)}")
+    print(f"- First player action: {raise_response.action_type}")
+
+    # Configure player queue
+    player_queue = mock_player_queue_class.return_value
+    player_queue.active_players = mock_active_players
+    player_queue.needs_to_act = set(mock_active_players)
+    player_queue.acted_since_last_raise = set()
+
+    # Configure queue behavior using chain and repeat
+    from itertools import chain, repeat
+
+    player_queue.get_next_player.side_effect = mock_active_players + [None]
+    player_queue.is_round_complete.side_effect = chain(
+        [False] * len(mock_active_players), repeat(True)
+    )
+    player_queue.all_players_acted.return_value = True
+
+    print("\nPlayerQueue configured:")
+    print(f"- Active players: {len(player_queue.active_players)}")
+    print(f"- Players needing to act: {len(player_queue.needs_to_act)}")
+
+    print("\nStarting betting round...")
+    betting_round(mock_game)
+
+    # Verify raise was handled correctly
+    print("\nVerifying actions:")
+    player_queue.mark_player_acted.assert_any_call(
+        mock_active_players[0], is_raise=True
+    )
+
+    # Verify other players had to act after the raise
+    for player in mock_active_players[1:]:
+        assert player in player_queue.needs_to_act
+        player.decide_action.assert_called_once_with(mock_game)
+        player.execute.assert_called_once()
+
+    print("\n=== Test completed successfully ===")
+
+
+def test_update_action_tracking_big_blind_preflop(
+    mock_betting_state, mock_big_blind_player
+):
+    """
+    Tests action tracking updates for big blind player during preflop.
+    Verifies:
+    - BB gets option to raise on first action if no previous raises
+    - BB needs to act again if someone raises
+    """
+    from game.betting import _update_action_tracking
+
+    state = mock_betting_state
+    player = state["active_players"][0]
+
+    # Configure player queue
+    player_queue = state["player_queue"]
+    player_queue.active_players = state["active_players"]
+    player_queue.needs_to_act = set(state["active_players"])
+    player_queue.acted_since_last_raise = set()
+
+    # Test BB first action
+    last_raiser = _update_action_tracking(
+        mock_big_blind_player,
+        ActionType.CALL,
+        player_queue,
+        mock_big_blind_player,  # big_blind_player
+        True,  # is_preflop
+    )
+
+    # Verify BB gets option to raise
+    assert mock_big_blind_player in player_queue.needs_to_act
+    assert last_raiser is None
+
+    # Test when someone raises
+    last_raiser = _update_action_tracking(
+        player,
+        ActionType.RAISE,
+        player_queue,
+        mock_big_blind_player,
+        True,  # is_preflop
+    )
+
+    # Verify BB needs to act after raise
+    assert mock_big_blind_player in player_queue.needs_to_act
+    assert last_raiser == player
+
+
+def test_update_action_tracking_all_players_acted(mock_betting_state):
+    """
+    Tests action tracking when all players have acted.
+    Verifies:
+    - Round completes when all active players have acted
+    - No players need to act after completion
+    """
+    from game.betting import _update_action_tracking
+
+    state = mock_betting_state
+
+    # Configure player queue
+    player_queue = state["player_queue"]
+    player_queue.active_players = state["active_players"]
+    player_queue.needs_to_act = set(state["active_players"])
+    player_queue.acted_since_last_raise = set()
+
+    # Have each player call
+    for player in state["active_players"]:
+        last_raiser = _update_action_tracking(
+            player,
+            ActionType.CALL,
+            player_queue,
+            None,  # big_blind_player
+            False,  # is_preflop
+        )
+        assert last_raiser is None
+
+    # Verify round completion
+    assert len(player_queue.needs_to_act) == 0
+    assert player_queue.acted_since_last_raise == set(state["active_players"])
