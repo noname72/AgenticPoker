@@ -174,13 +174,86 @@ def mock_player():
 
 
 @pytest.fixture
-def mock_players():
+def player_factory():
+    """Create a factory function for generating players with different states.
+
+    This factory allows creating players with customized:
+    - Name and chips
+    - All-in status
+    - Big blind status
+    - Folded status
+    - Bet amount
+    - Action responses
+
+    Example:
+        def test_player_states(player_factory):
+            all_in = player_factory(
+                name="AllIn",
+                chips=0,
+                is_all_in=True,
+                bet=1000
+            )
+            assert all_in.is_all_in
+            assert all_in.chips == 0
+
+            big_blind = player_factory(
+                name="BigBlind",
+                is_big_blind=True
+            )
+            assert big_blind.is_big_blind
+
+            custom = player_factory(
+                name="Custom",
+                chips=500,
+                action_response=ActionType.RAISE
+            )
+            assert custom.decide_action().action_type == ActionType.RAISE
+
+    Args:
+        name (str, optional): Player name. Defaults to "Player".
+        chips (int, optional): Starting chips. Defaults to 1000.
+        is_all_in (bool, optional): All-in status. Defaults to False.
+        is_big_blind (bool, optional): Big blind status. Defaults to False.
+        folded (bool, optional): Folded status. Defaults to False.
+        bet (int, optional): Current bet amount. Defaults to 0.
+        action_response (ActionType, optional): Pre-configured action response.
+            Defaults to None.
+
+    Returns:
+        Callable: Factory function that creates MockPlayer instances
+    """
+
+    def _create_player(
+        name="Player",
+        chips=1000,
+        is_all_in=False,
+        is_big_blind=False,
+        folded=False,
+        bet=0,
+        action_response=None,
+    ):
+        player = MockPlayer(name=name, chips=chips)
+        player.is_all_in = is_all_in
+        player.is_big_blind = is_big_blind
+        player.folded = folded
+        player.bet = bet
+
+        if action_response:
+            response = MagicMock()
+            response.action_type = action_response
+            response.raise_amount = 0
+            player.decide_action = MagicMock(return_value=response)
+
+        return player
+
+    return _create_player
+
+
+@pytest.fixture
+def mock_players(player_factory):
     """Create a list of mock players for testing.
 
-    Creates three players with standard configurations:
-    - Player1, Player2, Player3
-    - Each with 1000 starting chips
-    - Default player state (not folded, not all-in)
+    Creates three players with standard configurations using player_factory.
 
     Example:
         def test_player_setup(mock_players):
@@ -191,11 +264,7 @@ def mock_players():
     Returns:
         List[MockPlayer]: List of three configured mock players
     """
-    return [
-        MockPlayer("Player1", 1000),
-        MockPlayer("Player2", 1000),
-        MockPlayer("Player3", 1000),
-    ]
+    return [player_factory(name=f"Player{i+1}") for i in range(3)]
 
 
 @pytest.fixture
@@ -940,12 +1009,12 @@ def mock_pot_with_side_pots(mock_pot_manager, mock_side_pot):
 @pytest.fixture
 def mock_blind_config():
     """Create a standard blind/ante configuration for testing.
-    
-    Returns a tuple of (dealer_index, small_blind, big_blind, ante) with common 
+
+    Returns a tuple of (dealer_index, small_blind, big_blind, ante) with common
     defaults used in tests:
     - dealer_index: 0 (first player is dealer)
     - small_blind: 50 chips
-    - big_blind: 100 chips  
+    - big_blind: 100 chips
     - ante: 10 chips
 
     Example:
@@ -963,36 +1032,26 @@ def mock_blind_config():
 
 
 @pytest.fixture
-def mock_insufficient_chips_players():
+def mock_insufficient_chips_players(player_factory):
     """Create a list of players with intentionally low chip counts.
-    
-    Creates three players with different chip amounts:
+
+    Creates three players with different chip amounts using player_factory:
     - Player1: 1000 chips (normal stack)
     - Player2: 30 chips (not enough for small blind of 50)
     - Player3: 60 chips (not enough for big blind of 100)
-    
-    This fixture is useful for testing:
-    - Partial blind payments
-    - Insufficient ante scenarios
-    - All-in situations with small stacks
-    
+
     Example:
         def test_partial_blinds(mock_insufficient_chips_players, mock_game):
-            mock_game.players = mock_insufficient_chips_players
             collected = collect_blinds_and_antes(
                 mock_insufficient_chips_players, 0, 50, 100, 0, mock_game
             )
             assert collected == 90  # 30 (partial SB) + 60 (partial BB)
-            assert mock_insufficient_chips_players[1].chips == 0  # All-in with SB
-            assert mock_insufficient_chips_players[2].chips == 0  # All-in with BB
 
     Returns:
         List[MockPlayer]: Three players with configured chip stacks
     """
-    from tests.mocks.mock_player import MockPlayer
-    
-    p1 = MockPlayer("Player1", chips=1000)  # Normal stack
-    p2 = MockPlayer("Player2", chips=30)    # Not enough for SB=50
-    p3 = MockPlayer("Player3", chips=60)    # Not enough for BB=100
-    
-    return [p1, p2, p3]
+    return [
+        player_factory(name="Player1", chips=1000),
+        player_factory(name="Player2", chips=30),
+        player_factory(name="Player3", chips=60),
+    ]
