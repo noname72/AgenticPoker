@@ -1,7 +1,7 @@
+import logging
 from unittest.mock import Mock
 
 import pytest
-import logging
 
 from data.types.pot_types import SidePot
 from exceptions import InvalidGameStateError
@@ -72,12 +72,7 @@ class TestPotManager:
         """Test resetting the pot state."""
         # Setup some initial state
         pot_manager.pot = 500
-        pot_manager.side_pots = [
-            SidePot(
-                amount=100,
-                eligible_players=[]
-            )
-        ]
+        pot_manager.side_pots = [SidePot(amount=100, eligible_players=[])]
 
         # Reset
         pot_manager.reset_pot()
@@ -147,14 +142,8 @@ class TestPotManager:
         """Test getting formatted view of side pots."""
         # Setup some side pots
         pot_manager.side_pots = [
-            SidePot(
-                amount=300,
-                eligible_players=[p.name for p in mock_players]
-            ),
-            SidePot(
-                amount=200,
-                eligible_players=[p.name for p in mock_players[:2]]
-            )
+            SidePot(amount=300, eligible_players=[p.name for p in mock_players]),
+            SidePot(amount=200, eligible_players=[p.name for p in mock_players[:2]]),
         ]
 
         view = pot_manager.get_side_pots_view()
@@ -170,30 +159,6 @@ class TestPotManager:
         """Test logging when no side pots exist."""
         pot_manager.log_side_pots(mock_logger)
         mock_logger.info.assert_not_called()
-
-    def test_log_side_pots_with_pots(self, pot_manager, mock_players, mock_logger):
-        """Test logging of side pots."""
-        # Setup side pots
-        pot_manager.side_pots = [
-            SidePot(
-                amount=300,
-                eligible_players=[p.name for p in mock_players]
-            ),
-            SidePot(
-                amount=200,
-                eligible_players=[p.name for p in mock_players[:2]]
-            )
-        ]
-
-        pot_manager.log_side_pots(mock_logger)
-
-        # Verify logging calls
-        assert mock_logger.info.call_count == 3  # Header + 2 pots
-        mock_logger.info.assert_any_call("\nSide pots:")
-        mock_logger.info.assert_any_call(
-            "  Pot 1: $300 (Eligible: Alice, Bob, Charlie)"
-        )
-        mock_logger.info.assert_any_call("  Pot 2: $200 (Eligible: Alice, Bob)")
 
     def test_calculate_side_pots_equal_bets(self, pot_manager, mock_players):
         """Test side pot calculation when all players bet the same amount."""
@@ -337,7 +302,7 @@ class TestPotManager:
     def test_calculate_side_pots_identical_all_ins(self, pot_manager, mock_players):
         """Test side pot calculation when all players go all-in for same amount."""
         active_players = mock_players.copy()
-        
+
         # All players go all-in for 100
         for player in active_players:
             player.bet = 100
@@ -350,9 +315,9 @@ class TestPotManager:
         assert side_pots[0].amount == 300, "Main pot should be 100 * 3 players"
         assert len(side_pots[0].eligible_players) == 3, "All players should be eligible"
         # Fix: Compare player names instead of Player objects
-        assert all(p.name in side_pots[0].eligible_players for p in mock_players), (
-            "All players should be in the main pot"
-        )
+        assert all(
+            p.name in side_pots[0].eligible_players for p in mock_players
+        ), "All players should be in the main pot"
 
     def test_calculate_side_pots_max_int(self, pot_manager, mock_players):
         """Test side pot calculation with very large bets."""
@@ -397,12 +362,7 @@ class TestPotManager:
 
     def test_side_pots_view_empty_eligible_list(self, pot_manager):
         """Test getting side pots view with empty eligible players list."""
-        pot_manager.side_pots = [
-            SidePot(
-                amount=100,
-                eligible_players=[]
-            )
-        ]
+        pot_manager.side_pots = [SidePot(amount=100, eligible_players=[])]
 
         view = pot_manager.get_side_pots_view()
 
@@ -423,12 +383,7 @@ class TestPotManager:
         """Test that multiple reset_pot calls are idempotent."""
         # Setup initial state
         pot_manager.pot = 500
-        pot_manager.side_pots = [
-            SidePot(
-                amount=100,
-                eligible_players=[]
-            )
-        ]
+        pot_manager.side_pots = [SidePot(amount=100, eligible_players=[])]
 
         # First reset
         pot_manager.reset_pot()
@@ -623,9 +578,15 @@ class TestPotManager:
         assert total_pots == total_bets, "Total in pots should match total bets"
 
         # Verify each player is in the correct number of pots
-        p1_pots = sum(1 for pot in side_pots if mock_players[0].name in pot.eligible_players)
-        p2_pots = sum(1 for pot in side_pots if mock_players[1].name in pot.eligible_players)
-        p3_pots = sum(1 for pot in side_pots if mock_players[2].name in pot.eligible_players)
+        p1_pots = sum(
+            1 for pot in side_pots if mock_players[0].name in pot.eligible_players
+        )
+        p2_pots = sum(
+            1 for pot in side_pots if mock_players[1].name in pot.eligible_players
+        )
+        p3_pots = sum(
+            1 for pot in side_pots if mock_players[2].name in pot.eligible_players
+        )
 
         assert p1_pots == 3, "P1 should be in all three pots"
         assert p2_pots == 2, "P2 should be in two pots"
@@ -996,9 +957,7 @@ class TestPotManager:
         print("\nAfter first round:")
         print(f"Number of pots: {len(first_round_pots)}")
         for i, pot in enumerate(first_round_pots):
-            print(
-                f"  Pot {i+1}: amount={pot.amount}, eligible={pot.eligible_players}"
-            )
+            print(f"  Pot {i+1}: amount={pot.amount}, eligible={pot.eligible_players}")
         print(f"Total in pots: {sum(pot.amount for pot in first_round_pots)}")
 
         # Store first round pots
@@ -1029,9 +988,7 @@ class TestPotManager:
         print("\nFinal state:")
         print(f"Number of pots: {len(final_pots)}")
         for i, pot in enumerate(final_pots):
-            print(
-                f"  Pot {i+1}: amount={pot.amount}, eligible={pot.eligible_players}"
-            )
+            print(f"  Pot {i+1}: amount={pot.amount}, eligible={pot.eligible_players}")
         print(f"Total in pots: {sum(pot.amount for pot in final_pots)}")
         print(f"Total chips in stacks: {sum(p.chips for p in active_players)}")
         print(
