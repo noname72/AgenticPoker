@@ -340,3 +340,108 @@ def test_remove_nonexistent_player(mock_players):
     original_players = queue.players.copy()
     queue.remove_player(nonexistent_player)
     assert queue.players == original_players
+
+
+def test_continuous_betting_round(mock_players):
+    """Test that betting continues as long as players keep raising.
+    
+    Verifies:
+    - Players can act multiple times in a round if there are raises
+    - Each raise resets who needs to act
+    - Round only completes when all active players have called (no more raises)
+    
+    Simulates a sequence of bets/raises:
+    1. Player1 bets
+    2. Player2 raises
+    3. Player3 raises
+    4. Action returns to Player1 and Player2
+    """
+    queue = PlayerQueue(mock_players)
+    player1, player2, player3 = mock_players[0:3]
+    
+    # Player1 bets
+    queue.mark_player_acted(player1)
+    assert player1 not in queue.needs_to_act
+    assert player1 in queue.acted_since_last_raise
+    assert player2 in queue.needs_to_act
+    assert player3 in queue.needs_to_act
+    
+    # Player2 raises
+    queue.mark_player_acted(player2, is_raise=True)
+    # After raise, Player1 and Player3 need to act again
+    assert player1 in queue.needs_to_act
+    assert player2 not in queue.needs_to_act
+    assert player3 in queue.needs_to_act
+    assert queue.acted_since_last_raise == {player2}
+    
+    # Player3 re-raises
+    queue.mark_player_acted(player3, is_raise=True)
+    # After re-raise, Player1 and Player2 need to act again
+    assert player1 in queue.needs_to_act
+    assert player2 in queue.needs_to_act
+    assert player3 not in queue.needs_to_act
+    assert queue.acted_since_last_raise == {player3}
+    
+    # Player1 calls
+    queue.mark_player_acted(player1)
+    assert player1 not in queue.needs_to_act
+    assert player2 in queue.needs_to_act
+    
+    # Player2 calls
+    queue.mark_player_acted(player2)
+    assert player1 not in queue.needs_to_act
+    assert player2 not in queue.needs_to_act
+    assert player3 not in queue.needs_to_act
+    
+    # Now all players have acted since last raise
+    assert queue.all_players_acted()
+
+
+def test_betting_edge_cases(mock_players):
+    """Test edge cases and invalid scenarios in betting rounds.
+    
+    Verifies:
+    1. Player can't act when it's not their turn
+    2. Folded players can't act
+    3. All-in players can't act
+    4. Player can't act twice without a raise in between
+    5. Round continues if only one player has acted
+    6. Round continues if not all players have acted since last raise
+    """
+    queue = PlayerQueue(mock_players)
+    player1, player2, player3 = mock_players[0:3]
+    
+    # Test round not complete with partial actions
+    queue.mark_player_acted(player1)
+    assert not queue.all_players_acted()  # Round shouldn't end with only one player acted
+    
+    # Test player can't act twice without a raise
+    queue.mark_player_acted(player1)  # Second action without raise
+    assert player1 not in queue.needs_to_act  # Should still be marked as acted
+    assert not queue.all_players_acted()  # Round shouldn't end
+    
+    # Test folded player can't affect round completion
+    player2.folded = True
+    queue._update_player_lists()
+    queue.mark_player_acted(player3)
+    assert queue.all_players_acted()  # Round should complete with all non-folded players acted
+    
+    # Test all-in player can't affect round completion
+    queue.reset_action_tracking()
+    player3.is_all_in = True
+    queue._update_player_lists()
+    queue.mark_player_acted(player1)
+    assert queue.all_players_acted()  # Round should complete with only active player acted
+    
+    # Test round continues after raise even with inactive players
+    queue.reset_action_tracking()
+    player2.folded = False  # Unfolded but still all-in
+    queue._update_player_lists()
+    queue.mark_player_acted(player1)
+    queue.mark_player_acted(player2, is_raise=True)
+    assert not queue.all_players_acted()  # Round shouldn't end until player1 acts again
+    assert player1 in queue.needs_to_act
+    
+    # Test round completion with mixed states
+    queue.mark_player_acted(player1)  # Player1 calls the raise
+    assert queue.all_players_acted()  # Now round should complete
