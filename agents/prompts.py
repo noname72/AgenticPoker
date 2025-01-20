@@ -84,31 +84,25 @@ Current situation:
 {game_state}
 
 CRITICAL RULES:
-1. You MUST include a line starting with "DISCARD:" followed by:
-   - [x,y] for multiple positions
-   - [x] for single position
-   - none for keeping all cards
+1. You MUST respond with exactly two lines:
+   - First line starts with "DISCARD:" followed by:
+     * [x,y] for multiple positions
+     * [x] for single position
+     * none for keeping all cards
+   - Second line starts with "REASONING:" followed by brief explanation
 2. Use ONLY card positions (0-4 from left to right)
 3. Maximum 3 cards can be discarded
 4. Format must be exactly as shown in examples
 
 Example responses:
-ANALYSIS:
-Pair of Kings, weak kickers
-Should discard both low cards
-
 DISCARD: [0,1]
-
-ANALYSIS:
-Strong two pair, keep everything
+REASONING: Discarding low kickers with pair of Kings
 
 DISCARD: none
-
-ANALYSIS:
-Weak high card only
-Discard three cards for new draw
+REASONING: Strong two pair, keeping all cards
 
 DISCARD: [2,3,4]
+REASONING: Only high card, drawing to improve hand
 
 Current hand positions:
 Card 0: {cards[0]}

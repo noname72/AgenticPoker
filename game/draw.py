@@ -1,16 +1,17 @@
-from typing import List
+from typing import TYPE_CHECKING, List
 
 from loggers.draw_logger import DrawLogger
 
 from .deck import Deck
 from .player import Player
 
+if TYPE_CHECKING:
+    from game.game import Game
+
 MAX_DISCARD = 5
 
 
-def handle_draw_phase(players: List[Player], deck: Deck) -> None:
-    #! take in game only
-    #! means player que in game
+def handle_draw_phase(game: "Game") -> None:
     """
     Handle the draw phase where players can discard and draw new cards.
 
@@ -43,23 +44,15 @@ def handle_draw_phase(players: List[Player], deck: Deck) -> None:
     """
 
     # First, figure out how many cards might possibly be drawn.
-    active_players = [p for p in players if not p.folded and hasattr(p, "decide_draw")]
+    active_players = [
+        p for p in game.players if not p.folded and hasattr(p, "decide_discard")
+    ]
     max_possible_draws = len(active_players) * MAX_DISCARD
 
-    # Optionally reshuffle if we're likely to run out.
-    # Skip if we have exactly the number of cards needed.
-    #! turn into a function
-    if deck.needs_reshuffle(max_possible_draws):
-        if len(deck.cards) == max_possible_draws:
-            DrawLogger.log_preemptive_reshuffle(max_possible_draws, skip=True)
-        else:
-            DrawLogger.log_preemptive_reshuffle(
-                max_possible_draws, deck.remaining_cards()
-            )
-            deck.reshuffle_all()
+    handle_preemptive_reshuffle(game.deck, max_possible_draws)
 
     # Process each player's draw
-    for player in players:
+    for player in game.players:
         if player.folded:
             continue
 
@@ -70,16 +63,35 @@ def handle_draw_phase(players: List[Player], deck: Deck) -> None:
             # in deciding discards. We skip discarding/drawing but still log accordingly.
             DrawLogger.log_keep_hand(
                 player.name,
-                explicit_decision=False if not hasattr(player, "decide_draw") else True,
+                explicit_decision=(
+                    False if not hasattr(player, "decide_discard") else True
+                ),
             )
             continue
 
         # Perform discarding logic if the player actually wants to discard.
         if discard_indices:
-            process_discard_and_draw(player, deck, discard_indices)
+            process_discard_and_draw(player, game.deck, discard_indices)
         else:
             # The player explicitly decided to keep the entire hand (no discard).
             DrawLogger.log_keep_hand(player.name, explicit_decision=True)
+
+
+def handle_preemptive_reshuffle(deck: Deck, needed_cards: int) -> None:
+    """
+    Checks if a reshuffle is needed before drawing cards and performs it if necessary.
+    Skips reshuffling if we have exactly the number of cards needed.
+
+    Args:
+        deck: The deck to potentially reshuffle
+        needed_cards: Number of cards that might be needed
+    """
+    if deck.needs_reshuffle(needed_cards):
+        if len(deck.cards) == needed_cards:
+            DrawLogger.log_preemptive_reshuffle(needed_cards, skip=True)
+        else:
+            DrawLogger.log_preemptive_reshuffle(needed_cards, deck.remaining_cards())
+            deck.reshuffle_all()
 
 
 def get_discard_indices(player: Player) -> List[int] | None:
@@ -89,13 +101,13 @@ def get_discard_indices(player: Player) -> List[int] | None:
     Returns:
         A list of valid discard indices or None if invalid/unavailable.
     """
-    if not hasattr(player, "decide_draw"):
+    if not hasattr(player, "decide_discard"):
         # If the player has no AI or method for deciding, return None so we skip.
         DrawLogger.log_non_ai_player()
         return None
 
     try:
-        discards = player.decide_draw()
+        discards = player.decide_discard()
         if len(discards) > MAX_DISCARD:
             # Log and trim if too many discards
             DrawLogger.log_discard_validation_error(player.name, len(discards))

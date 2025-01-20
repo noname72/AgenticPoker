@@ -256,14 +256,12 @@ class Agent(Player):
                 self.strategy_planner.current_plan if self.use_planning else None
             )
             # Delegate action creation to the strategy generator
-            response_str = LLMResponseGenerator.generate_action(
+            action = LLMResponseGenerator.generate_action(
                 player=self,
                 game_state=game.get_state(),
                 current_plan=current_plan,
                 hand_eval=hand_eval,
             )
-            # Parse the raw response and validate the action
-            action = LLMResponseGenerator.parse_action_response(response_str)
 
             # Validate raise amount if it's a raise action
             if action.action_type == ActionType.RAISE:

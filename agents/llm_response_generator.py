@@ -1,5 +1,6 @@
-from agents.prompts import ACTION_PROMPT, PLANNING_PROMPT, DISCARD_PROMPT
-from data.types.action_response import ActionResponse, ActionType
+from agents.prompts import ACTION_PROMPT, DISCARD_PROMPT, PLANNING_PROMPT
+from data.types.action_response import ActionResponse
+from data.types.discard_response import DiscardResponse
 from data.types.llm_responses import PlanResponse
 from data.types.plan import Plan
 
@@ -11,7 +12,7 @@ class LLMResponseGenerator:
     """
 
     @classmethod
-    def generate_plan(cls, player, game_state, hand_eval) -> PlanResponse:
+    def generate_plan(cls, player, game_state, hand_eval) -> "PlanResponse":
         """
         Create a plan by calling the LLM with the appropriate planning prompt.
         Returns the parsed dictionary of plan data.
@@ -27,7 +28,9 @@ class LLMResponseGenerator:
         return PlanResponse.parse_llm_response(response)
 
     @classmethod
-    def generate_action(cls, player, game_state, current_plan: Plan, hand_eval) -> ActionResponse:
+    def generate_action(
+        cls, player, game_state, current_plan: Plan, hand_eval
+    ) -> "ActionResponse":
         """
         Create an action by calling the LLM with the action prompt.
         Returns the raw LLM response string for further parsing.
@@ -53,3 +56,32 @@ class LLMResponseGenerator:
             max_tokens=100,
         )
         return ActionResponse.parse_llm_response(response)
+
+    @classmethod
+    def generate_discard(cls, player, game_state, cards) -> "DiscardResponse":
+        """Create a discard decision by calling the LLM with the discard prompt.
+
+        Args:
+            player: The player making the discard decision
+            game_state: Current state of the game
+            cards: List of 5 card objects representing current hand
+
+        Returns:
+            DiscardResponse: Parsed and validated discard decision
+
+        Raises:
+            ValueError: If LLM response cannot be parsed into a valid discard decision
+        """
+        prompt = DISCARD_PROMPT.format(
+            strategy_style=player.strategy_style,
+            game_state=game_state,
+            cards=cards,
+        )
+
+        response = player.llm_client.query(
+            prompt=prompt,
+            temperature=0.7,
+            max_tokens=100,
+        )
+
+        return DiscardResponse.parse_llm_response(response)

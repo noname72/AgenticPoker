@@ -170,7 +170,7 @@ class AgenticPoker:
             # Draw phase
             #! make a private method for this _draw
             logging.info(f"====== Draw Phase ======\n")
-            draw.handle_draw_phase(players=self.players, deck=self.deck)
+            draw.handle_draw_phase(self)
 
             # Post-draw betting round
             #! make a private method for this _post_draw
