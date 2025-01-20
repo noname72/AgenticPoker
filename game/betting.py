@@ -144,35 +144,34 @@ def _process_betting_cycle(
     last_raiser: Optional[Player],
     big_blind_player: Optional[Player],
 ) -> None:
-    """Process a single cycle of betting for all active players.
+    """Process a single cycle of betting for all active players."""
+    # Add safety counter to prevent infinite loops
+    max_iterations = len(game.players) * 2
+    iteration_count = 0
 
-    Handles the betting action for each player in turn, including:
-    - Checking if player should be skipped (folded/no chips/already acted)
-    - Logging the current game state
-    - Getting and executing player's action decision
-    - Updating betting round tracking (who needs to act, last raiser, etc.)
-    - Managing special big blind rules during preflop
-
-    Args:
-        game: Game instance containing current game state
-        last_raiser: The player who made the last raise, if any
-        big_blind_player: The big blind player for special preflop rules
-
-    Side Effects:
-        - Updates game state based on player actions
-        - Updates tracking sets for betting round management
-        - Logs player actions and game state changes
-    """
     while not game.players.is_round_complete():
+        iteration_count += 1
+        if iteration_count > max_iterations:
+            BettingLogger.log_line_break()
+            BettingLogger.log_message(
+                "Breaking potential infinite loop - all players skipped"
+            )
+            # Clear needs_to_act to properly end the round
+            game.players.needs_to_act.clear()
+            break
+
         agent = game.players.get_next_player()
         if not agent:
+            # No more active players, clear needs_to_act and end round
+            game.players.needs_to_act.clear()
             break
 
         should_skip, reason = _should_skip_player(agent, game.players.needs_to_act)
         if should_skip:
-            game.players.needs_to_act.discard(
-                agent
-            )  # Remove the player from needs_to_act
+            game.players.needs_to_act.discard(agent)
+            # If all players are being skipped, end the round
+            if len(game.players.needs_to_act) == 0:
+                break
             continue
 
         BettingLogger.log_player_turn(
@@ -312,18 +311,14 @@ def _get_big_blind_player(game: "Game") -> Optional[Player]:
 
 
 def _should_skip_player(player: Player, needs_to_act: Set[Player]) -> Tuple[bool, str]:
-    """Determines if a player should be skipped in the betting round.
+    """Determines if a player should be skipped in the betting round."""
+    if player.folded:
+        BettingLogger.log_skip_player(player.name, "folded")
+        return True, "folded"
 
-    Args:
-        player: The player to check
-        needs_to_act: Set of players that still need to act
-
-    Returns:
-        Tuple[bool, str]: (should_skip, reason)
-    """
-    if player.folded or player.chips == 0:
-        BettingLogger.log_skip_player(player.name, "folded or has no chips")
-        return True, "folded or has no chips"
+    if player.chips == 0:
+        BettingLogger.log_skip_player(player.name, "has no chips")
+        return True, "has no chips"
 
     if player not in needs_to_act:
         BettingLogger.log_skip_player(player.name, "doesn't need to act")

@@ -272,26 +272,30 @@ def mock_player_queue(mock_players):
     """Create a mock player queue with pre-configured players and betting state.
 
     This fixture provides a MockPlayerQueue instance that matches the real PlayerQueue's
-    functionality, including betting action tracking and player state management.
+    functionality, including:
+    - Player state tracking (active, all-in, folded)
+    - Betting action tracking (needs_to_act, acted_since_last_raise)
+    - Turn management
+    - Round completion checks
 
-    The queue is initialized with:
-    - A set of players who need to act (all players initially)
-    - An empty set of players who acted since last raise
-    - Categorized player lists (active, all-in, folded)
-    - Default mock behaviors for round completion and player actions
+    Args:
+        mock_players: List of mock players to initialize the queue
+
+    Returns:
+        MockPlayerQueue: Configured queue instance with default behaviors
     """
     queue = MockPlayerQueue(mock_players)
 
     # Initialize with default state
     queue.needs_to_act = set(mock_players)
     queue.acted_since_last_raise = set()
-    queue._update_player_lists()
+
+    # Update player state lists
+    queue._update_player_lists()  # This now includes chips > 0 check
 
     # Configure default mock behaviors
     queue.is_round_complete.return_value = False
-    queue.get_next_player.side_effect = (
-        queue._default_get_next_player
-    )  # Use default implementation
+    queue.get_next_player.side_effect = queue._default_get_next_player
     queue.all_players_acted.return_value = False
 
     return queue
@@ -770,21 +774,23 @@ def mock_betting_round():
 
 @pytest.fixture
 def mock_active_players(mock_players):
-    """Create a list of active (non-folded, non-all-in) players.
+    """Create a list of active (non-folded, non-all-in, with chips) players.
 
     Configures each player with:
     - folded = False
     - is_all_in = False
     - bet = 0
-    - chips = 1000
+    - chips = 1000 (ensuring they have chips to play)
 
-    Then filters to return only active players (not folded, not all-in).
+    Then filters to return only truly active players (not folded, not all-in, has chips).
 
     Example:
         def test_active_player_count(mock_active_players):
             assert len(mock_active_players) == 3
-            assert all(not p.folded and not p.is_all_in for p in mock_active_players)
-            assert all(p.chips == 1000 for p in mock_active_players)
+            assert all(
+                not p.folded and not p.is_all_in and p.chips > 0
+                for p in mock_active_players
+            )
 
     Returns:
         List[MockPlayer]: List of active players ready for testing
@@ -794,7 +800,7 @@ def mock_active_players(mock_players):
         player.is_all_in = False
         player.bet = 0
         player.chips = 1000
-    return [p for p in mock_players if not p.folded and not p.is_all_in]
+    return [p for p in mock_players if not p.folded and not p.is_all_in and p.chips > 0]
 
 
 @pytest.fixture
@@ -915,35 +921,17 @@ def mock_betting_state(
     mock_last_raiser,
     mock_player_queue,
 ):
-    """Create a complete betting state for testing betting rounds.
-
-    Combines all betting-related components into a single state object:
-    - game: Mock game instance with basic configuration
-    - active_players: List of players who can still act
-    - needs_to_act: Set of players who haven't acted this round
-    - acted_since_last_raise: Set of players who acted since last raise
-    - last_raiser: Player who made the last raise
-    - player_queue: Configured player queue managing turn order
-
-    The player queue is configured to match the betting state for consistency.
-
-    Example:
-        def test_betting_round(mock_betting_state):
-            queue = mock_betting_state["player_queue"]
-            active = mock_betting_state["active_players"]
-
-            # Test betting round logic
-            next_player = queue.get_next_player()
-            assert next_player in active
-            assert next_player in mock_betting_state["needs_to_act"]
-
-    Returns:
-        dict: Complete betting state with all necessary components
-    """
+    """Create a complete betting state for testing betting rounds."""
     # Configure player queue with betting state
     mock_player_queue.needs_to_act = mock_needs_to_act
     mock_player_queue.acted_since_last_raise = mock_acted_since_last_raise
-    mock_player_queue.active_players = mock_active_players
+
+    # Update active players list with correct criteria (including chips > 0)
+    mock_player_queue.active_players = [
+        p
+        for p in mock_active_players
+        if not p.folded and not p.is_all_in and p.chips > 0
+    ]
 
     return {
         "game": mock_game,

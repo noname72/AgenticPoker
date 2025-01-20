@@ -39,16 +39,18 @@ class PlayerQueue:
         self._update_player_lists()
 
     def _update_player_lists(self) -> None:
-        """Update the categorized lists of players based on their current state.
-
-        Updates active_players, all_in_players, and folded_players lists.
-        Resets the index to maintain consistent clockwise rotation.
-        """
+        """Update the categorized lists of players based on their current state."""
+        # Only consider players who can actually act (have chips and haven't folded)
         self.active_players = [
-            p for p in self.players if not p.folded and not p.is_all_in
+            p for p in self.players if not p.folded and not p.is_all_in and p.chips > 0
         ]
         self.all_in_players = [p for p in self.players if p.is_all_in]
         self.folded_players = [p for p in self.players if p.folded]
+
+        # If no active players remain, clear needs_to_act
+        if not self.active_players:
+            self.needs_to_act.clear()
+
         self.index = 0  # Reset index when player states change
 
     def get_next_player(self) -> Optional[Player]:
@@ -229,5 +231,3 @@ class PlayerQueue:
             bool: True if the player is in the queue, False otherwise
         """
         return player in self.players
-    
-        
