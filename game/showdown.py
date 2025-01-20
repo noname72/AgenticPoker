@@ -1,34 +1,10 @@
-import logging
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from typing import Dict, List
 
 from data.types.pot_types import SidePot
+from loggers.showdown_logger import ShowdownLogger
 
-from . import betting
 from .player import Player
 from .pot_manager import PotManager
-from .utils import log_chip_movements
-
-if TYPE_CHECKING:
-    from game.game import Game
-
-
-def handle_post_draw_betting(
-    game: "Game",
-) -> Tuple[int, Optional[List[SidePot]], bool]:
-    """
-    Handle the post-draw betting round.
-
-    Args:
-        game: Game object
-
-    Returns:
-        Tuple containing:
-        - int: New pot amount after betting
-        - Optional[List[SidePot]]: List of side pots if any were created
-        - bool: True if the game should continue to showdown
-    """
-
-    return betting.handle_betting_round(game)
 
 
 def handle_showdown(
@@ -48,12 +24,13 @@ def handle_showdown(
         - Updates player chip counts
         - Logs showdown results and chip movements
     """
+    #! passing game with players and pot manager
     active_players = [p for p in players if not p.folded]
 
     # Log showdown hands
-    logging.info("\n=== Showdown ===")
+    ShowdownLogger.log_showdown_start()
     for player in active_players:
-        logging.info(f"{player.name}'s hand: {player.hand.show()}")
+        ShowdownLogger.log_player_hand(player.name, player.hand.show())
 
     # Handle single player case first (everyone else folded)
     if len(active_players) == 1:
@@ -73,7 +50,7 @@ def handle_showdown(
             # Handle mock player by setting chips directly
             winner.chips = initial_chips[winner] + pot_amount
 
-        logging.info(f"{winner.name} wins ${pot_amount} (all others folded)")
+        ShowdownLogger.log_single_winner(winner.name, pot_amount)
         _log_chip_movements(players, initial_chips)
         return
 
@@ -120,13 +97,16 @@ def handle_showdown(
                         # Handle mock player
                         winner.chips = initial_chips[winner] + amount
 
-                    logging.info(f"{winner.name} wins ${amount}")
+                    ShowdownLogger.log_pot_win(
+                        winner.name, amount, is_split=(len(winners) > 1)
+                    )
 
     # Log final chip movements
     _log_chip_movements(players, initial_chips)
 
 
 def _evaluate_hands(players: List[Player]) -> List[Player]:
+    #! is this needed when we have an evaluator module?
     """
     Evaluate player hands to determine winner(s).
 
@@ -168,4 +148,7 @@ def _log_chip_movements(
     players: List[Player], initial_chips: Dict[Player, int]
 ) -> None:
     """Log the chip movements for each player from their initial amounts."""
-    log_chip_movements(players, initial_chips, handle_mocks=True)
+    for player in players:
+        ShowdownLogger.log_chip_movements(
+            player.name, initial_chips[player], player.chips
+        )

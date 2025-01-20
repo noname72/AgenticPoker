@@ -121,3 +121,8 @@ class BettingLogger:
     def log_line_break() -> None:
         """Log an empty line for formatting."""
         logger.info("")
+
+    @staticmethod
+    def log_message(message: str) -> None:
+        """Log a general message."""
+        logger.info(message)

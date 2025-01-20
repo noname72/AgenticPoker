@@ -42,7 +42,7 @@ Key Components:
 - Various helper functions for action tracking and validation
 """
 
-from typing import TYPE_CHECKING, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Optional, Set, Tuple
 
 from data.states.round_state import RoundPhase
 from data.types.action_response import ActionType
@@ -89,9 +89,6 @@ def handle_betting_round(game: "Game") -> bool:
     elif game.pot_manager.pot < 0:
         raise ValueError("Pot amount cannot be negative")
 
-    # if any(not isinstance(p, Player) for p in game.players):
-    #     raise TypeError("All elements in players list must be Player instances")
-
     # Run betting round with validated GameState
     betting_round(game)
 
@@ -114,71 +111,67 @@ def betting_round(game: "Game") -> None:
         game: The Game instance containing all game state, including players,
              pot manager, and round state.
     """
-    # Initialize PlayerQueue with active players
-    players = PlayerQueue(game.players)
 
     round_complete: bool = False
     last_raiser: Optional[Player] = None
 
     # Get big blind player based on position
-    big_blind_player: Optional[Player] = _get_big_blind_player(
-        game, players.active_players
-    )
+    big_blind_player: Optional[Player] = _get_big_blind_player(game)
 
     # If it's preflop and big blind player exists, they should act last if no raises
     if big_blind_player and game.round_state.phase == RoundPhase.PREFLOP:
-        players.needs_to_act.discard(big_blind_player)  # Remove BB initially
-        players.acted_since_last_raise.add(big_blind_player)  # Mark BB as having acted
+        game.players.needs_to_act.discard(big_blind_player)  # Remove BB initially
+        game.players.acted_since_last_raise.add(
+            big_blind_player
+        )  # Mark BB as having acted
 
     # Main betting loop
     while not round_complete:
         _process_betting_cycle(
             game,
-            players,
             last_raiser,
             big_blind_player,
         )
 
         # Check if round is complete
-        round_complete = players.is_round_complete() or players.all_players_acted()
+        round_complete = (
+            game.players.is_round_complete() or game.players.all_players_acted()
+        )
 
 
 def _process_betting_cycle(
     game: "Game",
-    player_queue: PlayerQueue,
     last_raiser: Optional[Player],
     big_blind_player: Optional[Player],
 ) -> None:
-    """Process a single cycle of betting for all active players.
+    """Process a single cycle of betting for all active players."""
+    # Add safety counter to prevent infinite loops
+    max_iterations = len(game.players) * 2
+    iteration_count = 0
 
-    Handles the betting action for each player in turn, including:
-    - Checking if player should be skipped (folded/no chips/already acted)
-    - Logging the current game state
-    - Getting and executing player's action decision
-    - Updating betting round tracking (who needs to act, last raiser, etc.)
-    - Managing special big blind rules during preflop
-
-    Args:
-        game: Game instance containing current game state
-        player_queue: PlayerQueue instance managing player turns
-        last_raiser: The player who made the last raise, if any
-        big_blind_player: The big blind player for special preflop rules
-
-    Side Effects:
-        - Updates game state based on player actions
-        - Updates tracking sets for betting round management
-        - Logs player actions and game state changes
-    """
-    while not player_queue.is_round_complete():
-        agent = player_queue.get_next_player()
-        if not agent:
+    while not game.players.is_round_complete():
+        iteration_count += 1
+        if iteration_count > max_iterations:
+            BettingLogger.log_line_break()
+            BettingLogger.log_message(
+                "Breaking potential infinite loop - all players skipped"
+            )
+            # Clear needs_to_act to properly end the round
+            game.players.needs_to_act.clear()
             break
 
-        should_skip, reason = _should_skip_player(agent, player_queue.needs_to_act)
+        agent = game.players.get_next_player()
+        if not agent:
+            # No more active players, clear needs_to_act and end round
+            game.players.needs_to_act.clear()
+            break
+
+        should_skip, reason = _should_skip_player(agent, game.players.needs_to_act)
         if should_skip:
-            player_queue.needs_to_act.discard(
-                agent
-            )  # Remove the player from needs_to_act
+            game.players.needs_to_act.discard(agent)
+            # If all players are being skipped, end the round
+            if len(game.players.needs_to_act) == 0:
+                break
             continue
 
         BettingLogger.log_player_turn(
@@ -187,7 +180,7 @@ def _process_betting_cycle(
             chips=agent.chips,
             current_bet=agent.bet,
             pot=game.pot_manager.pot,
-            active_players=[p.name for p in player_queue.players if not p.folded],
+            active_players=[p.name for p in game.players.players if not p.folded],
             last_raiser=last_raiser.name if last_raiser else None,
         )
 
@@ -197,12 +190,12 @@ def _process_betting_cycle(
         last_raiser = _update_action_tracking(
             agent,
             action_decision.action_type,
-            player_queue,
+            game.players,
             big_blind_player,
             game.round_state.phase == RoundPhase.PREFLOP,
         )
 
-        _should_continue_betting(player_queue, last_raiser)
+        _should_continue_betting(game.players, last_raiser)
 
         BettingLogger.log_line_break()
 
@@ -228,7 +221,7 @@ def validate_bet_to_call(current_bet: int, player_bet: int) -> int:
     return bet_to_call
 
 
-def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante, game):
+def collect_blinds_and_antes(game, dealer_index, small_blind, big_blind, ante):
     """Collects mandatory bets (blinds and antes) from players.
 
     This function handles the collection of forced bets at the start of a hand:
@@ -237,27 +230,26 @@ def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante
     - Collects big blind from the player after the small blind
 
     Args:
-        players: List of all players in the game
+        game: Game instance for updating game state
         dealer_index: Position of the dealer button
         small_blind: Amount of the small blind
         big_blind: Amount of the big blind
         ante: Amount of the ante (0 if no ante)
-        game: Game instance for updating game state
 
     Returns:
         int: Total amount collected from blinds and antes
     """
     collected = 0
-    num_players = len(players)
+    num_players = len(game.players)
 
     # Reset all player bets first
-    for player in players:
+    for player in game.players:
         player.bet = 0
 
     # Collect antes
     if ante > 0:
         BettingLogger.log_collecting_antes()
-        for player in players:
+        for player in game.players:
             ante_amount = min(ante, player.chips)
             collected += player.place_bet(ante_amount, game)
             BettingLogger.log_blind_or_ante(
@@ -265,12 +257,12 @@ def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante
             )
 
     # Reset bets after antes
-    for player in players:
+    for player in game.players:
         player.bet = 0
 
     # Small blind
     sb_index = (dealer_index + 1) % num_players
-    sb_player = players[sb_index]
+    sb_player = game.players[sb_index]
     sb_amount = min(small_blind, sb_player.chips)
     actual_sb = sb_player.place_bet(sb_amount, game)
     collected += actual_sb
@@ -281,7 +273,7 @@ def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante
 
     # Big blind
     bb_index = (dealer_index + 2) % num_players
-    bb_player = players[bb_index]
+    bb_player = game.players[bb_index]
     bb_amount = min(big_blind, bb_player.chips)
     actual_bb = bb_player.place_bet(bb_amount, game)
     collected += actual_bb
@@ -292,14 +284,11 @@ def collect_blinds_and_antes(players, dealer_index, small_blind, big_blind, ante
     return collected
 
 
-def _get_big_blind_player(
-    game: "Game", active_players: List[Player]
-) -> Optional[Player]:
+def _get_big_blind_player(game: "Game") -> Optional[Player]:
     """Get the big blind player and set their flag.
 
     Args:
         game: Game instance
-        active_players: List of active players
 
     Returns:
         Optional[Player]: The big blind player if found, None otherwise
@@ -312,8 +301,8 @@ def _get_big_blind_player(
         and game.round_state.big_blind_position is not None
     ):
         bb_index = game.round_state.big_blind_position
-        if 0 <= bb_index < len(active_players):
-            big_blind_player = active_players[bb_index]
+        if 0 <= bb_index < len(game.players):
+            big_blind_player = game.players[bb_index]
             # Set flag on player object for bet validation
             big_blind_player.is_big_blind = True
             return big_blind_player
@@ -322,18 +311,14 @@ def _get_big_blind_player(
 
 
 def _should_skip_player(player: Player, needs_to_act: Set[Player]) -> Tuple[bool, str]:
-    """Determines if a player should be skipped in the betting round.
+    """Determines if a player should be skipped in the betting round."""
+    if player.folded:
+        BettingLogger.log_skip_player(player.name, "folded")
+        return True, "folded"
 
-    Args:
-        player: The player to check
-        needs_to_act: Set of players that still need to act
-
-    Returns:
-        Tuple[bool, str]: (should_skip, reason)
-    """
-    if player.folded or player.chips == 0:
-        BettingLogger.log_skip_player(player.name, "folded or has no chips")
-        return True, "folded or has no chips"
+    if player.chips == 0:
+        BettingLogger.log_skip_player(player.name, "has no chips")
+        return True, "has no chips"
 
     if player not in needs_to_act:
         BettingLogger.log_skip_player(player.name, "doesn't need to act")

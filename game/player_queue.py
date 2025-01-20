@@ -1,3 +1,53 @@
+"""
+This module provides the PlayerQueue class which handles player rotation, tracks betting
+actions, and manages player states in a poker game.
+
+Example usage:
+
+    # Create some players
+    players = [
+        Player("Alice", 1000),
+        Player("Bob", 1000),
+        Player("Charlie", 1000)
+    ]
+
+    # Initialize the player queue
+    queue = PlayerQueue(players)
+
+    # Start a betting round
+    queue.reset_action_tracking()  # Reset for new betting round
+
+    # Process player actions
+    while not queue.is_round_complete():
+        current_player = queue.get_next_player()
+        if current_player is None:
+            break
+
+        # Example: Player calls
+        current_player.bet(10)  # Player makes their bet
+        queue.mark_player_acted(current_player)  # Mark action complete
+
+        # Example: Player raises
+        current_player.bet(20)  # Player makes a raise
+        queue.mark_player_acted(current_player, is_raise=True)  # Marks as raise
+
+    # Check round status
+    if queue.is_round_complete():
+        print("Betting round complete")
+
+    # Get player counts
+    active_count = queue.get_active_count()  # Players who can still act
+    all_in_count = queue.get_all_in_count()  # Players who are all-in
+    folded_count = queue.get_folded_count()  # Players who have folded
+
+    # Remove a player who has no chips
+    queue.remove_player(players[0])
+
+    # Iterate through all players
+    for player in queue:
+        print(f"{player.name}: {player.chips} chips")
+"""
+
 from typing import List, Optional
 
 from game.player import Player
@@ -39,16 +89,18 @@ class PlayerQueue:
         self._update_player_lists()
 
     def _update_player_lists(self) -> None:
-        """Update the categorized lists of players based on their current state.
-
-        Updates active_players, all_in_players, and folded_players lists.
-        Resets the index to maintain consistent clockwise rotation.
-        """
+        """Update the categorized lists of players based on their current state."""
+        # Only consider players who can actually act (have chips and haven't folded)
         self.active_players = [
-            p for p in self.players if not p.folded and not p.is_all_in
+            p for p in self.players if not p.folded and not p.is_all_in and p.chips > 0
         ]
         self.all_in_players = [p for p in self.players if p.is_all_in]
         self.folded_players = [p for p in self.players if p.folded]
+
+        # If no active players remain, clear needs_to_act
+        if not self.active_players:
+            self.needs_to_act.clear()
+
         self.index = 0  # Reset index when player states change
 
     def get_next_player(self) -> Optional[Player]:
@@ -190,3 +242,42 @@ class PlayerQueue:
                  indicating the betting round can end.
         """
         return self.acted_since_last_raise == set(self.active_players)
+
+    def __iter__(self):
+        """Make PlayerQueue iterable through all players.
+
+        Yields each player in the queue in order, regardless of their state
+        (active, all-in, or folded).
+
+        Yields:
+            Player: Each player in the queue in sequence
+        """
+        for player in self.players:
+            yield player
+
+    def __len__(self) -> int:
+        """Get the number of players in the queue.
+
+        Returns:
+            int: Number of players in the queue
+        """
+        return len(self.players)
+
+    def __getitem__(self, index: int) -> Player:
+        """Get a player from the queue by index.
+
+        Args:
+            index (int): The index of the player to retrieve
+
+        Returns:
+            Player: The player at the specified index
+        """
+        return self.players[index]
+
+    def __contains__(self, player: Player) -> bool:
+        """Check if a player is in the queue.
+
+        Returns:
+            bool: True if the player is in the queue, False otherwise
+        """
+        return player in self.players

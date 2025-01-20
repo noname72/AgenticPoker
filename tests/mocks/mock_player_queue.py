@@ -56,10 +56,14 @@ class MockPlayerQueue:
         Resets the index to maintain consistent clockwise rotation.
         """
         self.active_players = [
-            p for p in self.players if not p.folded and not p.is_all_in
+            p for p in self.players if not p.folded and not p.is_all_in and p.chips > 0
         ]
         self.all_in_players = [p for p in self.players if p.is_all_in]
         self.folded_players = [p for p in self.players if p.folded]
+
+        if not self.active_players:
+            self.needs_to_act.clear()
+
         self.index = 0  # Reset index when player states change
 
     def _default_get_next_player(self) -> Optional[MockPlayer]:
@@ -113,7 +117,16 @@ class MockPlayerQueue:
 
     def _default_is_round_complete(self) -> bool:
         """Default behavior for checking if round is complete."""
-        return all(player.folded or player.is_all_in for player in self.players)
+        # If all players but one have folded
+        if len(self.active_players) + len(self.all_in_players) <= 1:
+            return True
+
+        # If all remaining players are all-in
+        if not self.active_players and len(self.all_in_players) > 0:
+            return True
+
+        # Otherwise, continue the round
+        return False
 
     def _default_mark_player_acted(
         self, player: MockPlayer, is_raise: bool = False
@@ -146,3 +159,20 @@ class MockPlayerQueue:
     def get_folded_count(self) -> int:
         """Get the number of folded players."""
         return len(self.folded_players)
+
+    def __iter__(self):
+        """Make PlayerQueue iterable through all players."""
+        for player in self.players:
+            yield player
+
+    def __len__(self) -> int:
+        """Get the number of players in the queue."""
+        return len(self.players)
+
+    def __getitem__(self, index: int) -> MockPlayer:
+        """Get a player from the queue by index."""
+        return self.players[index]
+
+    def __contains__(self, player: MockPlayer) -> bool:
+        """Check if a player is in the queue."""
+        return player in self.players

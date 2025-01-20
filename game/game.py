@@ -4,8 +4,9 @@ from typing import Dict, List, Optional, Union
 from data.states.game_state import GameState
 from data.states.round_state import RoundState
 from game.config import GameConfig
+from game.player_queue import PlayerQueue
 
-from . import betting, draw, post_draw
+from . import betting, draw, showdown
 from .deck import Deck
 from .hand import Hand
 from .player import Player
@@ -52,7 +53,7 @@ class AgenticPoker:
 
     # Class attributes defined before __init__
     deck: Deck
-    players: List[Player]
+    players: PlayerQueue
     small_blind: int
     big_blind: int
     dealer_index: int
@@ -67,7 +68,7 @@ class AgenticPoker:
 
     def __init__(
         self,
-        players: Union[List[str], List[Player]],
+        players: List[Player],
         small_blind: int = 10,
         big_blind: int = 20,
         ante: int = 0,
@@ -76,7 +77,7 @@ class AgenticPoker:
     ) -> None:
         """Initialize a new poker game with specified players and configuration."""
         # Initialize logger first
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger(__name__)  #! will remove
 
         if not players:
             raise ValueError("Must provide at least 2 players")
@@ -96,19 +97,16 @@ class AgenticPoker:
         self.deck = Deck()
 
         # Convert names to players if needed
-        if players and isinstance(players[0], str):
-            self.players = [
-                Player(name, self.config.starting_chips) for name in players
-            ]
-        else:
-            self.players = players  # Use provided Player objects
-            # Validate player chips
-            if any(p.chips < 0 for p in self.players):
-                raise ValueError("Players cannot have negative chips")
+        self.players = PlayerQueue(players)
+        # Validate player chips
+        if any(p.chips < 0 for p in self.players):
+            raise ValueError("Players cannot have negative chips")
 
+        #! make into betting class
         self.current_bet = 0  # Add this line to initialize current_bet
-        self.pot_manager = PotManager()
+        self.pot_manager = PotManager()  #! change attr name to pot
 
+        #! should these be managed somewhere else?
         self.small_blind = self.config.small_blind
         self.big_blind = self.config.big_blind
         self.dealer_index = 0
@@ -132,6 +130,7 @@ class AgenticPoker:
         logging.info(f"{'='*50}\n")
 
     def start_game(self) -> None:
+        #! change to "play_game"
         """
         Execute the main game loop until a winner is determined.
         """
@@ -150,14 +149,17 @@ class AgenticPoker:
                 break
 
             # Start new round with remaining players
-            self.players = [p for p in self.players if p.chips > 0]
+            #! maybe have eligible_players as a property of player queue
+            eligible_players = [p for p in self.players if p.chips > 0]
 
             # Store initial chips before starting round
-            initial_chips = {p: p.chips for p in self.players}
+            #! use later
+            initial_chips = {p: p.chips for p in eligible_players}
 
-            self.start_round()
+            self.start_round()  #! _start_new_round
 
             # Pre-draw betting round
+            #! make a private method for this _pre_draw
             logging.info(f"====== Pre-draw betting ======\n")
             should_continue = betting.handle_betting_round(self)
 
@@ -166,19 +168,22 @@ class AgenticPoker:
                 continue
 
             # Draw phase
+            #! make a private method for this _draw
             logging.info(f"====== Draw Phase ======\n")
             draw.handle_draw_phase(players=self.players, deck=self.deck)
 
             # Post-draw betting round
-            should_continue = post_draw.handle_post_draw_betting(self)
+            #! make a private method for this _post_draw
+            should_continue = betting.handle_betting_round(self)
 
             if not should_continue:
                 self._reset_round()
                 continue
 
             # Showdown
+            #! make a private method for this _showdown
             logging.info(f"====== Showdown ======\n")
-            post_draw.handle_showdown(
+            showdown.handle_showdown(
                 players=self.players,
                 initial_chips=initial_chips,
                 pot_manager=self.pot_manager,
@@ -245,7 +250,6 @@ class AgenticPoker:
 
         # Use betting module to collect blinds and antes
         collected = betting.collect_blinds_and_antes(
-            players=self.players,
             dealer_index=self.dealer_index,
             small_blind=self.small_blind,
             big_blind=self.big_blind,
@@ -351,8 +355,8 @@ class AgenticPoker:
                 eliminated_players.append(player)
                 logging.info(f"\n{player.name} is eliminated (out of chips)!")
 
-        # Remove bankrupt players from active game
-        self.players = [player for player in self.players if player.chips > 0]
+        # # Remove bankrupt players from active game
+        # self.players = [player for player in self.players if player.chips > 0]
 
         # Check game end conditions
         if len(self.players) == 1:
