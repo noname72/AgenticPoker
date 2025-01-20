@@ -1,3 +1,53 @@
+"""
+This module provides the PlayerQueue class which handles player rotation, tracks betting
+actions, and manages player states in a poker game.
+
+Example usage:
+
+    # Create some players
+    players = [
+        Player("Alice", 1000),
+        Player("Bob", 1000),
+        Player("Charlie", 1000)
+    ]
+
+    # Initialize the player queue
+    queue = PlayerQueue(players)
+
+    # Start a betting round
+    queue.reset_action_tracking()  # Reset for new betting round
+
+    # Process player actions
+    while not queue.is_round_complete():
+        current_player = queue.get_next_player()
+        if current_player is None:
+            break
+
+        # Example: Player calls
+        current_player.bet(10)  # Player makes their bet
+        queue.mark_player_acted(current_player)  # Mark action complete
+
+        # Example: Player raises
+        current_player.bet(20)  # Player makes a raise
+        queue.mark_player_acted(current_player, is_raise=True)  # Marks as raise
+
+    # Check round status
+    if queue.is_round_complete():
+        print("Betting round complete")
+
+    # Get player counts
+    active_count = queue.get_active_count()  # Players who can still act
+    all_in_count = queue.get_all_in_count()  # Players who are all-in
+    folded_count = queue.get_folded_count()  # Players who have folded
+
+    # Remove a player who has no chips
+    queue.remove_player(players[0])
+
+    # Iterate through all players
+    for player in queue:
+        print(f"{player.name}: {player.chips} chips")
+"""
+
 from typing import List, Optional
 
 from game.player import Player
