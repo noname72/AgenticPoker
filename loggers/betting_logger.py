@@ -126,3 +126,8 @@ class BettingLogger:
     def log_message(message: str) -> None:
         """Log a general message."""
         logger.info(message)
+
+    @staticmethod
+    def log_debug(message: str) -> None:
+        """Log a debug message."""
+        logger.debug(message)
