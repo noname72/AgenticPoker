@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from data.states.round_state import RoundPhase
-from data.types.action_response import ActionType
+from data.types.action_decision import ActionType
 from data.types.pot_types import SidePot
 from game.betting import (
     betting_round,

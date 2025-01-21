@@ -94,7 +94,7 @@ import pytest
 
 from data.states.game_state import GameState
 from data.states.round_state import RoundPhase, RoundState
-from data.types.action_response import ActionType
+from data.types.action_decision import ActionType
 from data.types.base_types import DeckState
 from data.types.pot_types import PotState, SidePot
 from tests.mocks.mock_agent import MockAgent
@@ -1043,3 +1043,54 @@ def mock_insufficient_chips_players(player_factory):
         player_factory(name="Player2", chips=30),
         player_factory(name="Player3", chips=60),
     ]
+
+
+@pytest.fixture
+def game_state(mock_players):
+    """Create a standard game state for testing.
+    
+    Creates a GameState instance with:
+    - 4 players with standard positions (dealer, SB, BB, other)
+    - Standard blinds (50/100)
+    - Standard ante (10)
+    - Pre-draw phase
+    - Empty pot
+    - Full deck
+    """
+    from data.states.game_state import GameState
+    from data.states.player_state import PlayerState
+    from data.states.round_state import RoundState, RoundPhase
+    from data.types.base_types import DeckState
+    from data.types.player_types import PlayerPosition
+    from data.types.pot_types import PotState
+
+    # Create player states
+    player_states = [
+        PlayerState(
+            name=player.name,
+            chips=player.chips,
+            bet=player.bet,
+            position=PlayerPosition.DEALER if i == 0 
+                    else PlayerPosition.SMALL_BLIND if i == 1
+                    else PlayerPosition.BIG_BLIND if i == 2
+                    else PlayerPosition.OTHER,
+            folded=player.folded
+        ) for i, player in enumerate(mock_players)
+    ]
+
+    return GameState(
+        players=player_states,
+        dealer_position=0,
+        small_blind=50,
+        big_blind=100,
+        ante=10,
+        min_bet=100,
+        round_state=RoundState(
+            round_number=1,
+            phase=RoundPhase.PRE_DRAW,
+            current_bet=100,
+            raise_count=0,
+        ),
+        pot_state=PotState(main_pot=0),
+        deck_state=DeckState(cards_remaining=52),
+    )

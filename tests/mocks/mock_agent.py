@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock
 
-from data.types.action_response import ActionResponse, ActionType
+from data.types.action_decision import ActionDecision, ActionType
 from tests.mocks.mock_llm_client import MockLLMClient
 from tests.mocks.mock_player import MockPlayer
 from tests.mocks.mock_strategy_planner import MockStrategyPlanner
@@ -99,7 +99,7 @@ class MockAgent(MockPlayer):
         self.table_history = []
         self.action_history = []
 
-    def _default_decide_action(self, game) -> ActionResponse:
+    def _default_decide_action(self, game) -> ActionDecision:
         """Default behavior for action decisions."""
         if self._should_raise_error:
             raise Exception(self._error_message)
@@ -107,7 +107,7 @@ class MockAgent(MockPlayer):
         if self._action_response:
             return self._action_response
 
-        return ActionResponse(action_type=ActionType.CALL)
+        return ActionDecision(action_type=ActionType.CALL)
 
     def _default_get_message(self, game) -> str:
         """Default behavior for message generation."""
@@ -147,7 +147,7 @@ class MockAgent(MockPlayer):
             amount: Bet/raise amount
             reasoning: Action reasoning
         """
-        self._action_response = ActionResponse(
+        self._action_response = ActionDecision(
             action_type=action_type,
             amount=amount,
             reasoning=reasoning,

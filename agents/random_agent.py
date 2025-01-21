@@ -1,9 +1,9 @@
 import logging
 import random
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 from data.model import Game
-from data.types.action_response import ActionResponse, ActionType
+from data.types.action_decision import ActionDecision, ActionType
 from game.evaluator import HandEvaluation
 from game.player import Player
 
@@ -19,7 +19,7 @@ class RandomAgent(Player):
 
     def decide_action(
         self, game: "Game", hand_eval: Optional[HandEvaluation] = None
-    ) -> ActionResponse:
+    ) -> ActionDecision:
         """Randomly decide an action based on valid options.
 
         Args:
@@ -27,7 +27,7 @@ class RandomAgent(Player):
             opponent_message: Optional message from opponent (ignored for RandomAgent)
 
         Returns:
-            ActionResponse: Action to take ('fold', 'call', or 'raise {amount}')
+            ActionDecision: Action to take ('fold', 'call', or 'raise {amount}')
         """
         try:
             current_bet = game.current_bet
@@ -35,7 +35,7 @@ class RandomAgent(Player):
             # If we can't afford the current bet, fold
             if current_bet > self.chips:
                 logger.info(f"{self.name} cannot afford current bet, folding")
-                return ActionResponse(action_type=ActionType.FOLD)
+                return ActionDecision(action_type=ActionType.FOLD)
 
             # Randomly choose between available actions
             actions = [ActionType.FOLD, ActionType.CALL]
@@ -58,21 +58,19 @@ class RandomAgent(Player):
                         min_raise, max_raise + 1, 10
                     )  # Step by 10 chips
                     logger.info(f"{self.name} raised to {raise_amount}")
-                    return ActionResponse(
+                    return ActionDecision(
                         action_type=ActionType.RAISE, raise_amount=raise_amount
                     )
 
                 logger.info(f"{self.name} raised to {min_raise}, falling back to call")
-                return ActionResponse(
-                    action_type=ActionType.CALL
-                )  # Fall back to call if raise range is invalid
+                return ActionDecision(action_type=ActionType.CALL)
 
             logger.info(f"{self.name} decided to call")
-            return ActionResponse(action_type=ActionType.CALL)
+            return ActionDecision(action_type=ActionType.CALL)
 
         except Exception as e:
             logger.error(f"Random decision error: {str(e)}")
-            return ActionResponse(action_type=ActionType.FOLD)  # Safe default action
+            return ActionDecision(action_type=ActionType.FOLD)  # Safe default action
 
     def get_message(self, game_state: str) -> str:
         """Return empty string as random agent doesn't communicate."""

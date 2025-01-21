@@ -1,17 +1,8 @@
-import logging
-import os
-
-from dotenv import load_dotenv
-
-from agents.prompts import ACTION_PROMPT, PLANNING_PROMPT
-from data.types.action_response import ActionResponse, ActionType
+from agents.prompts import ACTION_PROMPT, DISCARD_PROMPT, PLANNING_PROMPT
+from data.types.action_decision import ActionDecision
+from data.types.discard_decision import DiscardDecision
 from data.types.llm_responses import PlanResponse
 from data.types.plan import Plan
-
-logger = logging.getLogger(__name__)
-
-load_dotenv()
-API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 
 class LLMResponseGenerator:
@@ -21,7 +12,7 @@ class LLMResponseGenerator:
     """
 
     @classmethod
-    def generate_plan(cls, player, game_state, hand_eval) -> dict:
+    def generate_plan(cls, player, game_state, hand_eval) -> "PlanResponse":
         """
         Create a plan by calling the LLM with the appropriate planning prompt.
         Returns the parsed dictionary of plan data.
@@ -37,7 +28,9 @@ class LLMResponseGenerator:
         return PlanResponse.parse_llm_response(response)
 
     @classmethod
-    def generate_action(cls, player, game_state, current_plan: Plan, hand_eval) -> str:
+    def generate_action(
+        cls, player, game_state, current_plan: Plan, hand_eval
+    ) -> "ActionDecision":
         """
         Create an action by calling the LLM with the action prompt.
         Returns the raw LLM response string for further parsing.
@@ -57,21 +50,38 @@ class LLMResponseGenerator:
             bluff_threshold=bluff_threshold,
             fold_threshold=fold_threshold,
         )
-        return player.llm_client.query(
+        response = player.llm_client.query(
             prompt=execution_prompt,
             temperature=0.7,
             max_tokens=100,
         )
+        return ActionDecision.parse_llm_response(response)
 
     @classmethod
-    def parse_action_response(cls, response: str) -> ActionResponse:
-        #! is this used anywhere???
+    def generate_discard(cls, player, game_state, cards) -> "DiscardDecision":
+        """Create a discard decision by calling the LLM with the discard prompt.
+
+        Args:
+            player: The player making the discard decision
+            game_state: Current state of the game
+            cards: List of 5 card objects representing current hand
+
+        Returns:
+            DiscardDecision: Parsed and validated discard decision
+
+        Raises:
+            ValueError: If LLM response cannot be parsed into a valid discard decision
         """
-        Parse the raw LLM response string into an ActionResponse.
-        Falls back to ActionType.CALL on errors.
-        """
-        try:
-            return ActionResponse.parse_llm_response(response)
-        except Exception as e:
-            logger.error(f"[Action] Error parsing action response: {str(e)}")
-            return ActionResponse(action_type=ActionType.CALL)
+        prompt = DISCARD_PROMPT.format(
+            strategy_style=player.strategy_style,
+            game_state=game_state,
+            cards=cards,
+        )
+
+        response = player.llm_client.query(
+            prompt=prompt,
+            temperature=0.7,
+            max_tokens=100,
+        )
+
+        return DiscardDecision.parse_llm_response(response)

@@ -45,7 +45,7 @@ Key Components:
 from typing import TYPE_CHECKING, Optional, Set, Tuple
 
 from data.states.round_state import RoundPhase
-from data.types.action_response import ActionType
+from data.types.action_decision import ActionType
 from loggers.betting_logger import BettingLogger
 
 from .player import Player
@@ -133,10 +133,20 @@ def betting_round(game: "Game") -> None:
             big_blind_player,
         )
 
-        # Check if round is complete
+        # Enhanced logging to trace round completion
+        BettingLogger.log_debug("Checking if round is complete.")
+        BettingLogger.log_debug(f"is_round_complete: {game.players.is_round_complete()}")
+        BettingLogger.log_debug(f"all_players_acted: {game.players.all_players_acted()}")
+
+        # Check if betting round should end
         round_complete = (
             game.players.is_round_complete() or game.players.all_players_acted()
         )
+
+        if round_complete:
+            BettingLogger.log_debug("Betting round is complete.")
+        else:
+            BettingLogger.log_debug("Betting round continues.")
 
 
 def _process_betting_cycle(
@@ -146,7 +156,7 @@ def _process_betting_cycle(
 ) -> None:
     """Process a single cycle of betting for all active players."""
     # Add safety counter to prevent infinite loops
-    max_iterations = len(game.players) * 2
+    max_iterations = len(game.players) * 4
     iteration_count = 0
 
     while not game.players.is_round_complete():
@@ -171,6 +181,7 @@ def _process_betting_cycle(
             game.players.needs_to_act.discard(agent)
             # If all players are being skipped, end the round
             if len(game.players.needs_to_act) == 0:
+                BettingLogger.log_debug("All players have been skipped. Ending round.")
                 break
             continue
 
@@ -187,6 +198,7 @@ def _process_betting_cycle(
         action_decision = agent.decide_action(game)
         agent.execute(action_decision, game)
 
+        previous_last_raiser = last_raiser
         last_raiser = _update_action_tracking(
             agent,
             action_decision.action_type,
@@ -194,6 +206,8 @@ def _process_betting_cycle(
             big_blind_player,
             game.round_state.phase == RoundPhase.PREFLOP,
         )
+
+        BettingLogger.log_debug(f"Previous Raiser: {previous_last_raiser}, Current Raiser: {last_raiser}")
 
         _should_continue_betting(game.players, last_raiser)
 
@@ -398,9 +412,28 @@ def _should_continue_betting(
     )
     all_acted = player_queue.acted_since_last_raise == active_non_folded
 
+    BettingLogger.log_debug(f"Active non-folded players: {[p.name for p in active_non_folded]}")
+    BettingLogger.log_debug(f"Acted since last raise: {[p.name for p in player_queue.acted_since_last_raise]}")
+    BettingLogger.log_debug(f"All acted: {all_acted}")
+
     # If everyone has acted since last raise, give last raiser final chance
     if all_acted and last_raiser and not last_raiser.folded and last_raiser.chips > 0:
+        BettingLogger.log_debug(f"Allowing last raiser {last_raiser.name} to act again.")
         player_queue.needs_to_act.clear()
         player_queue.needs_to_act.add(last_raiser)
     elif all_acted:
+        BettingLogger.log_debug("No further actions required. Clearing needs_to_act.")
         player_queue.needs_to_act.clear()  # No one else needs to act
+
+
+def is_round_complete(self) -> bool:
+    """Determine if the betting round is complete."""
+    complete = self.acted_since_last_raise >= self.active_players_count()
+    BettingLogger.log_debug(f"Checking if round is complete: {complete}")
+    return complete
+
+def all_players_acted(self) -> bool:
+    """Check if all players have acted."""
+    acted = len(self.acted_since_last_raise) == self.active_players_count()
+    BettingLogger.log_debug(f"All players acted: {acted}")
+    return acted
