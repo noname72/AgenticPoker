@@ -1,7 +1,7 @@
 from typing import Dict, Optional
 from unittest.mock import MagicMock
 
-from data.types.action_response import ActionResponse, ActionType
+from data.types.action_decision import ActionDecision, ActionType
 from data.types.llm_responses import PlanResponse
 from data.types.plan import Plan
 
@@ -52,7 +52,7 @@ class MockLLMResponseGenerator:
     Default Behaviors:
         - generate_plan: Returns configured plan or default conservative plan
         - generate_action: Returns configured action or default CALL action
-        - parse_action_response: Returns configured ActionResponse
+        - parse_action_response: Returns configured ActionDecision
     """
 
     def __init__(self):
@@ -95,13 +95,13 @@ class MockLLMResponseGenerator:
         # Return a default CALL action
         return "ACTION: CALL\nREASONING: Default testing action"
 
-    def _default_parse_action_response(self, response: str) -> ActionResponse:
+    def _default_parse_action_response(self, response: str) -> ActionDecision:
         """Default behavior for action response parsing."""
         if self._parsed_action_response is not None:
             return self._parsed_action_response
 
         # Return a default CALL action response
-        return ActionResponse(
+        return ActionDecision(
             action_type=ActionType.CALL,
             amount=0,
             reasoning="Default parsed action response",
@@ -148,7 +148,7 @@ class MockLLMResponseGenerator:
             f"AMOUNT: {amount}\n"
             f"REASONING: {reasoning}"
         )
-        self._parsed_action_response = ActionResponse(
+        self._parsed_action_response = ActionDecision(
             action_type=action_type,
             amount=amount,
             reasoning=reasoning,

@@ -1,7 +1,7 @@
 import logging
 
 from data.states.player_state import PlayerState
-from data.types.action_response import ActionResponse, ActionType
+from data.types.action_decision import ActionDecision, ActionType
 from data.types.player_types import PlayerPosition
 from loggers.player_logger import PlayerLogger
 
@@ -97,22 +97,22 @@ class Player:
 
         return amount
 
-    def execute(self, action_response: ActionResponse, game):
+    def execute(self, action_decision: ActionDecision, game):
         try:
             PlayerLogger.log_action_execution(
-                self.name, action_response.action_type.name
+                self.name, action_decision.action_type.name
             )
-            if action_response.action_type == ActionType.RAISE:
-                self._raise(action_response.raise_amount, game)
-            elif action_response.action_type == ActionType.CALL:
+            if action_decision.action_type == ActionType.RAISE:
+                self._raise(action_decision.raise_amount, game)
+            elif action_decision.action_type == ActionType.CALL:
                 self._call(game.current_bet, game)
-            elif action_response.action_type == ActionType.CHECK:
+            elif action_decision.action_type == ActionType.CHECK:
                 self._check()
-            elif action_response.action_type == ActionType.FOLD:
+            elif action_decision.action_type == ActionType.FOLD:
                 self._fold()
         except Exception as e:
             PlayerLogger.log_action_error(
-                self.name, action_response.action_type.name, e
+                self.name, action_decision.action_type.name, e
             )
             raise
 

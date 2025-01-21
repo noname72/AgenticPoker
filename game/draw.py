@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING, List
 
+from data.types.discard_decision import DiscardDecision
 from loggers.draw_logger import DrawLogger
 
 from .deck import Deck
@@ -107,18 +108,18 @@ def get_discard_indices(player: Player) -> List[int] | None:
         return None
 
     try:
-        discards = player.decide_discard()
-        if len(discards) > MAX_DISCARD:
+        discard_decision: DiscardDecision = player.decide_discard()
+        if len(discard_decision.discard) > MAX_DISCARD:
             # Log and trim if too many discards
-            DrawLogger.log_discard_validation_error(player.name, len(discards))
-            discards = discards[:MAX_DISCARD]
+            DrawLogger.log_discard_validation_error(player.name, len(discard_decision.discard))
+            discard_decision.discard = discard_decision.discard[:MAX_DISCARD]
 
         # Validate all indices are between 0 and 4 (assuming 5-card hands).
-        if any(idx < 0 or idx >= 5 for idx in discards):
+        if any(idx < 0 or idx >= 5 for idx in discard_decision.discard):
             DrawLogger.log_invalid_indexes(player.name)
             return None
 
-        return discards
+        return discard_decision.discard
 
     except Exception as e:
         # If there's an error in decide_draw, we log and return None so the player keeps the hand.

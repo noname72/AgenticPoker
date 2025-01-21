@@ -13,7 +13,8 @@ from agents.strategy_planner import StrategyPlanner
 from config import GameConfig
 from data.memory import ChromaMemoryStore
 from data.model import Game
-from data.types.action_response import ActionResponse, ActionType
+from data.types.action_decision import ActionDecision, ActionType
+from data.types.discard_decision import DiscardDecision
 from game.evaluator import HandEvaluation
 from game.player import Player
 from game.utils import get_min_bet, validate_bet_amount
@@ -232,7 +233,7 @@ class Agent(Player):
         except Exception:
             pass  # Suppress errors during interpreter shutdown
 
-    def decide_action(self, game: "Game") -> ActionResponse:
+    def decide_action(self, game: "Game") -> ActionDecision:
         """Determine the next poker action based on the current game state."""
         # Get hand evaluation before making decision
         hand_eval: HandEvaluation = self.hand.evaluate() if self.hand else None
@@ -249,14 +250,14 @@ class Agent(Player):
         self,
         game: "Game",
         hand_eval: Optional[HandEvaluation] = None,
-    ) -> ActionResponse:
+    ) -> ActionDecision:
         """Execute an action based on current plan and game state."""
         try:
             current_plan = (
                 self.strategy_planner.current_plan if self.use_planning else None
             )
             # Delegate action creation to the strategy generator
-            action = LLMResponseGenerator.generate_action(
+            action: ActionDecision = LLMResponseGenerator.generate_action(
                 player=self,
                 game_state=game.get_state(),
                 current_plan=current_plan,
@@ -273,11 +274,7 @@ class Agent(Player):
 
         except Exception as e:
             AgentLogger.log_action(None, error=e)
-            return ActionResponse(action_type=ActionType.CALL)
-
-    def execute_action(self, action: ActionResponse) -> None:
-        """Execute an action based on action response."""
-        pass
+            return ActionDecision(action_type=ActionType.CALL, reasoning="Failed to decide action")
 
     def get_message(self, game) -> str:
         """Generate table talk using LLM.
@@ -377,49 +374,20 @@ class Agent(Player):
 
         return perception
 
-    def decide_discard(self, game_state: Optional[Dict[str, Any]] = None) -> List[int]:
+    def decide_discard(
+        self, game_state: Optional[Dict[str, Any]] = None
+    ) -> DiscardDecision:
         """Decide which cards to discard."""
-        #! validate this
         try:
-            # Create draw decision prompt
-            prompt = DISCARD_PROMPT.format(
-                strategy_style=self.strategy_style,
-                hand=self.hand.show() if hasattr(self, "hand") else "No hand",
-                game_state=game_state or "No game state",
+            discard: DiscardDecision = LLMResponseGenerator.generate_discard(
+                self, game_state, self.hand.cards
             )
-
-            system_message = (
-                f"You are a {self.strategy_style} poker player deciding which "
-                f"cards to discard in draw poker."
-            )
-
-            # Query LLM for discard decision
-            response = self.llm_client.query(
-                prompt=prompt, temperature=0.7, system_message=system_message
-            )
-
-            # Parse response for discard positions
-            if "DISCARD:" not in response:
-                return []
-
-            discard_line = next(
-                line for line in response.split("\n") if line.startswith("DISCARD:")
-            )
-
-            # Parse positions, ensuring they're valid (0-4)
-            try:
-                positions = [
-                    int(pos)
-                    for pos in discard_line.replace("DISCARD:", "").strip().split()
-                    if 0 <= int(pos) <= 4
-                ]
-                return positions[:3]  # Maximum 3 discards
-            except ValueError:
-                return []
+            
+            return discard
 
         except Exception as e:
             AgentLogger.log_discard_error(e)
-            return []
+            return DiscardDecision(discard_indices=[], reasoning="Failed to decide discard")
 
     def update_strategy(self, game_outcome: Dict[str, Any]) -> None:
         #! need to refactor and combine with strategy_planner (with strategy_manager)

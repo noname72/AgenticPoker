@@ -3,7 +3,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from agents.agent import Agent
-from data.types.action_response import ActionResponse, ActionType
+from data.types.action_decision import ActionDecision, ActionType
 from game.evaluator import HandEvaluation
 
 
@@ -66,7 +66,7 @@ class TestAgent:
         # Test call decision
         mock_llm_client.query.return_value = "DECISION: call"
         response = basic_agent._basic_decision(mock_game, mock_hand_eval)
-        assert isinstance(response, ActionResponse)
+        assert isinstance(response, ActionDecision)
         assert response.action_type == ActionType.CALL
         assert response.raise_amount is None
 

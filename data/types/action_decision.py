@@ -14,9 +14,9 @@ class ActionType(str, Enum):
     CHECK = "check"
 
 
-class ActionResponse(BaseModel):
+class ActionDecision(BaseModel):
     """
-    Represents an action response from an LLM agent.
+    Represents an action decision from an LLM agent.
 
     Attributes:
         action_type: The type of action to take
@@ -38,14 +38,14 @@ class ActionResponse(BaseModel):
         return v
 
     @classmethod
-    def parse_llm_response(cls, response: str) -> "ActionResponse":
-        """Parse LLM response string into an ActionResponse object.
+    def parse_llm_response(cls, response: str) -> "ActionDecision":
+        """Parse LLM response string into an ActionDecision object.
 
         Args:
             response: Raw response string from LLM
 
         Returns:
-            ActionResponse: Parsed and validated action response
+            ActionDecision: Parsed and validated action decision
 
         Raises:
             ValueError: If response cannot be parsed into a valid action

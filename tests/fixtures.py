@@ -94,7 +94,7 @@ import pytest
 
 from data.states.game_state import GameState
 from data.states.round_state import RoundPhase, RoundState
-from data.types.action_response import ActionType
+from data.types.action_decision import ActionType
 from data.types.base_types import DeckState
 from data.types.pot_types import PotState, SidePot
 from tests.mocks.mock_agent import MockAgent

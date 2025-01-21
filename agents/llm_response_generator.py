@@ -1,6 +1,6 @@
 from agents.prompts import ACTION_PROMPT, DISCARD_PROMPT, PLANNING_PROMPT
-from data.types.action_response import ActionResponse
-from data.types.discard_response import DiscardResponse
+from data.types.action_decision import ActionDecision
+from data.types.discard_decision import DiscardDecision
 from data.types.llm_responses import PlanResponse
 from data.types.plan import Plan
 
@@ -30,7 +30,7 @@ class LLMResponseGenerator:
     @classmethod
     def generate_action(
         cls, player, game_state, current_plan: Plan, hand_eval
-    ) -> "ActionResponse":
+    ) -> "ActionDecision":
         """
         Create an action by calling the LLM with the action prompt.
         Returns the raw LLM response string for further parsing.
@@ -55,10 +55,10 @@ class LLMResponseGenerator:
             temperature=0.7,
             max_tokens=100,
         )
-        return ActionResponse.parse_llm_response(response)
+        return ActionDecision.parse_llm_response(response)
 
     @classmethod
-    def generate_discard(cls, player, game_state, cards) -> "DiscardResponse":
+    def generate_discard(cls, player, game_state, cards) -> "DiscardDecision":
         """Create a discard decision by calling the LLM with the discard prompt.
 
         Args:
@@ -67,7 +67,7 @@ class LLMResponseGenerator:
             cards: List of 5 card objects representing current hand
 
         Returns:
-            DiscardResponse: Parsed and validated discard decision
+            DiscardDecision: Parsed and validated discard decision
 
         Raises:
             ValueError: If LLM response cannot be parsed into a valid discard decision
@@ -84,4 +84,4 @@ class LLMResponseGenerator:
             max_tokens=100,
         )
 
-        return DiscardResponse.parse_llm_response(response)
+        return DiscardDecision.parse_llm_response(response)

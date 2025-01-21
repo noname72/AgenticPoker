@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 
-from data.types.action_response import ActionResponse
+from data.types.action_decision import ActionDecision
 
 logger = logging.getLogger(__name__)
 
@@ -10,7 +10,7 @@ class AgentLogger:
     """Handles all logging operations for poker agents."""
 
     @staticmethod
-    def log_action(action: ActionResponse, error: Optional[Exception] = None) -> None:
+    def log_action(action: ActionDecision, error: Optional[Exception] = None) -> None:
         """Log agent actions or action-related errors."""
         if error:
             logger.error(

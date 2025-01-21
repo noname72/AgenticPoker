@@ -4,7 +4,7 @@ from typing import List, Optional
 from pydantic import BaseModel, validator
 
 
-class DiscardResponse(BaseModel):
+class DiscardDecision(BaseModel):
     """Represents a discard decision with reasoning.
 
     Attributes:
@@ -27,14 +27,14 @@ class DiscardResponse(BaseModel):
         return v
 
     @classmethod
-    def parse_llm_response(cls, response: str) -> "DiscardResponse":
-        """Parse LLM response string into a DiscardResponse object.
+    def parse_llm_response(cls, response: str) -> "DiscardDecision":
+        """Parse LLM response string into a DiscardDecision object.
 
         Args:
             response: Raw response string from LLM
 
         Returns:
-            DiscardResponse: Parsed and validated discard response
+            DiscardDecision: Parsed and validated discard decision
 
         Raises:
             ValueError: If response cannot be parsed into a valid discard decision
@@ -61,7 +61,7 @@ class DiscardResponse(BaseModel):
             raise ValueError("Invalid discard format")
 
     def __str__(self) -> str:
-        """String representation of the discard response."""
+        """String representation of the discard decision."""
         if self.discard is None:
             discard_str = "Keep all cards"
         else:
