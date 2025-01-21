@@ -19,6 +19,7 @@ Fixture Categories:
     - mock_game: Full game instance with components
     - mock_round_state: Current round state
     - mock_config: Game configuration settings
+    - game_state: Standard game state with positions
 
 3. Betting Components:
     - mock_betting_state: Complete betting round state
@@ -28,24 +29,33 @@ Fixture Categories:
     - mock_pot_with_side_pots: Side pot configurations
     - mock_side_pot: Side pot factory
 
-4. Player Queue Management:
+4. Draw Components:
+    - mock_draw: Draw phase handler with configurable behaviors
+    - mock_deck: Card deck with configurable dealing/shuffling
+    - mock_hand: Player hand with configurable rankings
+
+5. Player Queue Management:
     - mock_player_queue: Turn management queue
     - mock_needs_to_act: Players pending actions
     - mock_acted_since_last_raise: Post-raise tracking
 
-5. AI/Strategy Components:
+6. AI/Strategy Components:
+    - mock_agent: AI player with configurable behaviors
+    - mock_agents: List of AI players with different styles
     - mock_memory_store: Agent memory management
     - mock_strategy_planner: AI decision making
     - mock_llm_client: Language model integration
     - mock_llm_response_generator: AI response generation
 
-6. Utility Fixtures:
+7. Utility Fixtures:
     - setup_test_env: Environment configuration (auto-use)
     - setup_logging: Logging configuration (auto-use)
     - temp_dir: Temporary file storage
     - sample_cards: Standard test cards
     - mock_logger: Test logging capture
     - mock_websocket: Real-time communication
+    - mock_database: Test database connection
+    - mock_file_system: Test file system structure
 
 Usage:
     These fixtures are automatically available to all test files through conftest.py.
@@ -58,6 +68,14 @@ Usage:
         # Use player queue for turn management
         next_player = mock_player_queue.get_next_player()
         assert next_player in active_players
+
+    def test_draw_phase(mock_draw, mock_game, mock_player):
+        # Configure draw behavior
+        mock_draw.set_discard_decision(
+            player_name=mock_player.name,
+            discard_indices=[0, 1]
+        )
+        mock_draw.handle_draw_phase(mock_game)
 
 Auto-use Fixtures:
     - setup_test_env: Configures environment variables
@@ -74,11 +92,13 @@ Examples:
         pot_amount = mock_betting_round()
         assert pot_amount == 150
 
-    # Test pot management
-    def test_side_pots(mock_pot_with_side_pots):
-        side_pots = mock_pot_with_side_pots.side_pots
-        assert len(side_pots) == 2
-        assert side_pots[0]["amount"] == 50
+    # Test draw phase
+    def test_discard_and_draw(mock_draw, mock_deck, mock_player):
+        mock_draw.set_draw_outcome(
+            player_name=mock_player.name,
+            new_cards=sample_cards[:2]
+        )
+        mock_draw.process_discard_and_draw(mock_player, mock_deck, [0, 1])
 
 Notes:
     - All fixtures are function-scoped by default
@@ -1048,7 +1068,7 @@ def mock_insufficient_chips_players(player_factory):
 @pytest.fixture
 def game_state(mock_players):
     """Create a standard game state for testing.
-    
+
     Creates a GameState instance with:
     - 4 players with standard positions (dealer, SB, BB, other)
     - Standard blinds (50/100)
@@ -1059,7 +1079,7 @@ def game_state(mock_players):
     """
     from data.states.game_state import GameState
     from data.states.player_state import PlayerState
-    from data.states.round_state import RoundState, RoundPhase
+    from data.states.round_state import RoundPhase, RoundState
     from data.types.base_types import DeckState
     from data.types.player_types import PlayerPosition
     from data.types.pot_types import PotState
@@ -1070,12 +1090,18 @@ def game_state(mock_players):
             name=player.name,
             chips=player.chips,
             bet=player.bet,
-            position=PlayerPosition.DEALER if i == 0 
-                    else PlayerPosition.SMALL_BLIND if i == 1
-                    else PlayerPosition.BIG_BLIND if i == 2
-                    else PlayerPosition.OTHER,
-            folded=player.folded
-        ) for i, player in enumerate(mock_players)
+            position=(
+                PlayerPosition.DEALER
+                if i == 0
+                else (
+                    PlayerPosition.SMALL_BLIND
+                    if i == 1
+                    else PlayerPosition.BIG_BLIND if i == 2 else PlayerPosition.OTHER
+                )
+            ),
+            folded=player.folded,
+        )
+        for i, player in enumerate(mock_players)
     ]
 
     return GameState(
@@ -1094,3 +1120,43 @@ def game_state(mock_players):
         pot_state=PotState(main_pot=0),
         deck_state=DeckState(cards_remaining=52),
     )
+
+
+@pytest.fixture
+def mock_draw():
+    """Create a mock draw handler for testing draw phase functionality.
+
+    This fixture provides a MockDraw instance with:
+    - Default draw phase behaviors
+    - Configurable discard decisions
+    - Configurable draw outcomes
+    - Proper logging through DrawLogger
+    - Error simulation capabilities
+
+    Usage:
+        def test_draw_phase(mock_draw, mock_game, mock_player):
+            # Configure specific discard decision
+            mock_draw.set_discard_decision(
+                player_name=mock_player.name,
+                discard_indices=[0, 1]
+            )
+
+            # Configure cards to be drawn
+            mock_draw.set_draw_outcome(
+                player_name=mock_player.name,
+                new_cards=[Card("A", "♠"), Card("K", "♠")]
+            )
+
+            # Execute draw phase
+            mock_draw.handle_draw_phase(mock_game)
+
+            # Verify behavior
+            mock_draw.get_discard_indices.assert_called_with(mock_player)
+            mock_draw.process_discard_and_draw.assert_called_once()
+
+    Returns:
+        MockDraw: Configured draw handler for testing
+    """
+    from tests.mocks.mock_draw import MockDraw
+
+    return MockDraw()
