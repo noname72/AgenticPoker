@@ -34,8 +34,8 @@ Fixture Categories:
     - mock_deck: Card deck with configurable dealing/shuffling
     - mock_hand: Player hand with configurable rankings
 
-5. Player Queue Management:
-    - mock_player_queue: Turn management queue
+5. Table Management:
+    - mock_table: Turn management table
     - mock_needs_to_act: Players pending actions
     - mock_acted_since_last_raise: Post-raise tracking
 
@@ -61,12 +61,12 @@ Usage:
     These fixtures are automatically available to all test files through conftest.py.
     Simply declare the fixture name as a test parameter to use it:
 
-    def test_betting_round(mock_betting_state, mock_player_queue):
+    def test_betting_round(mock_betting_state, mock_table):
         # Access pre-configured betting state
         active_players = mock_betting_state["active_players"]
         
-        # Use player queue for turn management
-        next_player = mock_player_queue.get_next_player()
+        # Use table for turn management
+        next_player = mock_table.get_next_player()
         assert next_player in active_players
 
     def test_draw_phase(mock_draw, mock_game, mock_player):
@@ -124,7 +124,7 @@ from tests.mocks.mock_hand import MockHand
 from tests.mocks.mock_llm_client import MockLLMClient
 from tests.mocks.mock_llm_response_generator import MockLLMResponseGenerator
 from tests.mocks.mock_player import MockPlayer
-from tests.mocks.mock_player_queue import MockPlayerQueue
+from tests.mocks.mock_table import MockTable
 from tests.mocks.mock_pot_manager import MockPotManager
 from tests.mocks.mock_strategy_planner import MockStrategyPlanner
 
@@ -288,10 +288,10 @@ def mock_players(player_factory):
 
 
 @pytest.fixture
-def mock_player_queue(mock_players):
-    """Create a mock player queue with pre-configured players and betting state.
+def mock_table(mock_players):
+    """Create a mock table with pre-configured players and betting state.
 
-    This fixture provides a MockPlayerQueue instance that matches the real PlayerQueue's
+    This fixture provides a MockTable instance that matches the real Table's
     functionality, including:
     - Player state tracking (active, all-in, folded)
     - Betting action tracking (needs_to_act, acted_since_last_raise)
@@ -299,26 +299,26 @@ def mock_player_queue(mock_players):
     - Round completion checks
 
     Args:
-        mock_players: List of mock players to initialize the queue
+        mock_players: List of mock players to initialize the table
 
     Returns:
-        MockPlayerQueue: Configured queue instance with default behaviors
+        MockTable: Configured table instance with default behaviors
     """
-    queue = MockPlayerQueue(mock_players)
+    table = MockTable(mock_players)
 
     # Initialize with default state
-    queue.needs_to_act = set(mock_players)
-    queue.acted_since_last_raise = set()
+    table.needs_to_act = set(mock_players)
+    table.acted_since_last_raise = set()
 
     # Update player state lists
-    queue._update_player_lists()  # This now includes chips > 0 check
+    table._update_player_lists()  # This now includes chips > 0 check
 
     # Configure default mock behaviors
-    queue.is_round_complete.return_value = False
-    queue.get_next_player.side_effect = queue._default_get_next_player
-    queue.all_players_acted.return_value = False
+    table.is_round_complete.return_value = False
+    table.get_next_player.side_effect = table._default_get_next_player
+    table.all_players_acted.return_value = False
 
-    return queue
+    return table
 
 
 @pytest.fixture
@@ -411,7 +411,7 @@ def mock_game(mock_players, mock_pot_manager, mock_deck):
 
     Example:
         def test_game_setup(mock_game):
-            assert len(mock_game.players) == 3
+            assert len(mock_game.table) == 3
             assert mock_game.round_state.phase == RoundPhase.PRE_DRAW
             assert mock_game.config.small_blind == 10
 
@@ -419,7 +419,7 @@ def mock_game(mock_players, mock_pot_manager, mock_deck):
         Mock: Configured game instance with all necessary components
     """
     game = Mock()
-    game.players = mock_players
+    game.table = mock_players
     game.pot_manager = mock_pot_manager
     game.deck = mock_deck
     game.round_state = RoundState(
@@ -939,15 +939,15 @@ def mock_betting_state(
     mock_needs_to_act,
     mock_acted_since_last_raise,
     mock_last_raiser,
-    mock_player_queue,
+    mock_table,
 ):
     """Create a complete betting state for testing betting rounds."""
-    # Configure player queue with betting state
-    mock_player_queue.needs_to_act = mock_needs_to_act
-    mock_player_queue.acted_since_last_raise = mock_acted_since_last_raise
+    # Configure table with betting state
+    mock_table.needs_to_act = mock_needs_to_act
+    mock_table.acted_since_last_raise = mock_acted_since_last_raise
 
     # Update active players list with correct criteria (including chips > 0)
-    mock_player_queue.active_players = [
+    mock_table.active_players = [
         p
         for p in mock_active_players
         if not p.folded and not p.is_all_in and p.chips > 0
@@ -959,7 +959,7 @@ def mock_betting_state(
         "needs_to_act": mock_needs_to_act,
         "acted_since_last_raise": mock_acted_since_last_raise,
         "last_raiser": mock_last_raiser,
-        "player_queue": mock_player_queue,
+        "table": mock_table,
     }
 
 

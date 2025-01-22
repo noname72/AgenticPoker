@@ -42,14 +42,14 @@ def handle_draw_phase(game: "Game") -> None:
 
     # First, figure out how many cards might possibly be drawn.
     active_players = [
-        p for p in game.players if not p.folded and hasattr(p, "decide_discard")
+        p for p in game.table.active_players() if not p.folded and hasattr(p, "decide_discard")
     ]
     max_possible_draws = len(active_players) * MAX_DISCARD
 
     handle_preemptive_reshuffle(game.deck, max_possible_draws)
 
     # Process each player's draw
-    for player in game.players:
+    for player in game.table:
         if player.folded:
             continue
 

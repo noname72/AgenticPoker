@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Union
 from data.states.game_state import GameState
 from data.states.round_state import RoundState
 from game.config import GameConfig
-from game.player_queue import PlayerQueue
+from game.table import Table
 
 from . import betting, draw, showdown
 from .deck import Deck
@@ -31,7 +31,7 @@ class AgenticPoker:
 
     Attributes:
         deck (Deck): The deck of cards used for dealing
-        players (List[Player]): List of currently active players in the game
+        table (Table): The table of players in the game
         small_blind (int): Required small blind bet amount
         big_blind (int): Required big blind bet amount
         dealer_index (int): Position of current dealer (0-based, moves clockwise)
@@ -51,9 +51,8 @@ class AgenticPoker:
         >>> game.start_game()
     """
 
-    # Class attributes defined before __init__
     deck: Deck
-    players: PlayerQueue
+    table: Table
     small_blind: int
     big_blind: int
     dealer_index: int
@@ -97,9 +96,9 @@ class AgenticPoker:
         self.deck = Deck()
 
         # Convert names to players if needed
-        self.players = PlayerQueue(players)
+        self.table = Table(players)
         # Validate player chips
-        if any(p.chips < 0 for p in self.players):
+        if any(p.chips < 0 for p in self.table):
             raise ValueError("Players cannot have negative chips")
 
         #! make into betting class
@@ -119,7 +118,7 @@ class AgenticPoker:
         logging.info(f"\n{'='*50}")
         logging.info(f"Game Configuration")
         logging.info(f"{'='*50}")
-        logging.info(f"Players: {', '.join([p.name for p in self.players])}")
+        logging.info(f"Players: {', '.join([p.name for p in self.table])}")
         logging.info(f"Starting chips: ${self.config.starting_chips}")
         logging.info(f"Blinds: ${self.config.small_blind}/${self.config.big_blind}")
         logging.info(f"Ante: ${self.config.ante}")
@@ -136,7 +135,7 @@ class AgenticPoker:
         """
         eliminated_players = []
 
-        while len(self.players) > 1:
+        while len(self.table) > 1:
             self.round_number += 1
 
             # Check max rounds before starting new round
@@ -150,7 +149,7 @@ class AgenticPoker:
 
             # Start new round with remaining players
             #! maybe have eligible_players as a property of player queue
-            eligible_players = [p for p in self.players if p.chips > 0]
+            eligible_players = [p for p in self.table if p.chips > 0]
 
             # Store initial chips before starting round
             #! use later
@@ -184,7 +183,7 @@ class AgenticPoker:
             #! make a private method for this _showdown
             logging.info(f"====== Showdown ======\n")
             showdown.handle_showdown(
-                players=self.players,
+                players=self.table.players,
                 initial_chips=initial_chips,
                 pot_manager=self.pot_manager,
             )
@@ -219,7 +218,7 @@ class AgenticPoker:
 
         # Handle AI player pre-round messages
         #! need to fix this
-        # for player in self.players:
+        # for player in self.table.players:
         #     if hasattr(player, "get_message"):
         #         game_state = f"Round {self.round_number}, Your chips: ${player.chips}"
         #         message = player.get_message(game_state)
@@ -246,7 +245,7 @@ class AgenticPoker:
             - Antes are collected from all players if configured
         """
         # Store starting stacks
-        self.round_starting_stacks = {p: p.chips for p in self.players}
+        self.round_starting_stacks = {p: p.chips for p in self.table}
 
         # Use betting module to collect blinds and antes
         collected = betting.collect_blinds_and_antes(
@@ -278,7 +277,7 @@ class AgenticPoker:
             show_short_stack: Whether to show short stack warnings
         """
         logging.info(f"\n{message}:")
-        sorted_players = sorted(self.players, key=lambda p: chips_dict[p], reverse=True)
+        sorted_players = sorted(self.table, key=lambda p: chips_dict[p], reverse=True)
         for player in sorted_players:
             chips_str = f"${chips_dict[player]}"
             if show_short_stack and chips_dict[player] < self.big_blind:
@@ -307,10 +306,10 @@ class AgenticPoker:
 
         # Log table positions
         logging.info("\nTable positions:")
-        players_count = len(self.players)
+        players_count = len(self.table)
         for i in range(players_count):
             position_index = (self.dealer_index + i) % players_count
-            player = self.players[position_index]
+            player = self.table[position_index]
             position = ""
             if i == 0:
                 position = "Dealer"
@@ -350,21 +349,21 @@ class AgenticPoker:
             - Logs elimination messages
         """
         # Track newly eliminated players first
-        for player in self.players:
+        for player in self.table:
             if player.chips <= 0 and player not in eliminated_players:
                 eliminated_players.append(player)
                 logging.info(f"\n{player.name} is eliminated (out of chips)!")
 
         # # Remove bankrupt players from active game
-        # self.players = [player for player in self.players if player.chips > 0]
+        # self.table.players = [player for player in self.table.players if player.chips > 0]
 
         # Check game end conditions
-        if len(self.players) == 1:
+        if len(self.table) == 1:
             logging.info(
-                f"\nGame Over! {self.players[0].name} wins with ${self.players[0].chips}!"
+                f"\nGame Over! {self.table[0].name} wins with ${self.table[0].chips}!"
             )
             return False
-        elif len(self.players) == 0:
+        elif len(self.table) == 0:
             logging.info("\nGame Over! All players are bankrupt!")
             return False
 
@@ -372,7 +371,7 @@ class AgenticPoker:
 
     def _log_chip_movements(self, initial_chips: Dict[Player, int]) -> None:
         """Log the chip movements for each player from their initial amounts."""
-        log_chip_movements(self.players, initial_chips)
+        log_chip_movements(self.table, initial_chips)
 
     def _log_game_summary(self, eliminated_players: List[Player]) -> None:
         """Log the final game summary and standings."""
@@ -382,7 +381,7 @@ class AgenticPoker:
             logging.info("Game ended due to maximum rounds limit")
 
         # Use a set to ensure unique players
-        all_players = list({player for player in (self.players + eliminated_players)})
+        all_players = list({player for player in (self.table + eliminated_players)})
         # Sort by chips (eliminated players will have 0)
         all_players.sort(key=lambda p: p.chips, reverse=True)
 
@@ -397,10 +396,10 @@ class AgenticPoker:
         self.pot_manager.reset_pot()
 
         # Store initial chips BEFORE any deductions
-        self.round_starting_stacks = {p: p.chips for p in self.players}
+        self.round_starting_stacks = {p: p.chips for p in self.table}
 
         # Reset player states
-        for player in self.players:
+        for player in self.table:
             player.bet = 0
             player.folded = False
 
@@ -423,7 +422,7 @@ class AgenticPoker:
     def _reset_round(self) -> None:
         """Reset the state after a round is complete."""
         # Clear hands and bets
-        for player in self.players:
+        for player in self.table:
             player.bet = 0
             player.folded = False
             if hasattr(player, "hand"):
@@ -433,11 +432,11 @@ class AgenticPoker:
         self.pot_manager.reset_pot()
 
         # Rotate dealer position for next round
-        self.dealer_index = (self.dealer_index + 1) % len(self.players)
+        self.dealer_index = (self.dealer_index + 1) % len(self.table)
 
     def _deal_cards(self) -> None:
         """Deal new hands to all players."""
-        for player in self.players:
+        for player in self.table:
             player.bet = 0
             player.folded = False
             player.hand = Hand()
@@ -450,9 +449,9 @@ class AgenticPoker:
         """Convert numeric position to descriptive name."""
         if position == self.dealer_index:
             return "Dealer"
-        elif position == (self.dealer_index + 1) % len(self.players):
+        elif position == (self.dealer_index + 1) % len(self.table):
             return "Small Blind"
-        elif position == (self.dealer_index + 2) % len(self.players):
+        elif position == (self.dealer_index + 2) % len(self.table):
             return "Big Blind"
         else:
             return f"Position {position}"

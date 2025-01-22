@@ -4,15 +4,15 @@ from unittest.mock import MagicMock
 from tests.mocks.mock_player import MockPlayer
 
 
-class MockPlayerQueue:
-    """Mock implementation of PlayerQueue for testing.
+class MockTable:
+    """Mock implementation of Table for testing.
 
-    Provides the same interface as PlayerQueue but with configurable behaviors
+    Provides the same interface as Table but with configurable behaviors
     and tracking capabilities for testing. Manages player rotation and betting
     action tracking.
 
     Attributes:
-        players: List of all players in the queue
+        players: List of all players in the table
         index: Current position in rotation
         needs_to_act: Players who still need to act
         acted_since_last_raise: Players who acted since last raise
@@ -22,11 +22,11 @@ class MockPlayerQueue:
     """
 
     def __init__(self, players: List[MockPlayer]):
-        """Initialize the mock queue with a list of players."""
+        """Initialize the mock table with a list of players."""
         self.players = players.copy()
         self.index = 0
 
-        # Add tracking sets to match real PlayerQueue
+        # Add tracking sets to match real Table
         self.needs_to_act: Set[MockPlayer] = set(players)
         self.acted_since_last_raise: Set[MockPlayer] = set()
 
