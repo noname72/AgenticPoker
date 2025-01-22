@@ -51,6 +51,7 @@ Example usage:
 from typing import List, Optional
 
 from game.player import Player
+from loggers.betting_logger import BettingLogger
 
 
 class PlayerQueue:
@@ -155,26 +156,16 @@ class PlayerQueue:
             self._update_player_lists()
 
     def is_round_complete(self) -> bool:
-        """Check if the current round of play is complete.
-
-        A round is complete if:
-        - All players have folded except one, or
-        - All remaining players are all-in, or
-        - All active players have acted and bets are equal
-
-        Returns:
-            bool: True if the round is complete, False otherwise.
-        """
-        # If all players but one have folded
-        if len(self.active_players) + len(self.all_in_players) <= 1:
-            return True
-
-        # If all remaining players are all-in
-        if not self.active_players and len(self.all_in_players) > 0:
-            return True
-
-        # Otherwise, continue the round
-        return False
+        """Determine if the betting round is complete."""
+        complete = len(self.acted_since_last_raise) == len(self.active_players)
+        BettingLogger.log_debug(f"Checking if round is complete: {complete}")
+        BettingLogger.log_debug(
+            f"Acted since last raise: {[p.name for p in self.acted_since_last_raise]}"
+        )
+        BettingLogger.log_debug(
+            f"Active players: {[p.name for p in self.active_players]}"
+        )
+        return complete
 
     def get_active_count(self) -> int:
         """Get the number of active players (not folded, not all-in).
@@ -215,11 +206,22 @@ class PlayerQueue:
         self.needs_to_act.discard(player)
         self.acted_since_last_raise.add(player)
 
+        # Add logging to trace player actions and state updates
+        BettingLogger.log_debug(
+            f"{player.name} acted. Needs to act: {[p.name for p in self.needs_to_act]}"
+        )
+        BettingLogger.log_debug(
+            f"Acted since last raise: {[p.name for p in self.acted_since_last_raise]}"
+        )
+
         if is_raise:
             # Reset acted_since_last_raise on a raise
             self.acted_since_last_raise = {player}
             # Everyone else needs to act again (except folded/all-in players)
             self.needs_to_act = set(p for p in self.active_players if p != player)
+            BettingLogger.log_debug(
+                f"Raise by {player.name}. Resetting needs_to_act: {[p.name for p in self.needs_to_act]}"
+            )
 
     def reset_action_tracking(self) -> None:
         """Reset the action tracking for a new betting round (street).
@@ -232,16 +234,10 @@ class PlayerQueue:
         self.acted_since_last_raise.clear()
 
     def all_players_acted(self) -> bool:
-        """Check if all players have acted since the last raise.
-
-        Determines if the current betting round is complete by comparing the set of
-        players who have acted since the last raise with the set of active players.
-
-        Returns:
-            bool: True if all active players have acted since the last raise,
-                 indicating the betting round can end.
-        """
-        return self.acted_since_last_raise == set(self.active_players)
+        """Check if all players have acted since the last raise."""
+        acted = len(self.acted_since_last_raise) == len(self.active_players)
+        BettingLogger.log_debug(f"All players acted: {acted}")
+        return acted
 
     def __iter__(self):
         """Make PlayerQueue iterable through all players.
