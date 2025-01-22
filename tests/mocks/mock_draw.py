@@ -77,13 +77,13 @@ class MockDraw:
             raise ValueError(self._error_message)
 
         active_players = [
-            p for p in game.players if not p.folded and hasattr(p, "decide_discard")
+            p for p in game.table if not p.folded and hasattr(p, "decide_discard")
         ]
         max_possible_draws = len(active_players) * 5  # MAX_DISCARD = 5
 
         self.handle_preemptive_reshuffle(game.deck, max_possible_draws)
 
-        for player in game.players:
+        for player in game.table:
             if player.folded:
                 continue
 

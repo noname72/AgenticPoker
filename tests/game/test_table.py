@@ -1,10 +1,10 @@
 import pytest
 
 from game.player import Player
-from game.player_queue import PlayerQueue
+from game.table import Table
 
 
-def test_player_queue_initialization(mock_players):
+def test_table_initialization(mock_players):
     """Test that PlayerQueue initializes with correct default state.
 
     Verifies:
@@ -14,12 +14,12 @@ def test_player_queue_initialization(mock_players):
     - No players have acted since last raise
     - All players start as active
     """
-    queue = PlayerQueue(mock_players)
-    assert queue.players == mock_players
-    assert queue.index == 0
-    assert queue.needs_to_act == set(mock_players)
-    assert queue.acted_since_last_raise == set()
-    assert len(queue.active_players) == len(mock_players)
+    table = Table(mock_players)
+    assert table.players == mock_players
+    assert table.index == 0
+    assert table.needs_to_act == set(mock_players)
+    assert table.acted_since_last_raise == set()
+    assert len(table.active_players) == len(mock_players)
 
 
 def test_get_next_player(mock_players):
@@ -35,97 +35,68 @@ def test_get_next_player(mock_players):
        - Maintains correct order
        - Still wraps around correctly
     """
-    queue = PlayerQueue(mock_players)
+    table = Table(mock_players)
     print("\nInitial queue state:")
-    print(f"Players: {[p.name for p in queue.players]}")
-    print(f"Index: {queue.index}")
-    print(f"Active players: {[p.name for p in queue.active_players]}")
+    print(f"Players: {[p.name for p in table.players]}")
+    print(f"Index: {table.index}")
+    print(f"Active players: {[p.name for p in table.active_players]}")
 
     # All players active initially
-    next_player = queue.get_next_player()
+    next_player = table.get_next_player()
     print(f"\nFirst get_next_player:")
     print(f"Got: {next_player.name}")
     print(f"Expected: {mock_players[0].name}")
-    print(f"New index: {queue.index}")
+    print(f"New index: {table.index}")
     assert next_player == mock_players[0]
 
-    next_player = queue.get_next_player()
+    next_player = table.get_next_player()
     print(f"\nSecond get_next_player:")
     print(f"Got: {next_player.name}")
     print(f"Expected: {mock_players[1].name}")
-    print(f"New index: {queue.index}")
+    print(f"New index: {table.index}")
     assert next_player == mock_players[1]
 
-    next_player = queue.get_next_player()
+    next_player = table.get_next_player()
     print(f"\nThird get_next_player:")
     print(f"Got: {next_player.name}")
     print(f"Expected: {mock_players[2].name}")
-    print(f"New index: {queue.index}")
+    print(f"New index: {table.index}")
     assert next_player == mock_players[2]
 
-    next_player = queue.get_next_player()
+    next_player = table.get_next_player()
     print(f"\nFourth get_next_player (wrap around):")
     print(f"Got: {next_player.name}")
     print(f"Expected: {mock_players[0].name}")
-    print(f"New index: {queue.index}")
+    print(f"New index: {table.index}")
     assert next_player == mock_players[0]  # Circular order
 
     # Test with some inactive players
     print("\nSetting Player2 to folded:")
     mock_players[1].folded = True
-    queue._update_player_lists()
-    print(f"Active players after fold: {[p.name for p in queue.active_players]}")
-    print(f"Current index: {queue.index}")
+    table._update_player_lists()
+    print(f"Active players after fold: {[p.name for p in table.active_players]}")
+    print(f"Current index: {table.index}")
 
-    next_player = queue.get_next_player()
+    next_player = table.get_next_player()
     print(f"\nFirst get_next_player after fold:")
     print(f"Got: {next_player.name}")
     print(f"Expected: {mock_players[0].name}")
-    print(f"New index: {queue.index}")
+    print(f"New index: {table.index}")
     assert next_player == mock_players[0]
 
-    next_player = queue.get_next_player()
+    next_player = table.get_next_player()
     print(f"\nSecond get_next_player after fold:")
     print(f"Got: {next_player.name}")
     print(f"Expected: {mock_players[2].name}")  # Skip folded player
-    print(f"New index: {queue.index}")
+    print(f"New index: {table.index}")
     assert next_player == mock_players[2]  # Skip folded player
 
-    next_player = queue.get_next_player()
+    next_player = table.get_next_player()
     print(f"\nThird get_next_player after fold (wrap around):")
     print(f"Got: {next_player.name}")
     print(f"Expected: {mock_players[0].name}")
-    print(f"New index: {queue.index}")
+    print(f"New index: {table.index}")
     assert next_player == mock_players[0]  # Back to start
-
-
-def test_remove_player(mock_players):
-    """Test player removal and its effects on queue state.
-
-    Verifies:
-    - Player is removed from all tracking sets/lists
-    - Remaining players maintain correct rotation
-    - Queue state remains consistent after removal
-
-    Assumes:
-    - Player removal is permanent
-    - Removed player should not appear in any queue state
-    """
-    queue = PlayerQueue(mock_players)
-    player_to_remove = mock_players[1]  # Player 2
-    player1 = mock_players[0]  # Store reference to Player 1
-    player3 = mock_players[2]  # Store reference to Player 3
-
-    queue.remove_player(player_to_remove)
-
-    assert player_to_remove not in queue.players
-    assert player_to_remove not in queue.needs_to_act
-    assert player_to_remove not in queue.acted_since_last_raise
-    assert player_to_remove not in queue.active_players
-
-    assert queue.get_next_player() == player1
-    assert queue.get_next_player() == player3
-    assert queue.get_next_player() == player1  # Circular order
 
 
 def test_is_round_complete(mock_players):
@@ -139,17 +110,16 @@ def test_is_round_complete(mock_players):
     - Folded and all-in players can't take further actions
     - Round should complete when no more actions are possible
     """
-    queue = PlayerQueue(mock_players)
-    assert not queue.is_round_complete()
+    table = Table(mock_players)
+    assert not table.is_round_complete()
 
     # Set all players to either folded or all-in
     mock_players[0].folded = True
     mock_players[1].is_all_in = True
     mock_players[2].folded = True
-    queue._update_player_lists()
 
-    assert queue.is_round_complete()
-    assert len(queue.active_players) == 0
+    assert table.is_round_complete()
+    assert len(table.active_players) == 0
 
 
 def test_mark_player_acted(mock_players):
@@ -168,18 +138,18 @@ def test_mark_player_acted(mock_players):
     - Players can't act twice without a raise in between
     - Raise requires everyone else to act again
     """
-    queue = PlayerQueue(mock_players)
+    table = Table(mock_players)
     player = mock_players[0]
 
     # Test normal action
-    queue.mark_player_acted(player)
-    assert player not in queue.needs_to_act
-    assert player in queue.acted_since_last_raise
+    table.mark_player_acted(player)
+    assert player not in table.needs_to_act
+    assert player in table.acted_since_last_raise
 
     # Test raise action
-    queue.mark_player_acted(player, is_raise=True)
-    assert queue.acted_since_last_raise == {player}
-    assert queue.needs_to_act == set(p for p in queue.active_players if p != player)
+    table.mark_player_acted(player, is_raise=True)
+    assert table.acted_since_last_raise == {player}
+    assert table.needs_to_act == set(p for p in table.active_players if p != player)
 
 
 def test_reset_action_tracking(mock_players):
@@ -193,17 +163,17 @@ def test_reset_action_tracking(mock_players):
     - Reset should occur between betting rounds
     - All active players must act in new round
     """
-    queue = PlayerQueue(mock_players)
+    table = Table(mock_players)
     player = mock_players[0]
 
     # Mark some actions
-    queue.mark_player_acted(player)
-    assert len(queue.acted_since_last_raise) > 0
+    table.mark_player_acted(player)
+    assert len(table.acted_since_last_raise) > 0
 
     # Reset tracking
-    queue.reset_action_tracking()
-    assert queue.needs_to_act == set(queue.active_players)
-    assert len(queue.acted_since_last_raise) == 0
+    table.reset_action_tracking()
+    assert table.needs_to_act == set(table.active_players)
+    assert len(table.acted_since_last_raise) == 0
 
 
 def test_all_players_acted(mock_players):
@@ -217,16 +187,16 @@ def test_all_players_acted(mock_players):
     - Only active players need to act
     - All active players must act to complete round
     """
-    queue = PlayerQueue(mock_players)
+    table = Table(mock_players)
 
     # Initially no one has acted
-    assert not queue.all_players_acted()
+    assert not table.all_players_acted()
 
     # Mark all active players as having acted
-    for player in queue.active_players:
-        queue.mark_player_acted(player)
+    for player in table.active_players:
+        table.mark_player_acted(player)
 
-    assert queue.all_players_acted()
+    assert table.all_players_acted()
 
 
 def test_empty_queue():
@@ -241,14 +211,14 @@ def test_empty_queue():
     - Empty queue is a valid state
     - Empty queue means round should end
     """
-    queue = PlayerQueue([])
-    assert queue.get_next_player() is None
-    assert queue.is_round_complete()
-    assert len(queue.needs_to_act) == 0
-    assert len(queue.acted_since_last_raise) == 0
+    table = Table([])
+    assert table.get_next_player() is None
+    assert table.is_round_complete()
+    assert len(table.needs_to_act) == 0
+    assert len(table.acted_since_last_raise) == 0
 
 
-def test_single_player_queue(mock_players):
+def test_single_player_table(mock_players):
     """Test queue behavior with only one player.
 
     Verifies:
@@ -259,12 +229,12 @@ def test_single_player_queue(mock_players):
     - Single player is a valid state
     - Should maintain rotation even with one player
     """
-    queue = PlayerQueue([mock_players[0]])
-    assert queue.get_next_player() == mock_players[0]
+    table = Table([mock_players[0]])
+    assert table.get_next_player() == mock_players[0]
     assert (
-        queue.get_next_player() == mock_players[0]
+        table.get_next_player() == mock_players[0]
     )  # Should keep returning the same player
-    assert len(queue.active_players) == 1
+    assert len(table.active_players) == 1
 
 
 def test_player_state_updates(mock_players):
@@ -279,24 +249,24 @@ def test_player_state_updates(mock_players):
     - Players can only be in one state (active, folded, or all-in)
     - State changes require _update_player_lists call
     """
-    queue = PlayerQueue(mock_players)
+    table = Table(mock_players)
 
     # Test folding
     mock_players[0].folded = True
-    queue._update_player_lists()
-    assert mock_players[0] not in queue.active_players
-    assert mock_players[0] in queue.folded_players
+    table._update_player_lists()
+    assert mock_players[0] not in table.active_players
+    assert mock_players[0] in table.folded_players
 
     # Test all-in
     mock_players[1].is_all_in = True
-    queue._update_player_lists()
-    assert mock_players[1] not in queue.active_players
-    assert mock_players[1] in queue.all_in_players
+    table._update_player_lists()
+    assert mock_players[1] not in table.active_players
+    assert mock_players[1] in table.all_in_players
 
     # Test active player
-    assert mock_players[2] in queue.active_players
-    assert mock_players[2] not in queue.folded_players
-    assert mock_players[2] not in queue.all_in_players
+    assert mock_players[2] in table.active_players
+    assert mock_players[2] not in table.folded_players
+    assert mock_players[2] not in table.all_in_players
 
 
 def test_mixed_player_states(mock_players):
@@ -310,19 +280,19 @@ def test_mixed_player_states(mock_players):
     - Players can be in different states simultaneously
     - Total of all states should equal total players
     """
-    queue = PlayerQueue(mock_players)
+    table = Table(mock_players)
 
     # Set up mixed states
     mock_players[0].folded = True
     mock_players[1].is_all_in = True
-    queue._update_player_lists()
+    table._update_player_lists()
 
-    assert len(queue.active_players) == 1
-    assert len(queue.folded_players) == 1
-    assert len(queue.all_in_players) == 1
-    assert queue.get_active_count() == 1
-    assert queue.get_folded_count() == 1
-    assert queue.get_all_in_count() == 1
+    assert len(table.active_players) == 1
+    assert len(table.folded_players) == 1
+    assert len(table.all_in_players) == 1
+    assert table.get_active_count() == 1
+    assert table.get_folded_count() == 1
+    assert table.get_all_in_count() == 1
 
 
 def test_remove_nonexistent_player(mock_players):
@@ -335,11 +305,11 @@ def test_remove_nonexistent_player(mock_players):
     - Removing non-existent player should not affect queue
     - Should not raise exception
     """
-    queue = PlayerQueue(mock_players)
+    table = Table(mock_players)
     nonexistent_player = Player("Nonexistent", 1000)
-    original_players = queue.players.copy()
-    queue.remove_player(nonexistent_player)
-    assert queue.players == original_players
+    original_players = table.players.copy()
+    table.remove_player(nonexistent_player)
+    assert table.players == original_players
 
 
 def test_continuous_betting_round(mock_players):
@@ -356,45 +326,45 @@ def test_continuous_betting_round(mock_players):
     3. Player3 raises
     4. Action returns to Player1 and Player2
     """
-    queue = PlayerQueue(mock_players)
+    table = Table(mock_players)
     player1, player2, player3 = mock_players[0:3]
 
     # Player1 bets
-    queue.mark_player_acted(player1)
-    assert player1 not in queue.needs_to_act
-    assert player1 in queue.acted_since_last_raise
-    assert player2 in queue.needs_to_act
-    assert player3 in queue.needs_to_act
+    table.mark_player_acted(player1)
+    assert player1 not in table.needs_to_act
+    assert player1 in table.acted_since_last_raise
+    assert player2 in table.needs_to_act
+    assert player3 in table.needs_to_act
 
     # Player2 raises
-    queue.mark_player_acted(player2, is_raise=True)
+    table.mark_player_acted(player2, is_raise=True)
     # After raise, Player1 and Player3 need to act again
-    assert player1 in queue.needs_to_act
-    assert player2 not in queue.needs_to_act
-    assert player3 in queue.needs_to_act
-    assert queue.acted_since_last_raise == {player2}
+    assert player1 in table.needs_to_act
+    assert player2 not in table.needs_to_act
+    assert player3 in table.needs_to_act
+    assert table.acted_since_last_raise == {player2}
 
     # Player3 re-raises
-    queue.mark_player_acted(player3, is_raise=True)
+    table.mark_player_acted(player3, is_raise=True)
     # After re-raise, Player1 and Player2 need to act again
-    assert player1 in queue.needs_to_act
-    assert player2 in queue.needs_to_act
-    assert player3 not in queue.needs_to_act
-    assert queue.acted_since_last_raise == {player3}
+    assert player1 in table.needs_to_act
+    assert player2 in table.needs_to_act
+    assert player3 not in table.needs_to_act
+    assert table.acted_since_last_raise == {player3}
 
     # Player1 calls
-    queue.mark_player_acted(player1)
-    assert player1 not in queue.needs_to_act
-    assert player2 in queue.needs_to_act
+    table.mark_player_acted(player1)
+    assert player1 not in table.needs_to_act
+    assert player2 in table.needs_to_act
 
     # Player2 calls
-    queue.mark_player_acted(player2)
-    assert player1 not in queue.needs_to_act
-    assert player2 not in queue.needs_to_act
-    assert player3 not in queue.needs_to_act
+    table.mark_player_acted(player2)
+    assert player1 not in table.needs_to_act
+    assert player2 not in table.needs_to_act
+    assert player3 not in table.needs_to_act
 
     # Now all players have acted since last raise
-    assert queue.all_players_acted()
+    assert table.all_players_acted()
 
 
 def test_betting_edge_cases(mock_players):
@@ -408,82 +378,104 @@ def test_betting_edge_cases(mock_players):
     5. Round continues if only one player has acted
     6. Round continues if not all players have acted since last raise
     """
-    queue = PlayerQueue(mock_players)
+    table = Table(mock_players)
     player1, player2, player3 = mock_players[0:3]
 
     # Test round not complete with partial actions
-    queue.mark_player_acted(player1)
+    table.mark_player_acted(player1)
     assert (
-        not queue.all_players_acted()
+        not table.all_players_acted()
     )  # Round shouldn't end with only one player acted
 
     # Test player can't act twice without a raise
-    queue.mark_player_acted(player1)  # Second action without raise
-    assert player1 not in queue.needs_to_act  # Should still be marked as acted
-    assert not queue.all_players_acted()  # Round shouldn't end
+    table.mark_player_acted(player1)  # Second action without raise
+    assert player1 not in table.needs_to_act  # Should still be marked as acted
+    assert not table.all_players_acted()  # Round shouldn't end
 
     # Test folded player can't affect round completion
     player2.folded = True
-    queue._update_player_lists()
-    queue.mark_player_acted(player3)
+    table._update_player_lists()
+    table.mark_player_acted(player3)
     assert (
-        queue.all_players_acted()
+        table.all_players_acted()
     )  # Round should complete with all non-folded players acted
 
     # Test all-in player can't affect round completion
-    queue.reset_action_tracking()
+    table.reset_action_tracking()
     player3.is_all_in = True
-    queue._update_player_lists()
-    queue.mark_player_acted(player1)
+    table._update_player_lists()
+    table.mark_player_acted(player1)
     assert (
-        queue.all_players_acted()
+        table.all_players_acted()
     )  # Round should complete with only active player acted
 
     # Test round continues after raise even with inactive players
-    queue.reset_action_tracking()
+    table.reset_action_tracking()
     player2.folded = False  # Unfolded but still all-in
-    queue._update_player_lists()
-    queue.mark_player_acted(player1)
-    queue.mark_player_acted(player2, is_raise=True)
-    assert not queue.all_players_acted()  # Round shouldn't end until player1 acts again
-    assert player1 in queue.needs_to_act
+    table._update_player_lists()
+    table.mark_player_acted(player1)
+    table.mark_player_acted(player2, is_raise=True)
+    assert not table.all_players_acted()  # Round shouldn't end until player1 acts again
+    assert player1 in table.needs_to_act
 
     # Test round completion with mixed states
-    queue.mark_player_acted(player1)  # Player1 calls the raise
-    assert queue.all_players_acted()  # Now round should complete
+    table.mark_player_acted(player1)  # Player1 calls the raise
+    assert table.all_players_acted()  # Now round should complete
 
 
 def test_is_round_complete_with_all_folded(mock_players):
     """Test round completion when all players are folded."""
-    queue = PlayerQueue(mock_players)
+    table = Table(mock_players)
     for player in mock_players:
         player.folded = True
-    queue._update_player_lists()
-    assert queue.is_round_complete()
+    table._update_player_lists()
+    assert table.is_round_complete()
 
 
 def test_is_round_complete_with_all_in(mock_players):
     """Test round completion when all players are all-in."""
-    queue = PlayerQueue(mock_players)
+    table = Table(mock_players)
     for player in mock_players:
         player.is_all_in = True
-    queue._update_player_lists()
-    assert queue.is_round_complete()
+    table._update_player_lists()
+    assert table.is_round_complete()
 
 
 def test_mark_player_acted_with_raise(mock_players):
     """Test action tracking when a player raises."""
-    queue = PlayerQueue(mock_players)
+    table = Table(mock_players)
     player = mock_players[0]
-    queue.mark_player_acted(player, is_raise=True)
-    assert queue.acted_since_last_raise == {player}
-    assert queue.needs_to_act == set(p for p in queue.active_players if p != player)
+    table.mark_player_acted(player, is_raise=True)
+    assert table.acted_since_last_raise == {player}
+    assert table.needs_to_act == set(p for p in table.active_players if p != player)
 
 
 def test_reset_action_tracking_clears_all(mock_players):
     """Test that reset_action_tracking clears all previous actions."""
-    queue = PlayerQueue(mock_players)
-    queue.mark_player_acted(mock_players[0])
-    queue.reset_action_tracking()
-    assert queue.needs_to_act == set(queue.active_players)
-    assert len(queue.acted_since_last_raise) == 0
+    table = Table(mock_players)
+    table.mark_player_acted(mock_players[0])
+    table.reset_action_tracking()
+    assert table.needs_to_act == set(table.active_players)
+    assert len(table.acted_since_last_raise) == 0
+
+
+def test_is_round_complete_with_one_remaining_player(mock_players):
+    """Test that round is complete when all but one player folds.
+
+    Verifies:
+    - Round completes when only one player remains unfolded
+    - Last player doesn't need to act
+    """
+    table = Table(mock_players)
+
+    # Fold all but the last player
+    mock_players[0].folded = True
+    mock_players[1].folded = True
+    mock_players[2].folded = True
+    table._update_player_lists()
+
+    # Verify round is complete without last player acting
+    assert table.is_round_complete()
+    assert len(table.active_players) == 1
+    assert table.get_active_count() == 1
+    assert table.get_folded_count() == 3

@@ -5,7 +5,7 @@ import pytest
 
 from data.types.action_decision import ActionDecision, ActionType
 from game.betting import betting_round
-from game.player_queue import PlayerQueue
+from game.table import Table
 from tests.mocks.mock_agent import MockAgent
 
 
@@ -105,8 +105,8 @@ def test_betting_round_raise_and_call(mock_logger, mock_game, setup_players):
     )
 
     # Set up player queue and pot manager
-    player_queue = PlayerQueue(players)
-    mock_game.players = player_queue
+    table = Table(players)
+    mock_game.players = table
     mock_game.pot_manager = MagicMock()
     mock_game.pot_manager.pot = 0
 
@@ -115,7 +115,7 @@ def test_betting_round_raise_and_call(mock_logger, mock_game, setup_players):
 
     # Verify betting round completed correctly
     assert (
-        len(player_queue.needs_to_act) == 0
+        len(table.needs_to_act) == 0
     ), "needs_to_act should be empty after round completion"
 
     # Verify player states
@@ -132,16 +132,16 @@ def test_betting_round_raise_and_call(mock_logger, mock_game, setup_players):
 
     # Verify acted_since_last_raise tracking
     assert (
-        players[0] in player_queue.acted_since_last_raise
+        players[0] in table.acted_since_last_raise
     ), "Alice should be in acted_since_last_raise"
     assert (
-        players[1] in player_queue.acted_since_last_raise
+        players[1] in table.acted_since_last_raise
     ), "Bob should be in acted_since_last_raise"
     assert (
-        players[2] in player_queue.acted_since_last_raise
+        players[2] in table.acted_since_last_raise
     ), "Charlie should be in acted_since_last_raise"
     assert (
-        players[3] in player_queue.acted_since_last_raise
+        players[3] in table.acted_since_last_raise
     ), "Randy should be in acted_since_last_raise"
 
 
@@ -221,15 +221,15 @@ def test_betting_round_raise_reraise_call(mock_logger, mock_game, setup_players)
     )
 
     # Set up player queue
-    player_queue = PlayerQueue(players)
-    mock_game.players = player_queue
+    table = Table(players)
+    mock_game.players = table
 
     # Run betting round
     betting_round(mock_game)
 
     # Verify betting round completed correctly
     assert (
-        len(player_queue.needs_to_act) == 0
+        len(table.needs_to_act) == 0
     ), "needs_to_act should be empty after round completion"
 
     # Verify player states
@@ -246,14 +246,15 @@ def test_betting_round_raise_reraise_call(mock_logger, mock_game, setup_players)
 
     # Verify acted_since_last_raise tracking
     assert (
-        players[0] in player_queue.acted_since_last_raise
+        players[0] in table.acted_since_last_raise
     ), "Alice should be in acted_since_last_raise"
     assert (
-        players[1] in player_queue.acted_since_last_raise
+        players[1] in table.acted_since_last_raise
     ), "Bob should be in acted_since_last_raise"
     assert (
-        players[2] in player_queue.acted_since_last_raise
+        players[2] in table.acted_since_last_raise
     ), "Charlie should be in acted_since_last_raise"
     assert (
-        players[3] in player_queue.acted_since_last_raise
+        players[3] in table.acted_since_last_raise
     ), "Randy should be in acted_since_last_raise"
+

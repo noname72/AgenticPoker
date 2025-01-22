@@ -162,7 +162,7 @@ class GameState(BaseModel):
         Returns:
             GameState: A new GameState instance representing the current game state
         """
-        players_count = len(game.players)
+        players_count = len(game.table)
         player_states = []
 
         # Calculate blind positions
@@ -170,7 +170,7 @@ class GameState(BaseModel):
         bb_pos = (game.dealer_index + 2) % players_count
 
         # Process player states
-        for i, player in enumerate(game.players):
+        for i, player in enumerate(game.table):
             # Calculate position relative to dealer
             position_index = (i - game.dealer_index) % players_count
             position = {
