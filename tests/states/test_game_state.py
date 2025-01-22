@@ -116,8 +116,8 @@ class TestGameState:
         assert game_state.dealer_position == mock_game.dealer_index
 
         # Verify player states
-        assert len(game_state.players) == len(mock_game.players)
-        for player_state, game_player in zip(game_state.players, mock_game.players):
+        assert len(game_state.players) == len(mock_game.table)
+        for player_state, game_player in zip(game_state.players, mock_game.table):
             assert player_state.name == game_player.name
             assert player_state.chips == game_player.chips
 

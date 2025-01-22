@@ -47,7 +47,7 @@ Example usage:
 from typing import List, Optional
 
 from game.player import Player
-from loggers.betting_logger import BettingLogger
+from loggers.table_logger import TableLogger
 
 
 class Table:
@@ -91,6 +91,7 @@ class Table:
         self.acted_since_last_raise = (
             set()
         )  # Track players who have acted since last raise
+        TableLogger.log_table_creation(len(players))
 
     def get_next_player(self) -> Optional[Player]:
         """Get the next active player in the rotation who can take an action.
@@ -113,6 +114,9 @@ class Table:
             player = self.players[self.index]
             self.index += 1
             if player in self.active_players():
+                TableLogger.log_next_player(
+                    player.name, self.index - 1, [p.name for p in self.needs_to_act]
+                )
                 return player
 
     def is_round_complete(self) -> bool:
@@ -133,11 +137,19 @@ class Table:
         """
         # Round is complete if only 1 active player or if all active players have acted since last raise
         complete = len(self.acted_since_last_raise) == len(self.active_players())
-        BettingLogger.log_debug(f"Checking if round is complete: {complete}")
-        BettingLogger.log_debug(
+
+        if complete:
+            reason = (
+                "only one active player"
+                if len(self.active_players()) == 1
+                else "all active players have acted"
+            )
+            TableLogger.log_round_complete(reason)
+
+        TableLogger.log_debug(
             f"Acted since last raise: {[p.name for p in self.acted_since_last_raise]}"
         )
-        BettingLogger.log_debug(
+        TableLogger.log_debug(
             f"Active players: {[p.name for p in self.active_players()]}"
         )
         return complete
@@ -181,12 +193,11 @@ class Table:
         self.needs_to_act.discard(player)
         self.acted_since_last_raise.add(player)
 
-        # Add logging to trace player actions and state updates
-        BettingLogger.log_debug(
-            f"{player.name} acted. Needs to act: {[p.name for p in self.needs_to_act]}"
-        )
-        BettingLogger.log_debug(
-            f"Acted since last raise: {[p.name for p in self.acted_since_last_raise]}"
+        TableLogger.log_player_acted(
+            player.name,
+            is_raise,
+            [p.name for p in self.needs_to_act],
+            [p.name for p in self.acted_since_last_raise],
         )
 
         if is_raise:
@@ -194,9 +205,6 @@ class Table:
             self.acted_since_last_raise = {player}
             # Everyone else needs to act again (except folded/all-in players)
             self.needs_to_act = set(p for p in self.active_players() if p != player)
-            BettingLogger.log_debug(
-                f"Raise by {player.name}. Resetting needs_to_act: {[p.name for p in self.needs_to_act]}"
-            )
 
     def reset_action_tracking(self) -> None:
         """Reset the action tracking for a new betting round (street).
@@ -205,9 +213,12 @@ class Table:
         Should be called when moving to a new betting round (pre-flop to flop,
         flop to turn, etc.).
         """
-        self.needs_to_act = set(self.players)
+        # Only add active players to needs_to_act
+        self.needs_to_act = set(self.active_players())
         self.acted_since_last_raise.clear()
         self.index = 0
+
+        TableLogger.log_action_tracking_reset([p.name for p in self.active_players()])
 
     def all_players_acted(self) -> bool:
         """Check if all active players have acted since the last raise.
@@ -227,7 +238,7 @@ class Table:
             not whether there's only one active player remaining.
         """
         acted = len(self.acted_since_last_raise) == len(self.active_players())
-        BettingLogger.log_debug(f"All players acted: {acted}")
+        TableLogger.log_debug(f"All players acted: {acted}")
         return acted
 
     def active_players(self) -> List[Player]:
@@ -241,9 +252,13 @@ class Table:
         Returns:
             List[Player]: List of players who can still act in the current hand
         """
-        return [
+        active = [
             p for p in self.players if not p.folded and not p.is_all_in and p.chips > 0
         ]
+        TableLogger.log_table_state(
+            len(active), len(self.all_in_players()), len(self.folded_players())
+        )
+        return active
 
     def inactive_players(self) -> List[Player]:
         """Get the list of players who cannot take actions.

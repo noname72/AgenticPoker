@@ -47,7 +47,7 @@ def test_validate_bet_to_call():
 def test_collect_blinds_and_antes(mock_blind_config, mock_game, mock_players, mock_betting_logger):
     """Tests collection of blinds and antes from players."""
     dealer_index, small_blind, big_blind, ante = mock_blind_config
-    mock_game.players = mock_players
+    mock_game.table.players = mock_players
 
     collected = collect_blinds_and_antes(
         mock_game, dealer_index, small_blind, big_blind, ante
@@ -145,7 +145,7 @@ def test_handle_betting_round_no_players(mock_game):
     """
     Tests that handle_betting_round raises ValueError when no players are in the game.
     """
-    mock_game.players = []
+    mock_game.table.players = []
     with pytest.raises(ValueError):
         handle_betting_round(mock_game)
 
@@ -154,7 +154,7 @@ def test_handle_betting_round_invalid_pot(mock_game, mock_player):
     """
     Tests that handle_betting_round raises ValueError when pot amount is negative.
     """
-    mock_game.players = [mock_player]
+    mock_game.table.players = [mock_player]
     mock_game.pot_manager.pot = -100
     with pytest.raises(ValueError):
         handle_betting_round(mock_game)
@@ -177,7 +177,7 @@ def test_handle_betting_round_with_side_pots(
     ]
 
     # Set up game state
-    mock_game.players = mock_table  # Set Table instance directly
+    mock_game.table = mock_table  # Set Table instance directly
     mock_table.players = [all_in_player] + active_players  # Set underlying players list
     mock_game.round_state.phase = RoundPhase.PREFLOP
     mock_game.current_bet = 100
@@ -204,7 +204,7 @@ def test_handle_betting_round_with_side_pots(
 
     # Verify game should continue with multiple active players
     assert should_continue is True
-    assert len(mock_game.players.active_players) > 1
+    assert len(mock_game.table.active_players()) > 1
 
     # Verify active players acted but all-in player didn't
     for player in active_players:

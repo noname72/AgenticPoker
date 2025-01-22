@@ -54,13 +54,13 @@ def game(mock_players):
 
 def test_game_initialization(game, mock_players):
     """Test game initialization with valid parameters."""
-    assert len(game.players) == 3
+    assert len(game.table) == 3
     assert game.small_blind == 50
     assert game.big_blind == 100
     assert game.ante == 10
     assert game.session_id is not None
     # Verify all players have initial chips
-    for player in game.players:
+    for player in game.table:
         assert player.chips == 1000
 
 
@@ -105,9 +105,9 @@ def test_round_initialization(game, mock_players):
 
     # Verify round state
     assert game.pot_manager.pot == 0
-    assert all(player.bet == 0 for player in game.players)
-    assert all(not player.folded for player in game.players)
-    assert all(hasattr(player, "hand") for player in game.players)
+    assert all(player.bet == 0 for player in game.table)
+    assert all(not player.folded for player in game.table)
+    assert all(hasattr(player, "hand") for player in game.table)
 
 
 def test_hand_ranks_update_after_draw(game, mock_players):

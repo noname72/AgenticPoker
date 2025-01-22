@@ -10,7 +10,7 @@ from game.draw import handle_draw_phase
 @pytest.fixture
 def setup_mock_hands(mock_game):
     """Setup mock hands with initial cards for all players."""
-    for player in mock_game.players:
+    for player in mock_game.table:
         player.hand.cards = [Card(rank=str(i), suit="♥") for i in range(2, 7)]
     return mock_game
 
