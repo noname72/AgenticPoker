@@ -135,8 +135,12 @@ def betting_round(game: "Game") -> None:
 
         # Enhanced logging to trace round completion
         BettingLogger.log_debug("Checking if round is complete.")
-        BettingLogger.log_debug(f"is_round_complete: {game.players.is_round_complete()}")
-        BettingLogger.log_debug(f"all_players_acted: {game.players.all_players_acted()}")
+        BettingLogger.log_debug(
+            f"is_round_complete: {game.players.is_round_complete()}"
+        )
+        BettingLogger.log_debug(
+            f"all_players_acted: {game.players.all_players_acted()}"
+        )
 
         # Check if betting round should end
         round_complete = (
@@ -207,7 +211,9 @@ def _process_betting_cycle(
             game.round_state.phase == RoundPhase.PREFLOP,
         )
 
-        BettingLogger.log_debug(f"Previous Raiser: {previous_last_raiser}, Current Raiser: {last_raiser}")
+        BettingLogger.log_debug(
+            f"Previous Raiser: {previous_last_raiser}, Current Raiser: {last_raiser}"
+        )
 
         _should_continue_betting(game.players, last_raiser)
 
@@ -412,13 +418,19 @@ def _should_continue_betting(
     )
     all_acted = player_queue.acted_since_last_raise == active_non_folded
 
-    BettingLogger.log_debug(f"Active non-folded players: {[p.name for p in active_non_folded]}")
-    BettingLogger.log_debug(f"Acted since last raise: {[p.name for p in player_queue.acted_since_last_raise]}")
+    BettingLogger.log_debug(
+        f"Active non-folded players: {[p.name for p in active_non_folded]}"
+    )
+    BettingLogger.log_debug(
+        f"Acted since last raise: {[p.name for p in player_queue.acted_since_last_raise]}"
+    )
     BettingLogger.log_debug(f"All acted: {all_acted}")
 
     # If everyone has acted since last raise, give last raiser final chance
     if all_acted and last_raiser and not last_raiser.folded and last_raiser.chips > 0:
-        BettingLogger.log_debug(f"Allowing last raiser {last_raiser.name} to act again.")
+        BettingLogger.log_debug(
+            f"Allowing last raiser {last_raiser.name} to act again."
+        )
         player_queue.needs_to_act.clear()
         player_queue.needs_to_act.add(last_raiser)
     elif all_acted:
@@ -431,6 +443,7 @@ def is_round_complete(self) -> bool:
     complete = self.acted_since_last_raise >= self.active_players_count()
     BettingLogger.log_debug(f"Checking if round is complete: {complete}")
     return complete
+
 
 def all_players_acted(self) -> bool:
     """Check if all players have acted."""
