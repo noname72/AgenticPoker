@@ -406,7 +406,6 @@ def mock_game(mock_players, mock_pot_manager, mock_deck):
     - List of players
     - Pot manager
     - Deck
-    - Round state (PREFLOP)
     - Standard betting config (10/20 blinds)
 
     Example:
@@ -723,7 +722,7 @@ def mock_betting_logger():
 def mock_round_state():
     """Create a mock round state."""
     round_state = MagicMock()
-    round_state.phase = RoundPhase.PREFLOP
+    round_state.phase = RoundPhase.PRE_DRAW
     round_state.big_blind_position = 1
     round_state.current_bet = 0
     round_state.raise_count = 0

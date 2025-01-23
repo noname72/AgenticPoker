@@ -12,7 +12,7 @@ from util import (
 )
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Ensure required directories exist

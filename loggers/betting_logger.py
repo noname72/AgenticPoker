@@ -130,4 +130,4 @@ class BettingLogger:
     @staticmethod
     def log_debug(message: str) -> None:
         """Log a debug message."""
-        logger.debug(message)
+        logger.info(message)

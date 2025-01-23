@@ -7,7 +7,7 @@ from data.states.round_state import RoundPhase, RoundState
 def basic_round_state():
     """Create a basic RoundState for testing."""
     return RoundState(
-        phase=RoundPhase.PREFLOP,
+        phase=RoundPhase.PRE_DRAW,
         current_bet=20,
         round_number=1,
         dealer_position=0,
@@ -19,7 +19,7 @@ def basic_round_state():
 class TestRoundState:
     def test_initialization(self, basic_round_state):
         """Test that RoundState initializes correctly with all required fields."""
-        assert basic_round_state.phase == RoundPhase.PREFLOP
+        assert basic_round_state.phase == RoundPhase.PRE_DRAW
         assert basic_round_state.current_bet == 20
         assert basic_round_state.round_number == 1
         assert basic_round_state.raise_count == 0
@@ -38,7 +38,7 @@ class TestRoundState:
     def test_new_round_factory_method(self):
         """Test the new_round class method."""
         round_state = RoundState.new_round(round_number=1)
-        assert round_state.phase == RoundPhase.PREFLOP
+        assert round_state.phase == RoundPhase.PRE_DRAW
         assert round_state.current_bet == 0
         assert round_state.round_number == 1
         assert round_state.raise_count == 0
@@ -48,11 +48,6 @@ class TestRoundState:
 
     def test_round_phase_enum(self):
         """Test RoundPhase enum values."""
-        assert RoundPhase.PREFLOP == "preflop"
-        assert RoundPhase.FLOP == "flop"
-        assert RoundPhase.TURN == "turn"
-        assert RoundPhase.RIVER == "river"
-        assert RoundPhase.SHOWDOWN == "showdown"
         assert RoundPhase.PRE_DRAW == "pre_draw"
         assert RoundPhase.POST_DRAW == "post_draw"
 
@@ -61,7 +56,7 @@ class TestRoundState:
         # Test negative current bet
         with pytest.raises(ValueError):
             RoundState(
-                phase=RoundPhase.PREFLOP,
+                phase=RoundPhase.PRE_DRAW,
                 current_bet=-20,  # Invalid negative amount
                 round_number=1,
             )
@@ -69,7 +64,7 @@ class TestRoundState:
         # Test negative round number
         with pytest.raises(ValueError):
             RoundState(
-                phase=RoundPhase.PREFLOP,
+                phase=RoundPhase.PRE_DRAW,
                 current_bet=20,
                 round_number=-1,  # Invalid negative round number
             )
@@ -77,7 +72,7 @@ class TestRoundState:
         # Test negative raise count
         with pytest.raises(ValueError):
             RoundState(
-                phase=RoundPhase.PREFLOP,
+                phase=RoundPhase.PRE_DRAW,
                 current_bet=20,
                 round_number=1,
                 raise_count=-1,  # Invalid negative raise count
