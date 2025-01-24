@@ -105,27 +105,31 @@ class MockDraw:
     def _default_get_discard_indices(self, player: MockPlayer) -> Optional[List[int]]:
         """Default behavior for getting discard indices."""
         if not hasattr(player, "decide_discard"):
-            DrawLogger.log_non_ai_player()
+            DrawLogger.log_non_ai_player(player.name)
             return None
 
-        decision = self._discard_decisions.get(player.name)
-        if decision is None:
-            return []
+        try:
+            decision = self._discard_decisions.get(player.name)
+            if decision is None:
+                return []
 
-        indices, should_raise = decision
-        if should_raise:
-            DrawLogger.log_draw_error(player.name, ValueError("Test error"))
+            indices, should_raise = decision
+            if should_raise:
+                raise ValueError("Test error")
+
+            if len(indices) > 5:  # MAX_DISCARD = 5
+                DrawLogger.log_discard_validation_error(player.name, len(indices))
+                return indices[:5]
+
+            if any(idx < 0 or idx >= 5 for idx in indices):
+                DrawLogger.log_invalid_indexes(player.name)
+                return None
+
+            return indices
+
+        except Exception as e:
+            DrawLogger.log_draw_error(player.name, e)
             return None
-
-        if len(indices) > 5:  # MAX_DISCARD = 5
-            DrawLogger.log_discard_validation_error(player.name, len(indices))
-            indices = indices[:5]
-
-        if any(idx < 0 or idx >= 5 for idx in indices):
-            DrawLogger.log_invalid_indexes(player.name)
-            return None
-
-        return indices
 
     def _default_process_discard_and_draw(
         self, player: MockPlayer, deck: MockDeck, discard_indices: List[int]
@@ -134,10 +138,14 @@ class MockDraw:
         discard_count = len(discard_indices)
         DrawLogger.log_discard_action(player.name, discard_count)
 
-        # Handle discarding
-        discarded_cards = [player.hand.cards[idx] for idx in discard_indices]
+        # Sort indices in descending order to remove from end first
+        sorted_indices = sorted(discard_indices, reverse=True)
+
+        # Get the actual card objects and remove them from the player's hand
+        discarded_cards = []
+        for idx in sorted_indices:
+            discarded_cards.append(player.hand.cards.pop(idx))
         deck.add_discarded(discarded_cards)
-        player.hand.remove_cards(discard_indices)
 
         # Handle drawing
         if deck.needs_reshuffle(discard_count):
@@ -149,7 +157,8 @@ class MockDraw:
 
         # Use configured draw outcome or default to deck's deal
         new_cards = self._draw_outcomes.get(player.name) or deck.deal(discard_count)
-        player.hand.add_cards(new_cards)
+        for card in new_cards:
+            player.hand.cards.append(card)
 
         DrawLogger.log_deck_status(player.name, deck.remaining_cards())
 

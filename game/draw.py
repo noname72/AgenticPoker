@@ -42,7 +42,7 @@ def handle_draw_phase(game: "Game") -> None:
 
     # First, figure out how many cards might possibly be drawn.
     active_players = [
-        p for p in game.table.active_players() if not p.folded and hasattr(p, "decide_discard")
+        p for p in game.table if not p.folded and hasattr(p, "decide_discard")
     ]
     max_possible_draws = len(active_players) * MAX_DISCARD
 
@@ -102,9 +102,6 @@ def get_discard_indices(player: "Player") -> List[int] | None:
     """
     Safely get and validate the discard indices from a player.
 
-    Handles getting the player's discard decision while managing various edge cases
-    and validation checks.
-
     Args:
         player: The Player instance to get discard decisions from
 
@@ -112,28 +109,26 @@ def get_discard_indices(player: "Player") -> List[int] | None:
         List[int]: Valid list of card indices to discard (0-4 for each index)
         None: If the player has no decide_discard() method, makes invalid choices,
               or encounters an error
-
-    Note:
-        - Validates that no more than MAX_DISCARD (5) cards are discarded
-        - Validates all indices are between 0-4
-        - Trims excess discards rather than rejecting them
-        - Logs validation errors and decisions through DrawLogger
     """
     if not hasattr(player, "decide_discard"):
-        # If the player has no AI or method for deciding, return None so we skip.
-        DrawLogger.log_non_ai_player()
+        # If the player has no AI or method for deciding, return None so we skip
+        DrawLogger.log_non_ai_player(player.name)
         return None
 
     try:
         discard_decision: DiscardDecision = player.decide_discard()
+        if not discard_decision:  # Handle None case
+            return []
+
         if len(discard_decision.discard) > MAX_DISCARD:
             # Log and trim if too many discards
             DrawLogger.log_discard_validation_error(
                 player.name, len(discard_decision.discard)
             )
-            discard_decision.discard = discard_decision.discard[:MAX_DISCARD]
+            # Return trimmed list rather than modifying in place
+            return discard_decision.discard[:MAX_DISCARD]
 
-        # Validate all indices are between 0 and 4 (assuming 5-card hands).
+        # Validate all indices are between 0 and 4 (assuming 5-card hands)
         if any(idx < 0 or idx >= 5 for idx in discard_decision.discard):
             DrawLogger.log_invalid_indexes(player.name)
             return None
@@ -141,7 +136,7 @@ def get_discard_indices(player: "Player") -> List[int] | None:
         return discard_decision.discard
 
     except Exception as e:
-        # If there's an error in decide_draw, we log and return None so the player keeps the hand.
+        # If there's an error in decide_draw, we log and return None so the player keeps the hand
         DrawLogger.log_draw_error(player.name, e)
         return None
 
@@ -151,33 +146,18 @@ def process_discard_and_draw(
 ) -> None:
     """
     Execute the discard and draw actions for a player.
-
-    Handles the mechanics of:
-    1. Removing discarded cards from player's hand
-    2. Adding discarded cards to the deck's discard pile
-    3. Reshuffling the deck if necessary
-    4. Drawing new replacement cards
-    5. Adding new cards to player's hand
-
-    Args:
-        player: The Player instance performing the discard/draw
-        deck: The Deck instance to discard to and draw from
-        discard_indices: List of valid card indices (0-4) to discard
-
-    Note:
-        - Automatically handles deck reshuffling if needed
-        - Logs all actions through DrawLogger including:
-            - Discard counts
-            - Reshuffle events
-            - Final deck status
     """
     discard_count = len(discard_indices)
     DrawLogger.log_discard_action(player.name, discard_count)
 
+    # Sort indices in descending order to remove from end first
+    sorted_indices = sorted(discard_indices, reverse=True)
+
     # Get the actual card objects and remove them from the player's hand
-    discarded_cards = [player.hand.cards[idx] for idx in discard_indices]
+    discarded_cards = []
+    for idx in sorted_indices:
+        discarded_cards.append(player.hand.cards.pop(idx))
     deck.add_discarded(discarded_cards)
-    player.hand.remove_cards(discard_indices)
 
     # Check if we need to reshuffle before drawing
     if deck.needs_reshuffle(discard_count):
@@ -189,7 +169,8 @@ def process_discard_and_draw(
 
     # Draw new cards to replace the discarded ones
     new_cards = deck.deal(discard_count)
-    player.hand.add_cards(new_cards)
+    for card in new_cards:
+        player.hand.cards.append(card)
 
     # Log the deck status
     DrawLogger.log_deck_status(player.name, deck.remaining_cards())
