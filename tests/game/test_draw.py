@@ -10,8 +10,19 @@ from game.draw import handle_draw_phase
 @pytest.fixture
 def setup_mock_hands(mock_game):
     """Setup mock hands with initial cards for all players."""
-    for player in mock_game.table:
+    # Configure mock_game.table as a list of players
+    mock_game.table = []
+    mock_game.players = []
+
+    # Create 3 players with initial hands
+    for i in range(3):
+        player = MagicMock()
+        player.name = f"Player{i}"
+        player.folded = False
         player.hand.cards = [Card(rank=str(i), suit="♥") for i in range(2, 7)]
+        mock_game.table.append(player)
+        mock_game.players.append(player)
+
     return mock_game
 
 
@@ -19,14 +30,45 @@ def test_handle_draw_phase_no_discards(setup_mock_hands, caplog):
     """Test draw phase when no players discard cards."""
     caplog.set_level(logging.INFO)
 
-    # None of the players have decide_draw method
+    # Remove decide_discard method from all players
+    for player in setup_mock_hands.players:
+        delattr(player, "decide_discard")
+
     handle_draw_phase(setup_mock_hands)
 
     # Check that all players kept their original hands
     for player in setup_mock_hands.players:
         assert len(player.hand.cards) == 5
         assert all(card.suit == "♥" for card in player.hand.cards)
-        assert "Non-AI player or player without decision method" in caplog.text
+
+    # Verify the non-AI player message appears for each player
+    non_ai_count = sum(
+        1
+        for record in caplog.records
+        if "is a non-AI player or player without decision method" in record.message
+    )
+    assert non_ai_count == 3, "Should log non-AI message for each player"
+
+    # Each player should get two "keeping hand" messages
+    keep_hand_count = sum(
+        1 for record in caplog.records if "keeping current hand" in record.message
+    )
+    assert keep_hand_count == 6, "Should log two keep hand messages for each player"
+
+    # Verify messages appear in correct order for each player
+    for i in range(3):
+        player_logs = [
+            record.message
+            for record in caplog.records
+            if f"Player{i}" in record.message
+        ]
+        assert len(player_logs) == 2, f"Each player should have 2 log messages"
+        assert (
+            "is a non-AI player" in player_logs[0]
+        ), "First message should be about non-AI status"
+        assert (
+            "keeping current hand" in player_logs[1]
+        ), "Second message should be about keeping hand"
 
 
 def test_handle_draw_phase_with_discards(setup_mock_hands, caplog):
@@ -131,7 +173,7 @@ def test_handle_draw_phase_no_discard_decision(setup_mock_hands, caplog):
     handle_draw_phase(setup_mock_hands)
 
     assert setup_mock_hands.players[0].hand.cards == original_hand
-    assert "No cards discarded; keeping current hand" in caplog.text
+    assert "keeping current hand (explicit decision)" in caplog.text
 
 
 def test_handle_draw_phase_multiple_discards(setup_mock_hands, caplog):
@@ -253,3 +295,91 @@ def test_draw_phase_logging_not_duplicated(setup_mock_hands, caplog):
     )
 
     assert discard_logs == 1, "Discard action should only be logged once"
+
+
+def test_handle_draw_phase_exception(setup_mock_hands, caplog):
+    """Test draw phase when decide_discard raises an exception."""
+    caplog.set_level(logging.ERROR)
+
+    # Configure player to raise exception during decide_discard
+    setup_mock_hands.players[0].decide_discard = MagicMock(
+        side_effect=Exception("Test error")
+    )
+    original_hand = setup_mock_hands.players[0].hand.cards.copy()
+
+    handle_draw_phase(setup_mock_hands)
+
+    # Verify hand remains unchanged
+    assert setup_mock_hands.players[0].hand.cards == original_hand
+    assert "Error in draw phase for Player0: Test error" in caplog.text
+
+
+def test_handle_draw_phase_too_many_discards(setup_mock_hands, caplog):
+    """Test draw phase when player tries to discard too many cards."""
+    caplog.set_level(logging.WARNING)
+
+    # Configure initial hand with known cards
+    setup_mock_hands.players[0].hand.cards = [
+        Card(rank=str(i), suit="♥") for i in range(2, 7)
+    ]
+    original_hand = setup_mock_hands.players[0].hand.cards.copy()
+
+    # Configure player to try discarding 6 cards
+    setup_mock_hands.players[0].decide_discard = MagicMock(
+        return_value=MagicMock(discard=[0, 1, 2, 3, 4, 5])
+    )
+
+    # Configure deck to return specific cards
+    new_cards = [Card(rank=str(i), suit="♠") for i in range(2, 7)]
+    setup_mock_hands.deck.cards = new_cards.copy()
+    setup_mock_hands.deck.deal = MagicMock(side_effect=lambda count: new_cards[:count])
+
+    handle_draw_phase(setup_mock_hands)
+
+    # Verify warning was logged
+    assert "tried to discard 6 cards. Maximum is 5" in caplog.text
+
+    # Verify only first 5 cards were discarded and replaced
+    assert len(setup_mock_hands.players[0].hand.cards) == 5
+
+    # First 5 cards should be new spades
+    assert all(
+        card.suit == "♠" for card in setup_mock_hands.players[0].hand.cards
+    ), "All cards should be replaced with spades"
+
+
+def test_handle_draw_phase_exact_cards_needed(setup_mock_hands, caplog):
+    """Test draw phase when deck has exactly the needed number of cards."""
+    caplog.set_level(logging.INFO)
+
+    # Set up deck with exactly enough cards
+    setup_mock_hands.deck.cards = [
+        Card(rank=str(i), suit="♠") for i in range(2, 4)
+    ]  # 2 cards
+    setup_mock_hands.deck.needs_reshuffle = MagicMock(return_value=True)
+    setup_mock_hands.deck.remaining_cards = MagicMock(return_value=2)
+
+    # Configure player to discard 2 cards
+    setup_mock_hands.players[0].decide_discard = MagicMock(
+        return_value=MagicMock(discard=[0, 1])
+    )
+
+    handle_draw_phase(setup_mock_hands)
+
+    # Verify skip reshuffle message
+    assert "Reshuffle skipped - have exact number of cards needed" in caplog.text
+
+
+def test_handle_draw_phase_none_decision(setup_mock_hands, caplog):
+    """Test draw phase when decide_discard returns None."""
+    caplog.set_level(logging.INFO)
+
+    # Configure player to return None from decide_discard
+    setup_mock_hands.players[0].decide_discard = MagicMock(return_value=None)
+    original_hand = setup_mock_hands.players[0].hand.cards.copy()
+
+    handle_draw_phase(setup_mock_hands)
+
+    # Verify hand remains unchanged
+    assert setup_mock_hands.players[0].hand.cards == original_hand
+    assert "keeping current hand" in caplog.text

@@ -41,10 +41,10 @@ class DrawLogger:
         logger.error(f"Error in draw phase for {player_name}: {error}")
 
     @staticmethod
-    def log_non_ai_player() -> None:
-        """Log when encountering a non-AI player."""
+    def log_non_ai_player(player_name: str) -> None:
+        """Log when a non-AI player is encountered."""
         logger.info(
-            "Non-AI player or player without decision method; keeping current hand"
+            f"{player_name} is a non-AI player or player without decision method; keeping current hand"
         )
 
     @staticmethod
@@ -73,9 +73,9 @@ class DrawLogger:
         )
 
     @staticmethod
-    def log_keep_hand(player_name: str, explicit_decision: bool = True) -> None:
+    def log_keep_hand(player_name: str, explicit_decision: bool = False) -> None:
         """Log when a player keeps their current hand."""
         if explicit_decision:
-            logger.info("No cards discarded; keeping current hand")
+            logger.info(f"{player_name} keeping current hand (explicit decision)")
         else:
             logger.info(f"{player_name} keeping current hand")
