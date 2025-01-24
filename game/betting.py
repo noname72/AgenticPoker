@@ -1,13 +1,29 @@
 """Poker betting round management and rules implementation.
 
 This module handles all betting-related logic for a poker game, including:
+- Managing complete betting rounds
+- Processing individual player actions
+- Collecting blinds and antes
+- Tracking betting amounts and pot sizes
+- Handling all-in situations and side pots
+
+The main components are:
+- handle_betting_round: Entry point for managing a complete betting round
+- betting_round: Core betting mechanics for a single round
+- collect_blinds_and_antes: Handles forced bets at the start of each hand
+
+The module ensures proper poker betting rules are followed:
+- Players act in clockwise order
+- Betting continues until all active players have:
+  * Placed equal bets
+  * Folded
+  * Gone all-in
+- Side pots are created when players go all-in
 """
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from loggers.betting_logger import BettingLogger
-
-from .player import Player
 
 if TYPE_CHECKING:
     from game.game import Game
@@ -69,31 +85,41 @@ def betting_round(game: "Game") -> None:
         game: The Game instance containing all game state, including players,
              pot manager, and round state.
     """
-
-    round_complete: bool = False
-    last_raiser: Optional[Player] = None
-
     game.table.reset_action_tracking()
 
-    # Main betting loop
-    while not round_complete:
-        _process_betting_cycle(game, last_raiser)
-
-        # Check if betting round should end
-        round_complete = (
-            game.table.is_round_complete() or game.table.all_players_acted()
-        )
-
-        if round_complete:
-            BettingLogger.log_debug("Betting round is complete.")
-        else:
-            BettingLogger.log_debug("Betting round continues.")
+    _process_betting_cycle(game)
 
 
-def _process_betting_cycle(game: "Game", last_raiser: Optional[Player]) -> None:
-    """Process a single cycle of betting for all active players."""
+def _process_betting_cycle(game: "Game") -> None:
+    """Process a single cycle of betting for all active players.
 
-    while not game.table.is_round_complete():
+    This function manages the core betting loop where each player takes their turn
+    to act. It continues until the betting round is complete (all players have acted
+    and betting is equalized) or only one player remains.
+
+    The cycle includes:
+    1. Getting the next player to act
+    2. Logging the current game state
+    3. Having the player decide and execute their action
+    4. Updating the table state based on the action
+    5. Checking if the round is complete
+
+    Args:
+        game: The Game instance containing the current game state, including:
+             - table: Table object with player and betting state
+             - pot_manager: Manages main pot and side pots
+
+    Side Effects:
+        - Updates player betting amounts
+        - Updates pot size
+        - Updates table state (last_raiser, needs_to_act, etc.)
+        - Logs betting actions and game state
+    """
+    complete = False
+
+    while not complete:
+
+        previous_last_raiser = game.table.last_raiser
 
         agent = game.table.get_next_player()
         if not agent:
@@ -108,7 +134,7 @@ def _process_betting_cycle(game: "Game", last_raiser: Optional[Player]) -> None:
             current_bet=agent.bet,
             pot=game.pot_manager.pot,
             active_players=[p.name for p in game.table.players if not p.folded],
-            last_raiser=last_raiser.name if last_raiser else None,
+            last_raiser=game.table.last_raiser.name if game.table.last_raiser else None,
         )
 
         action_decision = agent.decide_action(game)
@@ -116,10 +142,11 @@ def _process_betting_cycle(game: "Game", last_raiser: Optional[Player]) -> None:
 
         game.table.update(action_decision, agent)
 
-        previous_last_raiser = last_raiser  #! needed???
+        complete, reason = game.table.is_round_complete()
 
         BettingLogger.log_debug(
-            f"Previous Raiser: {previous_last_raiser}, Current Raiser: {last_raiser}"
+            f"Previous Raiser: {previous_last_raiser}, Current Raiser: {game.table.last_raiser},"
+            f"Round Complete: {complete}, Reason: {reason}"
         )
 
         BettingLogger.log_line_break()

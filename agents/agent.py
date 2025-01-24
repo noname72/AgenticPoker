@@ -548,3 +548,10 @@ class Agent(Player):
         except Exception as e:
             AgentLogger.log_opponent_analysis_error(e)
             return default_analysis
+
+    def __str__(self):
+        return f"Agent(name={self.name}, strategy={self.strategy_style})"
+
+    def __repr__(self):
+        return f"Agent(name={self.name}, strategy={self.strategy_style})"
+

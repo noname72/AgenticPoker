@@ -60,14 +60,14 @@ class TableLogger:
         player_name: str,
         is_raise: bool,
         needs_to_act: List[str],
-        acted_since_raise: List[str],
+        acted_since_raise: int,
     ) -> None:
         """Log when a player completes their action."""
         action_type = "raise" if is_raise else "action"
         logger.debug(
             f"{player_name} completed {action_type}"
             f"\nNeeds to act: {', '.join(needs_to_act)}"
-            f"\nActed since last raise: {', '.join(acted_since_raise)}"
+            f"\nActed since last raise: {acted_since_raise}"
         )
 
     @staticmethod
