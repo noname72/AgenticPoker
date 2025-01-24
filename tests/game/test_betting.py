@@ -47,7 +47,7 @@ def test_validate_bet_to_call():
 def test_collect_blinds_and_antes(mock_blind_config, mock_game, mock_players, mock_betting_logger):
     """Tests collection of blinds and antes from players."""
     dealer_index, small_blind, big_blind, ante = mock_blind_config
-    mock_game.players = mock_players
+    mock_game.table.players = mock_players
 
     collected = collect_blinds_and_antes(
         mock_game, dealer_index, small_blind, big_blind, ante
@@ -104,7 +104,7 @@ def test_betting_round_no_all_in(mock_betting_state, player_factory):
 
     # Configure game state with player queue
     mock_betting_state["game"].players = table  # Set PlayerQueue instance
-    mock_betting_state["game"].round_state.phase = RoundPhase.PREFLOP
+    mock_betting_state["game"].round_state.phase = RoundPhase.PRE_DRAW
     mock_betting_state["game"].current_bet = 20
 
     # Configure execute methods to update player states
@@ -145,7 +145,7 @@ def test_handle_betting_round_no_players(mock_game):
     """
     Tests that handle_betting_round raises ValueError when no players are in the game.
     """
-    mock_game.players = []
+    mock_game.table.players = []
     with pytest.raises(ValueError):
         handle_betting_round(mock_game)
 
@@ -154,7 +154,7 @@ def test_handle_betting_round_invalid_pot(mock_game, mock_player):
     """
     Tests that handle_betting_round raises ValueError when pot amount is negative.
     """
-    mock_game.players = [mock_player]
+    mock_game.table.players = [mock_player]
     mock_game.pot_manager.pot = -100
     with pytest.raises(ValueError):
         handle_betting_round(mock_game)
@@ -177,9 +177,9 @@ def test_handle_betting_round_with_side_pots(
     ]
 
     # Set up game state
-    mock_game.players = mock_table  # Set Table instance directly
+    mock_game.table = mock_table  # Set Table instance directly
     mock_table.players = [all_in_player] + active_players  # Set underlying players list
-    mock_game.round_state.phase = RoundPhase.PREFLOP
+    mock_game.round_state.phase = RoundPhase.PRE_DRAW
     mock_game.current_bet = 100
 
     print(f"\nGame state configured:")
@@ -204,7 +204,7 @@ def test_handle_betting_round_with_side_pots(
 
     # Verify game should continue with multiple active players
     assert should_continue is True
-    assert len(mock_game.players.active_players) > 1
+    assert len(mock_game.table.active_players()) > 1
 
     # Verify active players acted but all-in player didn't
     for player in active_players:
@@ -229,7 +229,7 @@ def test_handle_betting_round_without_side_pots(mock_game, mock_table, player_fa
     mock_game.players = mock_table  # Use mock_table instead of list
     mock_table.players = players  # Set underlying players list
     mock_game.pot_manager.pot = 0
-    mock_game.round_state.phase = RoundPhase.PREFLOP
+    mock_game.round_state.phase = RoundPhase.PRE_DRAW
     mock_game.current_bet = 0
 
     # Configure player queue behavior
@@ -313,7 +313,7 @@ def test_get_big_blind_player(mock_game, player_factory):
     """Tests identification of big blind player."""
     big_blind_player = player_factory(name="BigBlind", is_big_blind=True)
     mock_game.players = [big_blind_player]
-    mock_game.round_state.phase = RoundPhase.PREFLOP
+    mock_game.round_state.phase = RoundPhase.PRE_DRAW
     mock_game.round_state.big_blind_position = 0
 
     result = _get_big_blind_player(mock_game)
@@ -340,7 +340,7 @@ def test_betting_round_with_all_in(
     mock_game.players = mock_table
     mock_table.players = [all_in_player, active_player]
     mock_game.pot_manager = mock_pot_with_side_pots
-    mock_game.round_state.phase = RoundPhase.PREFLOP
+    mock_game.round_state.phase = RoundPhase.PRE_DRAW
     mock_game.current_bet = 1500
 
     # Configure player queue behavior
@@ -379,7 +379,7 @@ def test_betting_round_action_tracking(
     # Set up game state
     mock_game.players = mock_table
     mock_table.players = players
-    mock_game.round_state.phase = RoundPhase.PREFLOP
+    mock_game.round_state.phase = RoundPhase.PRE_DRAW
     mock_game.current_bet = 0
 
     # Configure player queue behavior
@@ -442,7 +442,7 @@ def test_update_action_tracking_raise(mock_betting_state, player_factory):
         ActionType.RAISE,
         table,
         None,  # big_blind_player
-        False,  # is_preflop
+        False,  # is_pre_draw
     )
 
     # Verify results
@@ -473,7 +473,7 @@ def test_update_action_tracking_call(mock_betting_state, player_factory):
         ActionType.CALL,
         table,
         None,  # big_blind_player
-        False,  # is_preflop
+        False,  # is_pre_draw
     )
 
     # Verify results
@@ -715,8 +715,8 @@ def test_collect_blinds_and_antes_dealer_wrap(
     assert collected == (ante * len(mock_players)) + small_blind + big_blind
 
 
-def test_update_action_tracking_big_blind_preflop(mock_betting_state, player_factory):
-    """Tests action tracking updates for big blind player during preflop."""
+def test_update_action_tracking_big_blind_pre_draw(mock_betting_state, player_factory):
+    """Tests action tracking updates for big blind player during pre-draw."""
     from game.betting import _update_action_tracking
 
     # Create players using factory
@@ -736,7 +736,7 @@ def test_update_action_tracking_big_blind_preflop(mock_betting_state, player_fac
         ActionType.CALL,
         table,
         big_blind_player,
-        True,  # is_preflop
+        True,  # is_pre_draw
     )
 
     # Verify BB gets option to raise
@@ -749,7 +749,7 @@ def test_update_action_tracking_big_blind_preflop(mock_betting_state, player_fac
         ActionType.RAISE,
         table,
         big_blind_player,
-        True,  # is_preflop
+        True,  # is_pre_draw
     )
 
     # Verify BB needs to act after raise
@@ -777,7 +777,7 @@ def test_update_action_tracking_all_players_acted(mock_betting_state, player_fac
             ActionType.CALL,
             table,
             None,  # big_blind_player
-            False,  # is_preflop
+            False,  # is_pre_draw
         )
         assert last_raiser is None
 

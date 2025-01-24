@@ -6,48 +6,17 @@ The Table class handles:
 - Betting round management
 - Player state tracking (active, all-in, folded)
 - Turn progression during betting rounds
-
-Key concepts:
-- Active players: Players who can still act (have chips, haven't folded/all-in)
-- Betting rounds: A sequence of player actions that continues until all active 
-  players have either called the current bet or folded
-- Action tracking: Monitoring which players need to act and who has acted since 
-  the last raise
-
-Example usage:
-    # Create players
-    players = [
-        Player("Alice", 1000),
-        Player("Bob", 1000),
-        Player("Charlie", 1000)
-    ]
-
-    # Initialize the table
-    table = Table(players)
-
-    # Start a new betting round
-    table.reset_action_tracking()
-
-    # Process betting round
-    while not table.is_round_complete():
-        current_player = table.get_next_player()
-        if current_player is None:
-            break
-
-        # Handle player actions
-        # ... player makes decision ...
-        table.mark_player_acted(current_player, is_raise=action_was_raise)
-
-    # Query table state
-    active_players = table.active_players()
-    all_in_players = table.all_in_players()
-    folded_players = table.folded_players()
 """
 
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
+from data.enums import ActionType
+from data.types.action_decision import ActionDecision
 from game.player import Player
-from loggers.betting_logger import BettingLogger
+from loggers.table_logger import TableLogger
+
+if TYPE_CHECKING:
+    from agents.agent import Agent
 
 
 class Table:
@@ -64,15 +33,13 @@ class Table:
     - Determines when betting rounds are complete
     - Provides player state queries (active, inactive, all-in, folded)
 
-    Betting rounds proceed until either:
-    1. Only one active player remains
-    2. All active players have acted since the last raise
-
     Attributes:
         players (List[Player]): Ordered list of players at the table, representing seating order
         index (int): Current dealer position in the rotation (0 to len(players)-1)
         needs_to_act (Set[Player]): Set of players who still need to act in current round
-        acted_since_last_raise (Set[Player]): Set of players who have acted since last raise
+        last_raiser (Optional[Player]): The last player who raised in the current round
+        current_bet (int): The current bet amount that players need to call
+        action_tracking (List[ActionDecision]): List tracking all actions in the current round
     """
 
     def __init__(self, players: List[Player]):
@@ -88,9 +55,14 @@ class Table:
         self.players = players
         self.index = 0
         self.needs_to_act = set(players)  # Track players who still need to act
-        self.acted_since_last_raise = (
-            set()
-        )  # Track players who have acted since last raise
+        self.last_raiser = None
+        self.current_bet = 0  # Track the current bet amount
+        self.action_tracking = []
+        TableLogger.log_table_creation(len(players))
+
+    def update(self, action_decision: ActionDecision, agent: "Agent") -> None:
+        """Update the table state based on the agent's action decision."""
+        self.mark_player_acted(agent, action_decision)
 
     def get_next_player(self) -> Optional[Player]:
         """Get the next active player in the rotation who can take an action.
@@ -113,34 +85,43 @@ class Table:
             player = self.players[self.index]
             self.index += 1
             if player in self.active_players():
+                TableLogger.log_next_player(
+                    player.name, self.index - 1, [p.name for p in self.needs_to_act]
+                )
                 return player
 
-    def is_round_complete(self) -> bool:
+    def is_round_complete(self) -> Tuple[bool, str]:
         """Determine if the current betting round is complete.
 
-        A betting round is considered complete when either:
-        1. Only one active player remains (others have folded or are all-in), or
-        2. All active players have acted since the last raise (everyone has had a chance
-           to call/fold/raise the current bet)
-
-        The method logs debugging information about:
-        - The completion status
-        - Which players have acted since the last raise
-        - Current active players
+        A betting round is complete when either:
+        1. All but one player has folded
+        2. All remaining active players have:
+           - Called the current bet amount, or
+           - Gone all-in, or
+           - Folded
 
         Returns:
-            bool: True if the betting round is complete, False otherwise
+            Tuple[bool, str]: A tuple containing:
+                - bool: True if round is complete, False otherwise
+                - str: A message explaining why the round is complete or not
         """
-        # Round is complete if only 1 active player or if all active players have acted since last raise
-        complete = len(self.acted_since_last_raise) == len(self.active_players())
-        BettingLogger.log_debug(f"Checking if round is complete: {complete}")
-        BettingLogger.log_debug(
-            f"Acted since last raise: {[p.name for p in self.acted_since_last_raise]}"
-        )
-        BettingLogger.log_debug(
-            f"Active players: {[p.name for p in self.active_players()]}"
-        )
-        return complete
+        active_players = self.active_players()
+
+        # If only one player remains, round is complete
+        if len(active_players) <= 1:
+            return True, "only one active player"
+
+        # Check if any player still needs to act
+        if self.needs_to_act:
+            return False, "players still need to act"
+
+        # Check if all active players have either called or are all-in
+        for player in active_players:
+            if not player.folded and not player.is_all_in:
+                if player.bet != self.current_bet:
+                    return False, "not all players have called"
+
+        return True, "betting round complete"
 
     def get_active_count(self) -> int:
         """Get the number of active players (not folded, not all-in).
@@ -166,69 +147,48 @@ class Table:
         """
         return len(self.folded_players())
 
-    def mark_player_acted(self, player: Player, is_raise: bool = False) -> None:
+    def mark_player_acted(
+        self, player: Player, action_decision: ActionDecision
+    ) -> None:
         """Mark a player as having acted in the current betting round.
 
         Updates tracking sets to reflect a player's action. If the action was a raise,
-        resets the acted_since_last_raise set and requires all other active players
-        to act again.
+        resets the needs_to_act set and requires all other active players to act again.
+        Updates the current bet amount and tracks the action in action_tracking.
 
         Args:
             player (Player): The player who just completed their action
-            is_raise (bool): Whether the action was a raise/re-raise. Defaults to False.
-                           If True, resets action tracking for other players.
+            action_decision (ActionDecision): The action decision made by the player
         """
         self.needs_to_act.discard(player)
-        self.acted_since_last_raise.add(player)
 
-        # Add logging to trace player actions and state updates
-        BettingLogger.log_debug(
-            f"{player.name} acted. Needs to act: {[p.name for p in self.needs_to_act]}"
-        )
-        BettingLogger.log_debug(
-            f"Acted since last raise: {[p.name for p in self.acted_since_last_raise]}"
-        )
-
-        if is_raise:
-            # Reset acted_since_last_raise on a raise
-            self.acted_since_last_raise = {player}
+        if action_decision.action_type == ActionType.RAISE:
+            # Update current bet amount
+            self.current_bet = action_decision.raise_amount
+            self.last_raiser = player
             # Everyone else needs to act again (except folded/all-in players)
             self.needs_to_act = set(p for p in self.active_players() if p != player)
-            BettingLogger.log_debug(
-                f"Raise by {player.name}. Resetting needs_to_act: {[p.name for p in self.needs_to_act]}"
-            )
+
+        elif action_decision.action_type == ActionType.CALL:
+            player.bet = self.current_bet
+
+        self.action_tracking.append(action_decision)
+
+        TableLogger.log_player_acted(
+            player.name,
+            action_decision.action_type,
+            [p.name for p in self.needs_to_act],
+            len(self.action_tracking),
+        )
 
     def reset_action_tracking(self) -> None:
-        """Reset the action tracking for a new betting round (street).
-
-        Clears previous action history and sets all active players as needing to act.
-        Should be called when moving to a new betting round (pre-flop to flop,
-        flop to turn, etc.).
-        """
-        self.needs_to_act = set(self.players)
-        self.acted_since_last_raise.clear()
+        """Reset the action tracking for a new betting round (street)."""
+        self.needs_to_act = set(self.active_players())
+        self.current_bet = 0
+        self.last_raiser = None
         self.index = 0
 
-    def all_players_acted(self) -> bool:
-        """Check if all active players have acted since the last raise.
-
-        This method is used to determine if the current betting sequence can be completed.
-        It compares the number of players who have acted since the last raise against
-        the number of active players who can still make decisions.
-
-        The method logs the result and player counts for debugging purposes.
-
-        Returns:
-            bool: True if all active players have acted since the last raise,
-                  False if there are still players who need to act
-
-        Note:
-            This differs from is_round_complete() in that it only checks the action condition,
-            not whether there's only one active player remaining.
-        """
-        acted = len(self.acted_since_last_raise) == len(self.active_players())
-        BettingLogger.log_debug(f"All players acted: {acted}")
-        return acted
+        TableLogger.log_action_tracking_reset([p.name for p in self.active_players()])
 
     def active_players(self) -> List[Player]:
         """Get the list of active players who can take actions.
@@ -241,9 +201,11 @@ class Table:
         Returns:
             List[Player]: List of players who can still act in the current hand
         """
-        return [
-            p for p in self.players if not p.folded and not p.is_all_in and p.chips > 0
-        ]
+        active = [p for p in self.players if not p.folded and p.chips > 0]
+        TableLogger.log_table_state(
+            len(active), len(self.all_in_players()), len(self.folded_players())
+        )
+        return active
 
     def inactive_players(self) -> List[Player]:
         """Get the list of players who cannot take actions.

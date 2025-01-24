@@ -33,8 +33,6 @@ class BettingRound(str, Enum):
 
     PRE_DRAW = "pre-draw"  # For 5-card draw
     POST_DRAW = "post-draw"
-    PRE_FLOP = "pre-flop"  # For Hold'em
-    FLOP = "flop"
     TURN = "turn"
     RIVER = "river"
 

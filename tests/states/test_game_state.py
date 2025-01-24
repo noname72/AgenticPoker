@@ -30,7 +30,7 @@ def basic_game_state():
         big_blind=20,
         ante=0,
         min_bet=20,
-        round_state=RoundState(phase="preflop", current_bet=20, round_number=1),
+        round_state=RoundState(phase="pre_draw", current_bet=20, round_number=1),
         pot_state=PotState(main_pot=0),
         deck_state=DeckState(cards_remaining=52),
     )
@@ -116,8 +116,8 @@ class TestGameState:
         assert game_state.dealer_position == mock_game.dealer_index
 
         # Verify player states
-        assert len(game_state.players) == len(mock_game.players)
-        for player_state, game_player in zip(game_state.players, mock_game.players):
+        assert len(game_state.players) == len(mock_game.table)
+        for player_state, game_player in zip(game_state.players, mock_game.table):
             assert player_state.name == game_player.name
             assert player_state.chips == game_player.chips
 
@@ -131,7 +131,7 @@ class TestGameState:
                 big_blind=20,
                 ante=0,
                 min_bet=20,
-                round_state=RoundState(phase="preflop", current_bet=20, round_number=1),
+                round_state=RoundState(phase="pre_draw", current_bet=20, round_number=1),
                 pot_state=PotState(main_pot=0),
                 deck_state=DeckState(cards_remaining=52),
             )
@@ -158,7 +158,7 @@ class TestGameState:
                 big_blind=20,
                 ante=0,
                 min_bet=20,
-                round_state=RoundState(phase="preflop", current_bet=20, round_number=1),
+                round_state=RoundState(phase="pre_draw", current_bet=20, round_number=1),
                 pot_state=PotState(main_pot=0),
                 deck_state=DeckState(cards_remaining=52),
             )
@@ -172,7 +172,7 @@ class TestGameState:
                 big_blind=20,
                 ante=0,
                 min_bet=20,
-                round_state=RoundState(phase="preflop", current_bet=20, round_number=1),
+                round_state=RoundState(phase="pre_draw", current_bet=20, round_number=1),
                 pot_state=PotState(main_pot=0),
                 deck_state=DeckState(cards_remaining=52),
             )

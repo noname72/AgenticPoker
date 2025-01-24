@@ -106,7 +106,7 @@ def test_betting_round_raise_and_call(mock_logger, mock_game, setup_players):
 
     # Set up player queue and pot manager
     table = Table(players)
-    mock_game.players = table
+    mock_game.table = table
     mock_game.pot_manager = MagicMock()
     mock_game.pot_manager.pot = 0
 
@@ -222,7 +222,7 @@ def test_betting_round_raise_reraise_call(mock_logger, mock_game, setup_players)
 
     # Set up player queue
     table = Table(players)
-    mock_game.players = table
+    mock_game.table = table
 
     # Run betting round
     betting_round(mock_game)

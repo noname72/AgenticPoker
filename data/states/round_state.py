@@ -7,8 +7,6 @@ from pydantic import BaseModel, validator
 class RoundPhase(str, Enum):
     """Represents the different phases of a poker round."""
 
-    PREFLOP = "preflop"
-    FLOP = "flop"
     TURN = "turn"
     RIVER = "river"
     SHOWDOWN = "showdown"
@@ -48,7 +46,7 @@ class RoundState(BaseModel):
     def new_round(cls, round_number: int) -> "RoundState":
         """Create a new round state for the start of a hand."""
         return cls(
-            phase=RoundPhase.PREFLOP,
+            phase=RoundPhase.PRE_DRAW,
             current_bet=0,
             round_number=round_number,
             raise_count=0,
