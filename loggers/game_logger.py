@@ -126,3 +126,13 @@ class GameLogger:
         """Log the current deck status."""
         context_str = f" for {context}" if context else ""
         logger.info(f"Cards remaining{context_str}: {remaining_cards}")
+
+    @staticmethod
+    def log_game_ended_after_rounds(max_rounds: int) -> None:
+        """Log the game ended after a certain number of rounds."""
+        logger.info(f"\nGame ended after {max_rounds} rounds!")
+
+    @staticmethod
+    def log_new_deck_shuffled(round_number: int) -> None:
+        """Log the new deck shuffled for a round."""
+        logger.info(f"New deck shuffled for round {round_number}")
