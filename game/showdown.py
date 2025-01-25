@@ -31,7 +31,7 @@ def handle_showdown(
     for player in active_players:
         ShowdownLogger.log_player_hand(player.name, player.hand.show())
 
-    # Handle single player case first (everyone else folded)
+    # Handle single player case first (i.e. everyone else folded)
     if len(active_players) == 1:
         winner = active_players[0]
         pot_amount = pot_manager.pot
@@ -40,7 +40,7 @@ def handle_showdown(
         winner.chips += pot_amount
 
         ShowdownLogger.log_single_winner(winner.name, pot_amount)
-        _log_chip_movements(players, initial_chips)
+        # _log_chip_movements(players, initial_chips)
         return
 
     # Get side pots from pot manager
@@ -103,7 +103,6 @@ def handle_showdown(
 
 
 def _evaluate_hands(players: List[Player]) -> List[Player]:
-    #! is this needed when we have an evaluator module?
     """
     Evaluate player hands to determine winner(s).
 
@@ -139,13 +138,3 @@ def _evaluate_hands(players: List[Player]) -> List[Player]:
             best_players.append(player)
 
     return best_players
-
-
-def _log_chip_movements(
-    players: List[Player], initial_chips: Dict[Player, int]
-) -> None:
-    """Log the chip movements for each player from their initial amounts."""
-    for player in players:
-        ShowdownLogger.log_chip_movements(
-            player.name, initial_chips[player], player.chips
-        )
