@@ -180,8 +180,7 @@ class AgenticPoker:
             if should_continue:
                 should_continue = self._handle_post_draw_phase()
 
-            if should_continue:
-                self._handle_showdown()
+            self._handle_showdown()
 
             self._reset_round()
 
