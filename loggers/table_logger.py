@@ -1,7 +1,9 @@
 import logging
 from typing import List, Optional
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 
 class TableLogger:
@@ -11,11 +13,6 @@ class TableLogger:
     def log_table_creation(num_players: int) -> None:
         """Log when a new table is created."""
         logger.info(f"New table created with {num_players} players")
-
-    @staticmethod
-    def log_dealer_position(position: int, player_name: str) -> None:
-        """Log dealer button position."""
-        logger.info(f"Dealer button at position {position} ({player_name})")
 
     @staticmethod
     def log_player_states(
