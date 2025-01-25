@@ -124,9 +124,9 @@ from tests.mocks.mock_hand import MockHand
 from tests.mocks.mock_llm_client import MockLLMClient
 from tests.mocks.mock_llm_response_generator import MockLLMResponseGenerator
 from tests.mocks.mock_player import MockPlayer
-from tests.mocks.mock_table import MockTable
 from tests.mocks.mock_pot import MockPot
 from tests.mocks.mock_strategy_planner import MockStrategyPlanner
+from tests.mocks.mock_table import MockTable
 
 
 @pytest.fixture
@@ -150,11 +150,24 @@ def mock_agents():
 
 @pytest.fixture
 def mock_betting():
-    """Create a mock betting manager."""
+    """Create a mock betting manager.
+
+    Provides a MockBetting instance that mocks the three main functions from betting.py:
+    - handle_betting_round: Returns whether betting should continue
+    - betting_round: Processes a complete round of betting
+    - collect_blinds_and_antes: Handles forced bets at start of hand
+
+    Example:
+        def test_betting(mock_betting):
+            mock_betting.set_betting_round_result(should_continue=True)
+            result = mock_betting.handle_betting_round(mock_game)
+            assert result is True
+
+    Returns:
+        MockBetting: Configured betting manager for testing
+    """
     betting = MockBetting()
-    betting.set_betting_round_result(
-        pot_amount=100, side_pots=None, should_continue=True
-    )
+    betting.set_betting_round_result(should_continue=True)
     return betting
 
 
@@ -770,24 +783,22 @@ def mock_side_pot():
 
 @pytest.fixture
 def mock_betting_round():
-    """Create a mock betting round with pre-configured pot amount.
+    """Create a mock of the betting_round function.
 
     Patches the betting_round function to:
-    - Return a default pot amount of 150
+    - Process a complete round of betting
     - Allow verification of betting round calls
-    - Support custom return values if needed
+    - Support error simulation if needed
 
     Example:
-        def test_betting_execution(mock_betting_round):
-            result = mock_betting_round()
-            assert result == 150
-            mock_betting_round.assert_called_once()
+        def test_betting_execution(mock_betting_round, mock_game):
+            mock_betting_round(mock_game)
+            mock_betting_round.assert_called_once_with(mock_game)
 
     Returns:
         MagicMock: Configured mock of the betting_round function
     """
     with patch("game.betting.betting_round") as mock:
-        mock.return_value = 150  # Default pot amount
         yield mock
 
 
@@ -940,12 +951,30 @@ def mock_betting_state(
     mock_last_raiser,
     mock_table,
 ):
-    """Create a complete betting state for testing betting rounds."""
+    """Create a complete betting state for testing betting rounds.
+
+    Provides a dictionary containing all components needed for testing betting:
+    - game: Mock game instance
+    - active_players: List of players who can act
+    - needs_to_act: Set of players who haven't acted
+    - acted_since_last_raise: Set of players who acted since last raise
+    - last_raiser: Player who made the last raise
+    - table: Mock table managing player order
+
+    Example:
+        def test_betting_state(mock_betting_state):
+            assert len(mock_betting_state["active_players"]) > 0
+            assert mock_betting_state["last_raiser"] is not None
+
+    Returns:
+        dict: Complete betting state configuration
+    """
     # Configure table with betting state
     mock_table.needs_to_act = mock_needs_to_act
     mock_table.acted_since_last_raise = mock_acted_since_last_raise
+    mock_table.last_raiser = mock_last_raiser
 
-    # Update active players list with correct criteria (including chips > 0)
+    # Update active players list (not folded, not all-in, has chips)
     mock_table.active_players = [
         p
         for p in mock_active_players
