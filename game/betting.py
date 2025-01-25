@@ -35,10 +35,9 @@ def handle_betting_round(game: "Game") -> bool:
     This function serves as the main entry point for handling a betting round.
     It performs the following:
     1. Input validation (players exist, pot is valid)
-    2. Manages the betting process
-    3. Handles side pot creation for all-in situations
-    4. Updates game state with results
-    5. Determines if the game should continue
+    2. Manages the betting process via betting_round()
+    3. Updates game state with results
+    4. Determines if the game should continue
 
     Args:
         game: Game object containing all game state and player information
@@ -48,11 +47,10 @@ def handle_betting_round(game: "Game") -> bool:
 
     Raises:
         ValueError: If there are no players or if the pot amount is negative
-        TypeError: If any element in the players list is not a Player instance
 
     Side Effects:
-        - Updates game.pot with new pot amounts and side pots
         - May modify player chip counts and betting amounts
+        - Updates betting state in game.table
     """
     if not game.table:
         raise ValueError("Cannot run betting round with no players")
@@ -76,10 +74,12 @@ def handle_betting_round(game: "Game") -> bool:
 def betting_round(game: "Game") -> None:
     """Manages a complete round of betting among active players.
 
-    This function handles the core betting mechanics for a poker round, including:
-    - Processing actions from each active player
-    - Tracking betting amounts and pot size
-    - Ensuring proper betting order and round completion
+    This function handles the core betting mechanics for a poker round by:
+    1. Resetting action tracking for the new round
+    2. Processing the betting cycle via _process_betting_cycle()
+
+    The actual processing of player actions and pot management happens in
+    _process_betting_cycle().
 
     Args:
         game: The Game instance containing all game state, including players,
