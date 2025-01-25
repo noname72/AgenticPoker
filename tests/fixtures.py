@@ -25,7 +25,7 @@ Fixture Categories:
     - mock_betting_state: Complete betting round state
     - mock_betting_round: Betting round functionality
     - mock_betting_logger: Logging for betting actions
-    - mock_pot_manager: Pot management
+    - mock_pot: Pot management
     - mock_pot_with_side_pots: Side pot configurations
     - mock_side_pot: Side pot factory
 
@@ -125,7 +125,7 @@ from tests.mocks.mock_llm_client import MockLLMClient
 from tests.mocks.mock_llm_response_generator import MockLLMResponseGenerator
 from tests.mocks.mock_player import MockPlayer
 from tests.mocks.mock_table import MockTable
-from tests.mocks.mock_pot_manager import MockPotManager
+from tests.mocks.mock_pot import MockPot
 from tests.mocks.mock_strategy_planner import MockStrategyPlanner
 
 
@@ -322,24 +322,24 @@ def mock_table(mock_players):
 
 
 @pytest.fixture
-def mock_pot_manager():
+def mock_pot():
     """Create a mock pot manager for testing pot operations.
 
-    Provides a clean MockPotManager instance for tracking:
+    Provides a clean MockPot instance for tracking:
     - Main pot amounts
     - Side pot calculations
     - Player pot eligibility
 
     Example:
-        def test_pot_management(mock_pot_manager):
-            mock_pot_manager.add_to_pot(100)
-            mock_pot_manager.create_side_pot(50, ["Player1"])
-            assert mock_pot_manager.get_total_pot() == 150
+        def test_pot_management(mock_pot):
+            mock_pot.add_to_pot(100)
+            mock_pot.create_side_pot(50, ["Player1"])
+            assert mock_pot.get_total_pot() == 150
 
     Returns:
-        MockPotManager: Fresh pot manager instance
+        MockPot: Fresh pot instance
     """
-    return MockPotManager()
+    return MockPot()
 
 
 @pytest.fixture
@@ -399,7 +399,7 @@ def mock_game_state(mock_players):
 
 
 @pytest.fixture
-def mock_game(mock_players, mock_pot_manager, mock_deck):
+def mock_game(mock_players, mock_pot, mock_deck):
     """Create a complete mock game instance with standard components.
 
     Configures a game instance with:
@@ -419,7 +419,7 @@ def mock_game(mock_players, mock_pot_manager, mock_deck):
     """
     game = Mock()
     game.table = mock_players
-    game.pot_manager = mock_pot_manager
+    game.pot = mock_pot
     game.deck = mock_deck
     game.round_state = RoundState(
         round_number=1, phase=RoundPhase.PRE_DRAW, current_bet=20, raise_count=0
@@ -986,8 +986,8 @@ def mock_player_with_action(mock_player, mock_action_response):
 
 
 @pytest.fixture
-def mock_pot_with_side_pots(mock_pot_manager, mock_side_pot):
-    """Create a mock pot manager with pre-configured side pots.
+def mock_pot_with_side_pots(mock_pot, mock_side_pot):
+    """Create a mock pot with pre-configured side pots.
 
     Sets up a pot manager with:
     - Two default side pots (50 and 100 chips)
@@ -1002,15 +1002,15 @@ def mock_pot_with_side_pots(mock_pot_manager, mock_side_pot):
             assert side_pots[1]["amount"] == 100
 
     Returns:
-        MockPotManager: Pot manager configured with side pots
+        MockPot: Pot configured with side pots
     """
     side_pots = [mock_side_pot(50, ["Player1"]), mock_side_pot(100, ["Player2"])]
-    mock_pot_manager.calculate_side_pots.return_value = side_pots
-    mock_pot_manager.side_pots = [
+    mock_pot.calculate_side_pots.return_value = side_pots
+    mock_pot.side_pots = [
         {"amount": pot.amount, "eligible_players": pot.eligible_players}
         for pot in side_pots
     ]
-    return mock_pot_manager
+    return mock_pot
 
 
 @pytest.fixture

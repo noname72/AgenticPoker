@@ -89,10 +89,10 @@ class Player:
         self.chips -= amount
         self.bet += amount
         # Add the bet to the pot
-        game.pot_manager.pot += amount
+        game.pot.pot += amount
 
         PlayerLogger.log_bet_placement(
-            self.name, amount, self.bet, self.chips, game.pot_manager.pot
+            self.name, amount, self.bet, self.chips, game.pot.pot
         )
 
         return amount

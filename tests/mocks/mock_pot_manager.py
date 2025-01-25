@@ -6,38 +6,38 @@ from exceptions import InvalidGameStateError
 from tests.mocks.mock_player import MockPlayer
 
 
-class MockPotManager:
-    """A mock implementation of the PotManager class for testing purposes.
+class MockPot:
+    """A mock implementation of the Pot class for testing purposes.
 
-    This mock provides the same interface as the real PotManager but with configurable
+    This mock provides the same interface as the real Pot but with configurable
     behaviors for testing. It tracks pot amounts and side pots while allowing easy
     configuration of test scenarios.
 
     Usage:
         # Basic initialization
-        pot_manager = MockPotManager()
+        pot = MockPot()
 
         # Configure specific test scenarios
-        pot_manager.configure_for_test(
+        pot.configure_for_test(
             pot=100,  # Set main pot amount
             side_pots=[SidePot(amount=50, eligible_players=["P1", "P2"])],
             validation_result=True  # Configure pot validation behavior
         )
 
         # Configure side pots directly
-        pot_manager.set_side_pots([
+        pot.set_side_pots([
             SidePot(amount=100, eligible_players=["P1", "P2"]),
             SidePot(amount=50, eligible_players=["P1"])
         ])
 
         # Test error scenarios
-        pot_manager.configure_for_test(
+        pot.configure_for_test(
             raise_validation_error=True  # Make validate_pot_state raise an error
         )
 
         # Access mock methods for verification
-        pot_manager.add_to_pot.assert_called_with(50)
-        pot_manager.calculate_side_pots.assert_called_once()
+        pot.add_to_pot.assert_called_with(50)
+        pot.calculate_side_pots.assert_called_once()
 
     Default Behaviors:
         - add_to_pot: Adds amount to main pot, raises ValueError for negative amounts
@@ -51,7 +51,7 @@ class MockPotManager:
     """
 
     def __init__(self):
-        """Initialize a mock pot manager with empty pot and no side pots."""
+        """Initialize a mock pot with empty pot and no side pots."""
         self.pot: int = 0
         self.side_pots: Optional[List[SidePot]] = None
 
@@ -216,4 +216,4 @@ class MockPotManager:
     def __str__(self) -> str:
         """Get a string representation of the pot state."""
         side_pots_str = f", {len(self.side_pots)} side pots" if self.side_pots else ""
-        return f"MockPotManager: {self.pot} in main pot{side_pots_str}"
+        return f"MockPot: {self.pot} in main pot{side_pots_str}"

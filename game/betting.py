@@ -51,16 +51,16 @@ def handle_betting_round(game: "Game") -> bool:
         TypeError: If any element in the players list is not a Player instance
 
     Side Effects:
-        - Updates game.pot_manager with new pot amounts and side pots
+        - Updates game.pot with new pot amounts and side pots
         - May modify player chip counts and betting amounts
     """
     if not game.table:
         raise ValueError("Cannot run betting round with no players")
 
     # Initialize pot to 0 if None
-    if game.pot_manager.pot is None:
-        game.pot_manager.pot = 0
-    elif game.pot_manager.pot < 0:
+    if game.pot.pot is None:
+        game.pot.pot = 0
+    elif game.pot.pot < 0:
         raise ValueError("Pot amount cannot be negative")
 
     # Run betting round with validated GameState
@@ -107,7 +107,7 @@ def _process_betting_cycle(game: "Game") -> None:
     Args:
         game: The Game instance containing the current game state, including:
              - table: Table object with player and betting state
-             - pot_manager: Manages main pot and side pots
+             - pot: Manages main pot and side pots
 
     Side Effects:
         - Updates player betting amounts
@@ -132,7 +132,7 @@ def _process_betting_cycle(game: "Game") -> None:
             hand=agent.hand.show() if hasattr(agent, "hand") else "Unknown",
             chips=agent.chips,
             current_bet=agent.bet,
-            pot=game.pot_manager.pot,
+            pot=game.pot.pot,
             active_players=[p.name for p in game.table.players if not p.folded],
             last_raiser=game.table.last_raiser.name if game.table.last_raiser else None,
         )

@@ -4,13 +4,13 @@ from data.types.pot_types import SidePot
 from loggers.showdown_logger import ShowdownLogger
 
 from .player import Player
-from .pot_manager import PotManager
+from .pot import Pot
 
 
 def handle_showdown(
     players: List[Player],
     initial_chips: Dict[Player, int],
-    pot_manager: "PotManager",
+    pot: Pot,
 ) -> None:
     """
     Handle the showdown phase where winners are determined and pots are distributed.
@@ -18,7 +18,7 @@ def handle_showdown(
     Args:
         players: List of active players
         initial_chips: Dictionary of starting chip counts for each player
-        pot_manager: PotManager instance handling pot distributions
+        pot: Pot instance handling pot distributions
 
     Side Effects:
         - Updates player chip counts
@@ -34,7 +34,7 @@ def handle_showdown(
     # Handle single player case first (i.e. everyone else folded)
     if len(active_players) == 1:
         winner = active_players[0]
-        pot_amount = pot_manager.pot
+        pot_amount = pot.pot
 
         # Update winner's chips
         winner.chips += pot_amount
@@ -46,11 +46,11 @@ def handle_showdown(
     # Get side pots from pot manager
     try:
         # Changed to pass only active_players
-        side_pots = pot_manager.calculate_side_pots(active_players)
+        side_pots = pot.calculate_side_pots(active_players)
 
         # If no side pots, create one main pot
         if not side_pots:
-            pot_amount = pot_manager.pot
+            pot_amount = pot.pot
             side_pots = [
                 SidePot(
                     amount=pot_amount, eligible_players=[p.name for p in active_players]

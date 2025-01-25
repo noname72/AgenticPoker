@@ -104,7 +104,7 @@ def test_round_initialization(game, mock_players):
     game._initialize_round()
 
     # Verify round state
-    assert game.pot_manager.pot == 0
+    assert game.pot.pot == 0
     assert all(player.bet == 0 for player in game.table)
     assert all(not player.folded for player in game.table)
     assert all(hasattr(player, "hand") for player in game.table)
