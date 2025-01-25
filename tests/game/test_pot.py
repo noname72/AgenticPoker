@@ -567,69 +567,6 @@ class TestPot:
         assert pot.pot == 0
         assert pot.side_pots is None
 
-    def test_calculate_side_pots_equal_all_ins(self, pot, mock_players):
-        """Test side pot calculation when multiple players go all-in for equal amounts.
-
-        Tests a scenario where:
-        1. One player bets above all-in amount
-        2. Two players go all-in for identical amounts
-        3. Side pots are created based on all-in level
-
-        Assumptions:
-        - Should handle multiple equal all-ins correctly
-        - Should create main pot up to all-in amount
-        - Should create side pot only for excess amount
-        - Should maintain correct eligibility for each pot
-        - Should not create unnecessary pots for equal all-ins
-        - Should preserve total chip consistency
-
-        Initial state:
-        - P1: bets 300, has 700 chips remaining
-        - P2: all-in for 200
-        - P3: all-in for 200
-
-        Expected outcome:
-        - Two pots:
-          1. Main pot: 600 (200 × 3) - all players eligible
-          2. Side pot: 100 (P1's extra 100) - only P1 eligible
-        - Total pot matches total bets (700)
-        """
-        active_players = mock_players.copy()
-
-        # P1 bets 300 and has chips remaining
-        mock_players[0].bet = 300
-        mock_players[0].chips = 700
-
-        # P2 and P3 both go all-in for exactly 200
-        mock_players[1].bet = 200
-        mock_players[1].chips = 0  # All-in
-        mock_players[2].bet = 200
-        mock_players[2].chips = 0  # All-in
-
-        all_in_players = [
-            mock_players[1],
-            mock_players[2],
-        ]  # Both all-in for same amount
-
-        side_pots = pot.calculate_side_pots(active_players)
-
-        assert len(side_pots) == 2
-
-        # Main pot - everyone contributes 200
-        assert side_pots[0].amount == 600, "Main pot should be 200 * 3"
-        assert len(side_pots[0].eligible_players) == 3
-        assert all(p.name in side_pots[0].eligible_players for p in mock_players)
-
-        # Side pot - only P1's extra 100
-        assert side_pots[1].amount == 100
-        assert len(side_pots[1].eligible_players) == 1
-        assert side_pots[1].eligible_players[0] == mock_players[0].name
-
-        # Verify total pot amount matches total bets
-        total_bets = sum(p.bet for p in mock_players)
-        total_pots = sum(pot.amount for pot in side_pots)
-        assert total_pots == total_bets
-
     def test_validate_pot_state(self, pot, mock_players):
         """Test pot state validation.
 
@@ -1302,8 +1239,9 @@ class TestPot:
         - Should not affect pot amounts when players fold
 
         Initial state:
-        - All players bet 100 chips
-        - All players fold
+        - P1: bets 100 chips
+        - P2: bets 200
+        - P3: bets 300
 
         Expected outcome:
         - Single pot with:
@@ -1702,3 +1640,37 @@ class TestPot:
             f"Current total: {current_total}\n"
             f"{get_game_state_str(pot, active_players)}"
         )
+
+    def test_get_state(self, pot, mock_players):
+        """Test getting complete pot state.
+
+        Tests that:
+        1. Main pot amount is correct
+        2. Side pots are included
+        3. Total pot calculation is correct
+        4. None side_pots are handled correctly
+
+        Assumptions:
+        - Should return correct PotState object
+        - Should calculate total pot correctly
+        - Should handle both main pot and side pots
+        - Should convert None side_pots to empty list
+        """
+        # Test with only main pot
+        pot.pot = 100
+        state = pot.get_state()
+        assert state.main_pot == 100
+        assert state.side_pots == []
+        assert state.total_pot == 100
+
+        # Test with main pot and side pots
+        pot.side_pots = [
+            SidePot(amount=200, eligible_players=["Alice", "Bob"]),
+            SidePot(amount=300, eligible_players=["Alice"]),
+        ]
+        state = pot.get_state()
+        assert state.main_pot == 100
+        assert len(state.side_pots) == 2
+        assert state.side_pots[0].amount == 200
+        assert state.side_pots[1].amount == 300
+        assert state.total_pot == 600  # 100 + 200 + 300

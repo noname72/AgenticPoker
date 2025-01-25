@@ -11,7 +11,8 @@ class MockPot:
 
     This mock provides the same interface as the real Pot but with configurable
     behaviors for testing. It tracks pot amounts and side pots while allowing easy
-    configuration of test scenarios.
+    configuration of test scenarios. It includes logging functionality and maintains
+    total chip consistency across all operations.
 
     Usage:
         # Basic initialization
@@ -39,15 +40,33 @@ class MockPot:
         pot.add_to_pot.assert_called_with(50)
         pot.calculate_side_pots.assert_called_once()
 
+        # Verify logging calls
+        pot.log_pot_change.assert_called_with(old_amount, new_amount, change)
+        pot.log_new_side_pot.assert_called_with(amount, eligible_players)
+
     Default Behaviors:
         - add_to_pot: Adds amount to main pot, raises ValueError for negative amounts
-        - calculate_side_pots: Creates side pots for all-in players
-        - validate_pot_state: Performs basic validation of pot consistency
+        - calculate_side_pots: Creates side pots based on player bets and all-ins,
+          merging with existing pots and maintaining chip consistency
+        - validate_pot_state: Validates pot consistency and total chips in play
         - end_betting_round: Collects bets into pot and resets player bets
         - reset_pot: Clears main pot and side pots
+        - get_state: Returns current PotState with main pot, side pots, and total
+        - get_side_pots_view: Returns formatted view of current side pots
+
+    Logging Methods:
+        - log_pot_change: Logs changes to pot amounts
+        - log_pot_reset: Logs pot resets
+        - log_new_side_pot: Logs creation of new side pots
+        - log_pot_validation_error: Logs validation errors
+        - log_chip_mismatch: Logs chip total mismatches
+        - log_betting_round_end: Logs end of betting rounds
+        - log_pot_update: Logs updates to pot state
 
     All methods are MagicMocks that can be configured with custom return values
-    or side effects as needed for testing.
+    or side effects as needed for testing. The default implementations match
+    the behavior of the real Pot class while allowing easy configuration for
+    specific test scenarios.
     """
 
     def __init__(self):
@@ -70,6 +89,15 @@ class MockPot:
         self.validate_pot_state.side_effect = self._default_validate_pot_state
         self.end_betting_round.side_effect = self._default_end_betting_round
 
+        # Add mock loggers
+        self.log_pot_change = MagicMock()
+        self.log_pot_reset = MagicMock()
+        self.log_new_side_pot = MagicMock()
+        self.log_pot_validation_error = MagicMock()
+        self.log_chip_mismatch = MagicMock()
+        self.log_betting_round_end = MagicMock()
+        self.log_pot_update = MagicMock()
+
     def _default_add_to_pot(self, amount: int) -> None:
         """Default behavior for adding to pot."""
         if amount < 0:
@@ -79,41 +107,79 @@ class MockPot:
     def _default_calculate_side_pots(
         self, active_players: List[MockPlayer]
     ) -> List[SidePot]:
-        """Default behavior for calculating side pots.
-
-        Creates side pots based on all-in players and bet amounts:
-        1. First pot includes all players up to the all-in amount
-        2. Second pot includes only players who bet more
-        """
+        """Default behavior for calculating side pots."""
         if not active_players:
             self.side_pots = []
             return []
 
-        # Sort players by their bet amounts (lowest to highest)
-        sorted_players = sorted(active_players, key=lambda p: p.bet)
+        # Track total chips before calculation
+        total_chips_before = sum(p.chips + p.bet for p in active_players) + (
+            sum(pot.amount for pot in self.side_pots) if self.side_pots else 0
+        )
+
+        # Create dictionary of all bets from players who contributed
+        posted_amounts = {
+            p: p.bet
+            for p in active_players
+            if p.bet > 0  # Include all bets, even from folded players
+        }
+        if not posted_amounts:
+            return self.side_pots if self.side_pots else []
+
+        # Calculate new side pots from current bets
         new_side_pots = []
         current_amount = 0
+        processed_amounts = {}
 
-        for i, player in enumerate(sorted_players):
-            if player.bet > current_amount:
-                # Calculate who's eligible for this pot level
-                eligible_players = [
-                    p.name
-                    for p in sorted_players[i:]
-                    if not p.folded and p.bet >= player.bet
+        # Sort players by their bet amounts
+        sorted_players = sorted(posted_amounts.items(), key=lambda x: x[1])
+
+        for player, amount in sorted_players:
+            if amount > current_amount:
+                # Players are eligible if they:
+                # 1. Bet at least this amount
+                # 2. Haven't folded
+                eligible = [
+                    p
+                    for p, bet in posted_amounts.items()
+                    if bet >= amount and not p.folded
                 ]
 
-                # Calculate pot amount for this level
-                pot_amount = (player.bet - current_amount) * len(eligible_players)
+                # Calculate pot size for this level
+                contribution = amount - current_amount
+                contributors = sum(
+                    1 for bet in posted_amounts.values() if bet >= amount
+                )
+                pot_size = contribution * contributors
 
-                if pot_amount > 0:
+                if pot_size > 0 and amount not in processed_amounts:
                     new_side_pots.append(
-                        SidePot(amount=pot_amount, eligible_players=eligible_players)
+                        SidePot(
+                            amount=pot_size, eligible_players=[p.name for p in eligible]
+                        )
                     )
-                current_amount = player.bet
+                    processed_amounts[amount] = pot_size
 
-        self.side_pots = new_side_pots
-        return new_side_pots
+                current_amount = amount
+
+        # Combine existing and new pots
+        final_pots = []
+        if self.side_pots:
+            final_pots.extend(self.side_pots)
+        final_pots.extend(new_side_pots)
+
+        # Validate total chips haven't changed
+        total_chips_after = sum(p.chips for p in active_players) + sum(
+            pot.amount for pot in final_pots
+        )
+
+        if total_chips_before != total_chips_after:
+            raise InvalidGameStateError(
+                f"Chip total mismatch in side pot calculation: {total_chips_before} vs {total_chips_after}"
+            )
+
+        self.side_pots = final_pots
+        return final_pots
 
     def _default_reset_pot(self) -> None:
         """Default behavior for resetting the pot."""
