@@ -5,6 +5,7 @@ from data.states.game_state import GameState
 from data.states.round_state import RoundState
 from game.config import GameConfig
 from game.table import Table
+from loggers.game_logger import GameLogger
 
 from . import betting, draw, showdown
 from .deck import Deck
@@ -114,19 +115,16 @@ class AgenticPoker:
         self.last_raiser = None
         self.initial_chips = {}
 
-        # Log game configuration
-        logging.info(f"\n{'='*50}")
-        logging.info(f"Game Configuration")
-        logging.info(f"{'='*50}")
-        logging.info(f"Players: {', '.join([p.name for p in self.table])}")
-        logging.info(f"Starting chips: ${self.config.starting_chips}")
-        logging.info(f"Blinds: ${self.config.small_blind}/${self.config.big_blind}")
-        logging.info(f"Ante: ${self.config.ante}")
-        if self.config.max_rounds:
-            logging.info(f"Max rounds: {self.config.max_rounds}")
-        if self.config.session_id:
-            logging.info(f"Session ID: {self.config.session_id}")
-        logging.info(f"{'='*50}\n")
+        # Replace logging with GameLogger
+        GameLogger.log_game_config(
+            players=[p.name for p in self.table],
+            starting_chips=self.config.starting_chips,
+            small_blind=self.config.small_blind,
+            big_blind=self.config.big_blind,
+            ante=self.config.ante,
+            max_rounds=self.config.max_rounds,
+            session_id=self.config.session_id,
+        )
 
     def play_game(self) -> None:
         """
@@ -189,69 +187,32 @@ class AgenticPoker:
 
         self._log_game_summary(eliminated_players)
 
-    def _handle_pre_draw_phase(self) -> None:
-        """
-        Handle the pre-draw betting round.
-
-        This phase occurs before players can exchange cards and consists of a single betting round.
-
-        Returns:
-            bool: True if the round should continue (at least 2 players still active),
-                 False if the round should end (all but one player folded)
-        """
-        logging.info(f"====== Pre-draw betting ======\n")
+    def _handle_pre_draw_phase(self) -> bool:
+        GameLogger.log_phase_header("Pre-draw betting")
         should_continue = betting.handle_betting_round(self)
-        logging.info(f"====== Pre-draw betting Complete ======\n")
+        GameLogger.log_phase_complete("Pre-draw betting")
         return should_continue
 
-    def _handle_draw_phase(self) -> None:
-        """
-        Handle the draw phase where players can exchange cards.
-
-        During this phase, each active player gets one opportunity to discard and replace
-        up to all five cards in their hand.
-
-        Returns:
-            bool: True if the round should continue (at least 2 players still active),
-                 False if the round should end (all but one player folded)
-        """
-        logging.info(f"====== Draw Phase ======\n")
+    def _handle_draw_phase(self) -> bool:
+        GameLogger.log_phase_header("Draw Phase")
         should_continue = draw.handle_draw_phase(self)
-        logging.info(f"====== Draw Phase Complete ======\n")
+        GameLogger.log_phase_complete("Draw Phase")
         return should_continue
 
-    def _handle_post_draw_phase(self) -> None:
-        """
-        Handle the post-draw betting round.
-
-        This phase occurs after players have exchanged cards and consists of a final betting round.
-
-        Returns:
-            bool: True if the round should continue to showdown (at least 2 players still active),
-                 False if the round should end (all but one player folded)
-        """
-        logging.info(f"====== Post-draw betting ======\n")
+    def _handle_post_draw_phase(self) -> bool:
+        GameLogger.log_phase_header("Post-draw betting")
         should_continue = betting.handle_betting_round(self)
-        logging.info(f"====== Post-draw betting Complete ======\n")
+        GameLogger.log_phase_complete("Post-draw betting")
         return should_continue
 
     def _handle_showdown(self) -> None:
-        """
-        Handle the showdown phase where remaining players reveal their hands.
-
-        During this phase:
-        1. All remaining players show their hands
-        2. The best hand(s) are determined
-        3. The pot is distributed to the winner(s)
-        4. Results are logged
-        """
-        logging.info(f"====== Showdown ======\n")
+        GameLogger.log_phase_header("Showdown")
         showdown.handle_showdown(
             players=self.table.players,
             initial_chips=self.initial_chips,
             pot_manager=self.pot_manager,
         )
-        logging.info(f"====== Showdown Complete ======\n")
+        GameLogger.log_phase_complete("Showdown")
 
     def _start_new_round(self) -> None:
         """
@@ -331,129 +292,85 @@ class AgenticPoker:
         # Update pot through pot manager
         self.pot_manager.add_to_pot(collected)
 
-    def _log_chip_counts(
-        self,
-        chips_dict: Dict[Player, int],
-        message: str,
-        show_short_stack: bool = False,
-    ) -> None:
-        """
-        Log chip counts for all players.
-
-        Args:
-            chips_dict: Dictionary mapping players to their chip counts
-            message: Header message to display
-            show_short_stack: Whether to show short stack warnings
-        """
-        logging.info(f"\n{message}:")
-        sorted_players = sorted(self.table, key=lambda p: chips_dict[p], reverse=True)
-        for player in sorted_players:
-            chips_str = f"${chips_dict[player]}"
-            if show_short_stack and chips_dict[player] < self.big_blind:
-                chips_str += " (short stack)"
-            logging.info(f"  {player.name}: {chips_str}")
-
-    def _log_round_header(self) -> None:
-        """Log the round number with separator lines."""
-        logging.info(f"\n{'='*50}")
-        logging.info(f"Round {self.round_number}")
-        logging.info(f"{'='*50}")
-
     def _log_round_info(self) -> None:
-        """
-        Log complete round state including stacks, positions, and betting information.
-        """
+        """Log complete round state including stacks, positions, and betting information."""
         # Log round header
-        self._log_round_header()
+        GameLogger.log_round_header(self.round_number)
 
         # Log chip stacks
-        self._log_chip_counts(
-            self.round_starting_stacks,
+        GameLogger.log_chip_counts(
+            {p.name: self.round_starting_stacks[p] for p in self.table},
             "Starting stacks (before antes/blinds)",
             show_short_stack=True,
+            big_blind=self.big_blind,
         )
 
         # Log table positions
-        logging.info("\nTable positions:")
+        positions = {}
         players_count = len(self.table)
         for i in range(players_count):
             position_index = (self.dealer_index + i) % players_count
             player = self.table[position_index]
-            position = ""
-            if i == 0:
-                position = "Dealer"
-            elif i == 1:
-                position = "Small Blind"
-            elif i == 2:
-                position = "Big Blind"
-            else:
-                position = f"Position {i}"
-            logging.info(f"  {position}: {player.name}")
+            position = (
+                "Dealer"
+                if i == 0
+                else (
+                    "Small Blind"
+                    if i == 1
+                    else "Big Blind" if i == 2 else f"Position {i}"
+                )
+            )
+            positions[position] = player.name
+        GameLogger.log_table_positions(positions)
 
         # Log betting structure
-        logging.info("\nBetting structure:")
-        logging.info(f"  Small blind: ${self.small_blind}")
-        logging.info(f"  Big blind: ${self.big_blind}")
-        if self.ante > 0:
-            logging.info(f"  Ante: ${self.ante}")
-        logging.info(f"  Minimum bet: ${self.config.min_bet}")
+        GameLogger.log_betting_structure(
+            small_blind=self.small_blind,
+            big_blind=self.big_blind,
+            ante=self.ante,
+            min_bet=self.config.min_bet,
+        )
 
-        # Log side pots using pot manager's method
+        # Log side pots if they exist
         if self.pot_manager.side_pots:
             self.pot_manager.log_side_pots(logging)
 
     def _handle_player_eliminations(self, eliminated_players: List[Player]) -> bool:
-        """
-        Handle player eliminations and determine if the game should continue.
-
-        Args:
-            eliminated_players: List to track eliminated players for game history
-
-        Returns:
-            bool: True if game can continue, False if game should end
-
-        Side Effects:
-            - Updates players list
-            - Updates eliminated_players list
-            - Logs elimination messages
-        """
-        # Track newly eliminated players first
+        # Track newly eliminated players
         for player in self.table:
             if player.chips <= 0 and player not in eliminated_players:
                 eliminated_players.append(player)
-                logging.info(f"\n{player.name} is eliminated (out of chips)!")
-
-        # # Remove bankrupt players from active game
-        # self.table.players = [player for player in self.table.players if player.chips > 0]
+                GameLogger.log_player_elimination(player.name)
 
         # Check game end conditions
         if len(self.table) == 1:
-            logging.info(
-                f"\nGame Over! {self.table[0].name} wins with ${self.table[0].chips}!"
-            )
+            GameLogger.log_game_winner(self.table[0].name, self.table[0].chips)
             return False
         elif len(self.table) == 0:
-            logging.info("\nGame Over! All players are bankrupt!")
+            GameLogger.log_all_bankrupt()
             return False
 
         return True
 
     def _log_game_summary(self, eliminated_players: List[Player]) -> None:
-        """Log the final game summary and standings."""
-        logging.info("\n=== Game Summary ===")
-        logging.info(f"Total rounds played: {self.round_number}")
-        if self.max_rounds and self.round_number >= self.max_rounds:
-            logging.info("Game ended due to maximum rounds limit")
-
-        # Use a set to ensure unique players
+        # Create final standings data
         all_players = list({player for player in (self.table + eliminated_players)})
-        # Sort by chips (eliminated players will have 0)
         all_players.sort(key=lambda p: p.chips, reverse=True)
 
-        logging.info("\nFinal Standings:")
-        for i, player in enumerate(all_players, 1):
-            status = " (eliminated)" if player in eliminated_players else ""
-            logging.info(f"{i}. {player.name}: ${player.chips}{status}")
+        final_standings = [
+            {
+                "name": player.name,
+                "chips": player.chips,
+                "eliminated": player in eliminated_players,
+            }
+            for player in all_players
+        ]
+
+        GameLogger.log_game_summary(
+            rounds_played=self.round_number,
+            max_rounds=self.max_rounds,
+            final_standings=final_standings,
+        )
 
     def _initialize_round(self) -> None:
         """Initialize the state for a new round of poker."""
