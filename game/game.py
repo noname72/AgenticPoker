@@ -1,4 +1,3 @@
-import logging
 from typing import Dict, List, Optional
 
 from data.states.game_state import GameState
@@ -75,8 +74,6 @@ class AgenticPoker:
         config: Optional[GameConfig] = None,
     ) -> None:
         """Initialize a new poker game with specified players and configuration."""
-        # Initialize logger first
-        self.logger = logging.getLogger(__name__)  #! will remove
 
         if not players:
             raise ValueError("Must provide at least 2 players")
@@ -105,7 +102,6 @@ class AgenticPoker:
         self.current_bet = 0  # Add this line to initialize current_bet
         self.pot_manager = PotManager()  #! change attr name to pot
 
-        #! should these be managed somewhere else?
         self.small_blind = self.config.small_blind
         self.big_blind = self.config.big_blind
         self.dealer_index = 0
@@ -163,7 +159,7 @@ class AgenticPoker:
 
             # Check max rounds before starting new round
             if self.max_rounds and self.round_number > self.max_rounds:
-                logging.info(f"\nGame ended after {self.max_rounds} rounds!")
+                GameLogger.log_game_ended_after_rounds(self.max_rounds)
                 break
 
             # Handle eliminations and check if game should end
@@ -330,10 +326,6 @@ class AgenticPoker:
             min_bet=self.config.min_bet,
         )
 
-        # Log side pots if they exist
-        if self.pot_manager.side_pots:
-            self.pot_manager.log_side_pots(logging)
-
     def _handle_player_eliminations(self, eliminated_players: List[Player]) -> bool:
         # Track newly eliminated players
         for player in self.table:
@@ -387,15 +379,13 @@ class AgenticPoker:
         # Create and shuffle a fresh deck for the new round
         self.deck = Deck()
         self.deck.shuffle()
-        logging.info(f"New deck shuffled for round {self.round_number}")
+        GameLogger.log_new_deck_shuffled(self.round_number)
 
         # Deal initial hands
         self._deal_cards()
 
         # Log deck status after initial deal
-        logging.info(
-            f"Cards remaining after initial deal: {self.deck.remaining_cards()}"
-        )
+        GameLogger.log_deck_status(self.deck.remaining_cards(), "after initial deal")
 
         # Create new round state
         self.round_state = RoundState.new_round(self.round_number)

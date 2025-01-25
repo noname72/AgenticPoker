@@ -155,13 +155,13 @@ class Player:
         self.called = True
 
         if self.chips == 0:
+            self.is_all_in = True
             PlayerLogger.log_all_in(self.name, amount)
 
     def _check(self) -> None:
         """
         Mark the player as checked for the current hand.
         """
-        PlayerLogger.log_action_execution(self.name, "check")
         self.checked = True
 
     def _fold(self) -> None:
@@ -172,7 +172,6 @@ class Player:
             - Sets player's folded status to True
             - Logs the fold action
         """
-        PlayerLogger.log_action_execution(self.name, "fold")
         self.folded = True
 
     def reset_bet(self) -> None:

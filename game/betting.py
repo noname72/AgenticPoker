@@ -144,10 +144,10 @@ def _process_betting_cycle(game: "Game") -> None:
 
         complete, reason = game.table.is_round_complete()
 
-        BettingLogger.log_debug(
-            f"Previous Raiser: {previous_last_raiser}, Current Raiser: {game.table.last_raiser},"
-            f"Round Complete: {complete}, Reason: {reason}"
-        )
+        # BettingLogger.log_debug(
+        #     f"Previous Raiser: {previous_last_raiser}, Current Raiser: {game.table.last_raiser},"
+        #     f"Round Complete: {complete}, Reason: {reason}"
+        # )
 
         BettingLogger.log_line_break()
 
