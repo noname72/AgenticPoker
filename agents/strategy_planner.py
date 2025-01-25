@@ -24,6 +24,13 @@ class StrategyPlanner:
     including plan generation, validation, execution, and automatic renewal based on
     game conditions. It uses LLM-based decision making through an LLMClient for both
     strategy planning and action execution.
+
+    Attributes:
+        strategy_style (str): The playing style used for planning (e.g., 'aggressive', 'conservative')
+        plan_duration (float): Duration in seconds for which a plan remains valid
+        REPLAN_STACK_THRESHOLD (int): Stack size change that triggers a replan
+        current_plan (Optional[Plan]): The currently active strategic plan
+        last_metrics (Optional[dict]): Last recorded game metrics used for planning
     """
 
     def __init__(
@@ -32,13 +39,13 @@ class StrategyPlanner:
         plan_duration: float = DEFAULT_PLAN_DURATION,
         replan_threshold: int = REPLAN_STACK_THRESHOLD,
     ) -> None:
-        """Initialize the strategy planner.
+        """Initialize the strategy planner with configuration parameters.
 
         Args:
-            strategy_style: Playing style to use for planning
-            client: OpenAI client for LLM queries
-            plan_duration: How long plans remain valid (seconds)
-            replan_threshold: Stack change threshold that triggers replanning
+            strategy_style (str): Playing style to use for planning (e.g., 'aggressive', 'conservative')
+            plan_duration (float, optional): How long plans remain valid in seconds. Defaults to DEFAULT_PLAN_DURATION.
+            replan_threshold (int, optional): Stack change threshold that triggers replanning.
+                Defaults to REPLAN_STACK_THRESHOLD.
         """
         self.strategy_style = strategy_style
         self.plan_duration = plan_duration
@@ -52,7 +59,21 @@ class StrategyPlanner:
         game: "Game",
         hand_eval: Optional[HandEvaluation] = None,
     ) -> None:
-        """Generate or update the agent's strategic plan based on current game state."""
+        """Generate or update the agent's strategic plan based on current game state.
+
+        This method evaluates the current game situation and either generates a new plan
+        or maintains the existing one based on replanning criteria. It uses LLM-generated
+        responses to create sophisticated playing strategies.
+
+        Args:
+            player (Player): The player for whom to generate the strategy
+            game (Game): Current game state including all relevant poker information
+            hand_eval (Optional[HandEvaluation], optional): Pre-computed hand evaluation.
+                Defaults to None.
+
+        Raises:
+            Exception: If plan generation fails, falls back to default plan
+        """
         try:
             if self.current_plan and not self.requires_replanning(game, player):
                 StrategyLogger.log_plan_reuse(self.current_plan)
@@ -74,8 +95,16 @@ class StrategyPlanner:
     def _create_default_plan(self) -> Plan:
         """Create a default Plan object when errors occur or no plan is available.
 
+        Generates a balanced, conservative plan with standard thresholds as a fallback
+        mechanism when normal plan generation fails.
+
         Returns:
-            Plan: A balanced default plan with standard thresholds and settings
+            Plan: A balanced default plan with standard thresholds and settings:
+                - Balanced approach
+                - Medium bet sizing
+                - 0.5 bluff threshold
+                - 0.3 fold threshold
+                - Default duration expiry
         """
         return Plan(
             approach=Approach.BALANCED,
@@ -91,11 +120,22 @@ class StrategyPlanner:
     def _create_plan_from_response(self, plan_data: dict) -> Plan:
         """Create a Plan object from LLM response data with validation.
 
+        Converts the raw dictionary response from the LLM into a structured Plan object,
+        applying necessary validations and default values where needed.
+
         Args:
-            plan_data (dict): Parsed response data from LLM
+            plan_data (dict): Parsed response data from LLM containing:
+                - approach: Strategy approach (e.g., 'aggressive', 'balanced')
+                - reasoning: Explanation of the strategic choices
+                - bet_sizing: Betting size preference
+                - bluff_threshold: Threshold for bluffing decisions
+                - fold_threshold: Threshold for folding decisions
 
         Returns:
-            Plan: A new plan object with validated fields
+            Plan: A new validated plan object with all required fields populated
+
+        Note:
+            Default values are applied for any missing fields in the plan_data
         """
         return Plan(
             approach=Approach(plan_data.get("approach", "balanced")),
@@ -111,7 +151,19 @@ class StrategyPlanner:
     def requires_replanning(self, game: "Game", player: "Player") -> bool:
         """Determine if current game state requires a new strategic plan.
 
-        TODO: Better check for replanning conditions
+        Evaluates various game conditions to decide if a new plan should be generated,
+        including plan expiration and significant changes in game state.
+
+        Args:
+            game (Game): Current game state to evaluate
+            player (Player): Player whose plan needs evaluation
+
+        Returns:
+            bool: True if replanning is required, False otherwise
+
+        Note:
+            Currently checks for plan existence and expiration.
+            TODO: Implement additional checks for stack size changes and opponent behavior
         """
         # Always replan if no current plan exists
         if not self.current_plan:
