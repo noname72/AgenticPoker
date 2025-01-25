@@ -16,8 +16,8 @@ class TestPlayer:
         """Create a basic mock game for testing bets"""
         mock = Mock()
         mock.current_bet = 0
-        mock.pot_manager = Mock()
-        mock.pot_manager.pot = 0
+        mock.pot = Mock()
+        mock.pot.pot = 0
         return mock
 
     def test_player_initialization(self, player):
@@ -36,7 +36,7 @@ class TestPlayer:
         assert actual_bet == bet_amount
         assert player.chips == 500  # Started with 1000
         assert player.bet == 500
-        assert mock_game.pot_manager.pot == 500
+        assert mock_game.pot.pot == 500
 
     def test_place_bet_more_than_chips(self, player, mock_game):
         """Test placing a bet larger than available chips"""
@@ -46,7 +46,7 @@ class TestPlayer:
         assert actual_bet == 1000  # Should only bet what's available
         assert player.chips == 0
         assert player.bet == 1000
-        assert mock_game.pot_manager.pot == 1000
+        assert mock_game.pot.pot == 1000
 
     def test_place_negative_bet(self, player, mock_game):
         """Test that placing a negative bet raises ValueError"""
@@ -94,7 +94,7 @@ class TestPlayer:
 
         assert player.chips == 500
         assert player.bet == 500
-        assert mock_game.pot_manager.pot == 500
+        assert mock_game.pot.pot == 500
 
     def test_bet_all_chips(self, player, mock_game):
         """Test betting all available chips"""
@@ -103,7 +103,7 @@ class TestPlayer:
         assert actual_bet == 1000
         assert player.chips == 0
         assert player.bet == 1000
-        assert mock_game.pot_manager.pot == 1000
+        assert mock_game.pot.pot == 1000
 
     def test_zero_bet(self, player, mock_game):
         """Test placing a zero bet"""
@@ -112,7 +112,7 @@ class TestPlayer:
         assert actual_bet == 0
         assert player.chips == 1000
         assert player.bet == 0
-        assert mock_game.pot_manager.pot == 0
+        assert mock_game.pot.pot == 0
 
     def test_initialize_with_zero_chips(self, mock_game):
         """Test creating a player with zero initial chips"""
@@ -123,7 +123,7 @@ class TestPlayer:
         actual_bet = player.place_bet(100, mock_game)
         assert actual_bet == 0
         assert player.bet == 0
-        assert mock_game.pot_manager.pot == 0
+        assert mock_game.pot.pot == 0
 
     def test_initialize_with_negative_chips(self):
         """Test that initializing with negative chips raises ValueError"""
@@ -146,7 +146,7 @@ class TestPlayer:
         assert actual_bet == 500
         assert player.chips == 500
         assert player.bet == 500
-        assert mock_game.pot_manager.pot == 500
+        assert mock_game.pot.pot == 500
 
     def test_decimal_chip_amount(self):
         """Test that initializing with decimal chip amount raises ValueError"""

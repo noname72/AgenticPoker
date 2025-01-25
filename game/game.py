@@ -10,7 +10,7 @@ from . import betting, draw, showdown
 from .deck import Deck
 from .hand import Hand
 from .player import Player
-from .pot_manager import PotManager
+from .pot import Pot
 
 
 class AgenticPoker:
@@ -41,7 +41,7 @@ class AgenticPoker:
         round_starting_stacks (Dict[Player, int]): Dictionary of starting chip counts for each round
         config (GameConfig): Configuration parameters for the game
         current_bet (int): Current bet amount that players must match
-        pot_manager (PotManager): Manages pot calculations and side pot creation
+        pot (Pot): Manages pot calculations and side pot creation
         logger (Logger): Logger instance for game events and state changes
 
     Example:
@@ -62,6 +62,7 @@ class AgenticPoker:
     round_starting_stacks: Dict[Player, int]
     config: GameConfig
     current_bet: int
+    pot: Pot
     last_raiser: Optional[Player]
 
     def __init__(
@@ -100,7 +101,7 @@ class AgenticPoker:
 
         #! make into betting class
         self.current_bet = 0  # Add this line to initialize current_bet
-        self.pot_manager = PotManager()  #! change attr name to pot
+        self.pot = Pot()  #! change attr name to pot
 
         self.small_blind = self.config.small_blind
         self.big_blind = self.config.big_blind
@@ -205,7 +206,7 @@ class AgenticPoker:
         showdown.handle_showdown(
             players=self.table.players,
             initial_chips=self.initial_chips,
-            pot_manager=self.pot_manager,
+            pot=self.pot,
         )
         GameLogger.log_phase_complete("Showdown")
 
@@ -262,7 +263,7 @@ class AgenticPoker:
             - Updates self.round_starting_stacks with initial chip counts
             - Updates players' chip counts as they post blinds/antes
             - Sets self.current_bet to the big blind amount
-            - Updates self.pot_manager with collected chips
+            - Updates self.pot with collected chips
 
         Note:
             - Small blind is posted by player to left of dealer
@@ -285,7 +286,7 @@ class AgenticPoker:
         self.current_bet = self.big_blind
 
         # Update pot through pot manager
-        self.pot_manager.add_to_pot(collected)
+        self.pot.add_to_pot(collected)
 
     def _log_round_info(self) -> None:
         """Log complete round state including stacks, positions, and betting information."""
@@ -366,7 +367,7 @@ class AgenticPoker:
     def _initialize_round(self) -> None:
         """Initialize the state for a new round of poker."""
         # Reset round state
-        self.pot_manager.reset_pot()
+        self.pot.reset_pot()
 
         # Store initial chips BEFORE any deductions
         self.round_starting_stacks = {p: p.chips for p in self.table}
@@ -399,8 +400,8 @@ class AgenticPoker:
             if hasattr(player, "hand"):
                 player.hand = None
 
-        # Reset pot in pot_manager
-        self.pot_manager.reset_pot()
+        # Reset pot in pot
+        self.pot.reset_pot()
 
         # Rotate dealer position for next round
         self.dealer_index = (self.dealer_index + 1) % len(self.table)

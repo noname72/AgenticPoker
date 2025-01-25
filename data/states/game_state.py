@@ -215,13 +215,13 @@ class GameState(BaseModel):
         )
 
         # Update round state with current pot info
-        game.round_state.main_pot = game.pot_manager.pot
+        game.round_state.main_pot = game.pot.pot
         game.round_state.side_pots = [
             {
                 "amount": pot.amount,
                 "eligible_players": [p.name for p in pot.eligible_players],
             }
-            for pot in (game.pot_manager.side_pots or [])
+            for pot in (game.pot.side_pots or [])
         ]
 
         return cls(
@@ -239,7 +239,7 @@ class GameState(BaseModel):
                 else None
             ),
             round_state=game.round_state,
-            pot_state=game.pot_manager.get_state(),
+            pot_state=game.pot.get_state(),
             deck_state=game.deck.get_state(),
         )
 

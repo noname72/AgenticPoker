@@ -6,7 +6,7 @@ from game.player import Player
 from loggers.pot_logger import PotLogger
 
 
-class PotManager:
+class Pot:
     """
     Manages poker game pot and side pot calculations.
 
@@ -14,7 +14,7 @@ class PotManager:
     calculating side pots when players go all-in, and providing formatted views
     of the pot state for logging and display.
 
-    The PotManager maintains consistency of all chip movements and ensures that:
+    The Pot maintains consistency of all chip movements and ensures that:
     - Total chips in play remain constant
     - Side pots are correctly calculated for all-in situations
     - Pot state can be validated at any time
@@ -27,19 +27,19 @@ class PotManager:
             Empty list indicates calculation returned no side pots.
 
     Usage:
-        pot_manager = PotManager()
+        pot = Pot()
 
         # Add chips to main pot
-        pot_manager.add_to_pot(100)
+        pot.add_to_pot(100)
 
         # Calculate side pots when players go all-in
-        side_pots = pot_manager.calculate_side_pots(active_players)
+        side_pots = pot.calculate_side_pots(active_players)
 
         # Get formatted view of side pots
-        pot_view = pot_manager.get_side_pots_view()
+        pot_view = pot.get_side_pots_view()
 
         # Reset at end of hand
-        pot_manager.reset_pot()
+        pot.reset_pot()
 
     Note:
         - Side pots are only created when players go all-in for different amounts
@@ -49,7 +49,7 @@ class PotManager:
     """
 
     def __init__(self) -> None:
-        """Initialize a new pot manager with empty pot and no side pots."""
+        """Initialize a new pot instance with empty pot and no side pots."""
         self.pot: int = 0
         self.side_pots: Optional[List[SidePot]] = None
 

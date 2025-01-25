@@ -145,8 +145,8 @@ class MockPlayer(Player):
         self.chips -= amount
         self.bet += amount
 
-        # Add the bet to the pot if game has pot_manager
-        if hasattr(game, "pot_manager"):
-            game.pot_manager.pot += amount
+        # Add the bet to the pot if game has pot
+        if hasattr(game, "pot"):
+            game.pot.pot += amount
 
         return amount

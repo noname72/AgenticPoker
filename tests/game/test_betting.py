@@ -88,7 +88,7 @@ def test_handle_betting_round_no_players(mock_game):
 def test_handle_betting_round_invalid_pot(mock_game, mock_player):
     """Tests that handle_betting_round raises ValueError with negative pot."""
     mock_game.table = Table([mock_player])
-    mock_game.pot_manager.pot = -100
+    mock_game.pot.pot = -100
     with pytest.raises(ValueError):
         handle_betting_round(mock_game)
 
@@ -103,7 +103,7 @@ def test_handle_betting_round_continues_multiple_active(mock_game, player_factor
 
     # Set up game state with Table
     mock_game.table = Table(active_players)
-    mock_game.pot_manager.pot = 0
+    mock_game.pot.pot = 0
 
     # Run betting round
     should_continue = handle_betting_round(mock_game)
@@ -119,7 +119,7 @@ def test_handle_betting_round_ends_one_active(mock_game, player_factory):
 
     # Set up game state with Table
     mock_game.table = Table([active_player, folded_player])
-    mock_game.pot_manager.pot = 0
+    mock_game.pot.pot = 0
 
     # Run betting round
     should_continue = handle_betting_round(mock_game)
@@ -234,11 +234,11 @@ def test_betting_round_all_fold(mock_game, player_factory):
 def test_handle_betting_round_pot_initialization(mock_game, mock_player):
     """Tests pot initialization in handle_betting_round."""
     mock_game.table = Table([mock_player])
-    mock_game.pot_manager.pot = None
+    mock_game.pot.pot = None
 
     handle_betting_round(mock_game)
 
-    assert mock_game.pot_manager.pot == 0
+    assert mock_game.pot.pot == 0
 
 
 def test_collect_blinds_and_antes_all_in_on_blinds(mock_game, player_factory):
