@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 
 from data.model import Game
 from data.types.action_decision import ActionDecision, ActionType
+from data.types.discard_decision import DiscardDecision
 from game.evaluator import HandEvaluation
 from game.player import Player
 
@@ -71,6 +72,22 @@ class RandomAgent(Player):
         except Exception as e:
             logger.error(f"Random decision error: {str(e)}")
             return ActionDecision(action_type=ActionType.FOLD)  # Safe default action
+
+    def decide_discard(self) -> DiscardDecision:
+        """Randomly decide which cards to discard.
+
+        Returns:
+            DiscardDecision: Contains list of card indices (0-4) to discard
+        """
+        # Randomly discard 0-3 cards
+        num_to_discard = random.randint(0, 3)
+        if num_to_discard == 0:
+            return DiscardDecision(discard=[])
+
+        # Get random positions to discard
+        positions = list(range(5))  # 5 card positions
+        discard_indices = sorted(random.sample(positions, num_to_discard))
+        return DiscardDecision(discard=discard_indices)
 
     def get_message(self, game_state: str) -> str:
         """Return empty string as random agent doesn't communicate."""

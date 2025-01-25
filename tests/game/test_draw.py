@@ -27,7 +27,15 @@ def setup_mock_hands(mock_game):
 
 
 def test_handle_draw_phase_no_discards(setup_mock_hands, caplog):
-    """Test draw phase when no players discard cards."""
+    """Test draw phase when no players discard cards.
+
+    Tests that players without a decide_discard method keep their original hands.
+
+    Assumptions:
+    - Players without decide_discard method should keep their current hand
+    - Each player should get appropriate log messages about being non-AI and keeping hand
+    - Messages should appear in correct order for each player
+    """
     caplog.set_level(logging.INFO)
 
     # Remove decide_discard method from all players
@@ -72,7 +80,16 @@ def test_handle_draw_phase_no_discards(setup_mock_hands, caplog):
 
 
 def test_handle_draw_phase_with_discards(setup_mock_hands, caplog):
-    """Test draw phase when a player discards cards."""
+    """Test draw phase when a player discards cards.
+
+    Tests that a player can successfully discard and draw new cards while other players'
+    hands remain unchanged.
+
+    Assumptions:
+    - First player has decide_discard method and discards one card
+    - Deck has enough cards for the discard
+    - Other players should keep their original hands unchanged
+    """
     caplog.set_level(logging.INFO)
 
     # Set up specific cards in deck for testing
@@ -97,7 +114,17 @@ def test_handle_draw_phase_with_discards(setup_mock_hands, caplog):
 
 
 def test_handle_draw_phase_reshuffle(setup_mock_hands, caplog):
-    """Test draw phase when deck needs reshuffling."""
+    """Test draw phase when deck needs reshuffling.
+
+    Tests the behavior when there aren't enough cards in the deck to fulfill
+    a player's discard request.
+
+    Assumptions:
+    - Deck starts with only one card
+    - First player discards 3 cards
+    - Deck needs reshuffle and can provide new cards after reshuffling
+    - After reshuffling, player should have mix of original and new cards
+    """
     caplog.set_level(logging.INFO)
 
     # Empty the deck except for one card
@@ -150,7 +177,15 @@ def test_handle_draw_phase_reshuffle(setup_mock_hands, caplog):
 
 
 def test_handle_draw_phase_folded_players(setup_mock_hands):
-    """Test draw phase skips folded players."""
+    """Test draw phase skips folded players.
+
+    Tests that folded players are skipped during draw phase and their
+    decide_discard method is never called.
+
+    Assumptions:
+    - Second player is folded
+    - Folded player has decide_discard method that should never be called
+    """
     # Make second player folded
     setup_mock_hands.players[1].folded = True
     setup_mock_hands.players[1].decide_discard = MagicMock()  # Should never be called
@@ -161,7 +196,16 @@ def test_handle_draw_phase_folded_players(setup_mock_hands):
 
 
 def test_handle_draw_phase_no_discard_decision(setup_mock_hands, caplog):
-    """Test draw phase when player decides not to discard."""
+    """Test draw phase when player decides not to discard.
+
+    Tests that a player can explicitly choose to keep their hand by returning
+    an empty discard list.
+
+    Assumptions:
+    - First player has decide_discard method returning empty list
+    - Player's hand should remain unchanged
+    - Appropriate log message should be generated
+    """
     caplog.set_level(logging.INFO)
 
     # Add decide_draw method that returns empty list
@@ -177,7 +221,18 @@ def test_handle_draw_phase_no_discard_decision(setup_mock_hands, caplog):
 
 
 def test_handle_draw_phase_multiple_discards(setup_mock_hands, caplog):
-    """Test draw phase with multiple players discarding."""
+    """Test draw phase with multiple players discarding.
+
+    Tests that multiple players can discard and draw cards in the same phase
+    while maintaining correct hand composition.
+
+    Assumptions:
+    - Deck has enough cards to avoid reshuffle
+    - First player discards 1 card
+    - Second player discards 2 cards
+    - Non-discarded cards should remain in original positions
+    - New cards should be drawn from spades deck
+    """
     caplog.set_level(logging.DEBUG)
 
     # Create enough cards to avoid reshuffle
@@ -258,7 +313,16 @@ def test_handle_draw_phase_multiple_discards(setup_mock_hands, caplog):
 
 
 def test_handle_draw_phase_negative_index(setup_mock_hands, caplog):
-    """Test draw phase when player provides negative discard indexes."""
+    """Test draw phase when player provides negative discard indexes.
+
+    Tests error handling when a player attempts to discard cards using
+    negative indexes.
+
+    Assumptions:
+    - First player attempts to discard card at index -1
+    - Hand should remain unchanged
+    - Error should be logged
+    """
     caplog.set_level(logging.INFO)
 
     # Add decide_draw method that returns negative index
@@ -276,7 +340,14 @@ def test_handle_draw_phase_negative_index(setup_mock_hands, caplog):
 
 
 def test_draw_phase_logging_not_duplicated(setup_mock_hands, caplog):
-    """Test that draw phase logging isn't duplicated."""
+    """Test that draw phase logging isn't duplicated.
+
+    Tests that log messages for discard actions are only printed once per player.
+
+    Assumptions:
+    - First player discards 2 cards
+    - Discard action should only be logged once
+    """
     caplog.set_level(logging.INFO)
 
     # Set up a player with discards
@@ -298,7 +369,15 @@ def test_draw_phase_logging_not_duplicated(setup_mock_hands, caplog):
 
 
 def test_handle_draw_phase_exception(setup_mock_hands, caplog):
-    """Test draw phase when decide_discard raises an exception."""
+    """Test draw phase when decide_discard raises an exception.
+
+    Tests error handling when a player's decide_discard method raises an exception.
+
+    Assumptions:
+    - First player's decide_discard raises a test exception
+    - Hand should remain unchanged
+    - Error should be logged
+    """
     caplog.set_level(logging.ERROR)
 
     # Configure player to raise exception during decide_discard
@@ -315,7 +394,16 @@ def test_handle_draw_phase_exception(setup_mock_hands, caplog):
 
 
 def test_handle_draw_phase_too_many_discards(setup_mock_hands, caplog):
-    """Test draw phase when player tries to discard too many cards."""
+    """Test draw phase when player tries to discard too many cards.
+
+    Tests handling of invalid discard requests that exceed the maximum allowed.
+
+    Assumptions:
+    - Player attempts to discard 6 cards (more than hand size)
+    - Only first 5 cards should be discarded
+    - Warning should be logged
+    - New cards should be drawn for valid discards
+    """
     caplog.set_level(logging.WARNING)
 
     # Configure initial hand with known cards
@@ -349,7 +437,16 @@ def test_handle_draw_phase_too_many_discards(setup_mock_hands, caplog):
 
 
 def test_handle_draw_phase_exact_cards_needed(setup_mock_hands, caplog):
-    """Test draw phase when deck has exactly the needed number of cards."""
+    """Test draw phase when deck has exactly the needed number of cards.
+
+    Tests that reshuffle is skipped when deck has exactly enough cards.
+
+    Assumptions:
+    - Deck has exactly 2 cards
+    - Player discards 2 cards
+    - Reshuffle should be skipped
+    - Appropriate message should be logged
+    """
     caplog.set_level(logging.INFO)
 
     # Set up deck with exactly enough cards
@@ -371,7 +468,15 @@ def test_handle_draw_phase_exact_cards_needed(setup_mock_hands, caplog):
 
 
 def test_handle_draw_phase_none_decision(setup_mock_hands, caplog):
-    """Test draw phase when decide_discard returns None."""
+    """Test draw phase when decide_discard returns None.
+
+    Tests handling of None return value from decide_discard method.
+
+    Assumptions:
+    - First player's decide_discard returns None
+    - Hand should remain unchanged
+    - Appropriate message should be logged
+    """
     caplog.set_level(logging.INFO)
 
     # Configure player to return None from decide_discard
