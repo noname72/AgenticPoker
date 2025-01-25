@@ -63,24 +63,46 @@ class TestAgent:
         mock_hand_eval.description = "Flush"
         mock_hand_eval.tiebreakers = [14, 13, 12, 11, 10]
 
-        # Test call decision
-        mock_llm_client.query.return_value = "DECISION: call"
-        response = basic_agent._basic_decision(mock_game, mock_hand_eval)
-        assert isinstance(response, ActionDecision)
-        assert response.action_type == ActionType.CALL
-        assert response.raise_amount is None
+        # Mock the bet validation functions
+        with patch("agents.agent.get_min_bet") as mock_min_bet, patch(
+            "agents.agent.validate_bet_amount"
+        ) as mock_validate_bet:
 
-        # Test raise decision
-        mock_llm_client.query.return_value = "DECISION: raise 100"
-        response = basic_agent._basic_decision(mock_game, mock_hand_eval)
-        assert response.action_type == ActionType.RAISE
-        assert response.raise_amount == 100
+            mock_min_bet.return_value = 20
+            mock_validate_bet.side_effect = (
+                lambda x, y: x
+            )  # Return the input amount unchanged
 
-        # Test fold decision
-        mock_llm_client.query.return_value = "DECISION: fold"
-        response = basic_agent._basic_decision(mock_game, mock_hand_eval)
-        assert response.action_type == ActionType.FOLD
-        assert response.raise_amount is None
+            # Test call decision
+            with patch(
+                "agents.llm_response_generator.LLMResponseGenerator.generate_action"
+            ) as mock_generate:
+                mock_generate.return_value = ActionDecision(action_type=ActionType.CALL)
+                response = basic_agent._decide_action(mock_game, mock_hand_eval)
+                assert isinstance(response, ActionDecision)
+                assert response.action_type == ActionType.CALL
+                assert response.raise_amount is None
+
+            # Test raise decision
+            with patch(
+                "agents.llm_response_generator.LLMResponseGenerator.generate_action"
+            ) as mock_generate:
+                mock_generate.return_value = ActionDecision(
+                    action_type=ActionType.RAISE, raise_amount=100
+                )
+                response = basic_agent._decide_action(mock_game, mock_hand_eval)
+                assert response.action_type == ActionType.RAISE
+                assert response.raise_amount == 100
+                mock_validate_bet.assert_called_once_with(100, 20)
+
+            # Test fold decision
+            with patch(
+                "agents.llm_response_generator.LLMResponseGenerator.generate_action"
+            ) as mock_generate:
+                mock_generate.return_value = ActionDecision(action_type=ActionType.FOLD)
+                response = basic_agent._decide_action(mock_game, mock_hand_eval)
+                assert response.action_type == ActionType.FOLD
+                assert response.raise_amount is None
 
     # @patch("game.player.Player.perceive")
     # def test_perceive(self, mock_perceive, basic_agent):
@@ -145,14 +167,38 @@ class TestAgent:
         mock_hand_eval.description = "Flush"
         mock_hand_eval.tiebreakers = [14, 13, 12, 11, 10]
 
-        # Test invalid LLM response
-        mock_llm_client.query.return_value = "INVALID RESPONSE"
-        response = basic_agent._basic_decision(mock_game, mock_hand_eval)
-        assert response.action_type == ActionType.FOLD
-        assert response.raise_amount is None
+        # Mock the bet validation functions
+        with patch("agents.agent.get_min_bet") as mock_min_bet, patch(
+            "agents.agent.validate_bet_amount"
+        ) as mock_validate_bet:
 
-        # Test LLM error
-        mock_llm_client.query.side_effect = Exception("LLM Error")
-        response = basic_agent._basic_decision(mock_game, mock_hand_eval)
-        assert response.action_type == ActionType.FOLD
-        assert response.raise_amount is None
+            mock_min_bet.return_value = 20
+            mock_validate_bet.side_effect = lambda x, y: x
+
+            # Test LLM response generator error
+            with patch(
+                "agents.llm_response_generator.LLMResponseGenerator.generate_action"
+            ) as mock_generate:
+                mock_generate.side_effect = Exception("LLM Error")
+                response = basic_agent._decide_action(mock_game, mock_hand_eval)
+                assert (
+                    response.action_type == ActionType.CALL
+                )  # Default to CALL on error
+                assert response.raise_amount is None
+                assert "Failed to decide action" in response.reasoning
+
+            # Test raise validation error
+            with patch(
+                "agents.llm_response_generator.LLMResponseGenerator.generate_action"
+            ) as mock_generate:
+                # Mock validate_bet_amount to raise an exception
+                mock_validate_bet.side_effect = ValueError("Invalid bet amount")
+                mock_generate.return_value = ActionDecision(
+                    action_type=ActionType.RAISE,
+                    raise_amount=100,  # Valid amount that will fail validation
+                )
+                response = basic_agent._decide_action(mock_game, mock_hand_eval)
+                assert (
+                    response.action_type == ActionType.CALL
+                )  # Default to CALL on invalid raise
+                assert response.raise_amount is None

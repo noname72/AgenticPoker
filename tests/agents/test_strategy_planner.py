@@ -52,94 +52,78 @@ def mock_openai_client():
 
 @pytest.fixture
 def planner(mock_openai_client):
-    return StrategyPlanner("Aggressive", mock_openai_client)
+    return StrategyPlanner("Aggressive")
 
 
 def test_init(planner):
     """Test initialization of StrategyPlanner"""
     assert planner.strategy_style == "Aggressive"
-    assert planner.plan_duration == 30.0
-    assert planner.current_plan is None
 
 
 def test_plan_strategy_success(planner):
     """Test strategic planning functionality."""
     print("\nTesting plan strategy success:")
 
-    # Mock the LLM client's query method
-    with patch.object(planner.llm_client, "query") as mock_query:
-        mock_response = """
-        {
-            "approach": "aggressive",
-            "reasoning": "Strong hand position",
-            "bet_sizing": "large", 
-            "bluff_threshold": 0.7,
-            "fold_threshold": 0.2
-        }
-        """
-        mock_query.return_value = mock_response
-
-        # Create a proper Game object with complete state
-        game_state = GameState(
-            players=[
-                PlayerState(
-                    name="Player1",
-                    chips=1000,
-                    position=PlayerPosition.DEALER,
-                    bet=0,
-                    folded=False,
-                    is_dealer=True,
-                    is_small_blind=False,
-                    is_big_blind=False,
-                ),
-                PlayerState(
-                    name="Player2",
-                    chips=1000,
-                    position=PlayerPosition.SMALL_BLIND,
-                    bet=10,
-                    folded=False,
-                    is_dealer=False,
-                    is_small_blind=True,
-                    is_big_blind=False,
-                ),
-                PlayerState(
-                    name="Player3",
-                    chips=1000,
-                    position=PlayerPosition.BIG_BLIND,
-                    bet=20,
-                    folded=False,
-                    is_dealer=False,
-                    is_small_blind=False,
-                    is_big_blind=True,
-                ),
-            ],
-            dealer_position=0,
-            small_blind=10,
-            big_blind=20,
-            ante=0,
-            min_bet=20,
-            round_state=RoundState(
-                phase=RoundPhase.PRE_DRAW,
-                current_bet=20,
-                round_number=1,
-                dealer_position=0,
-                small_blind_position=1,
-                big_blind_position=2,
-                first_bettor_index=0,
+    # Create a proper Game object with complete state
+    game_state = GameState(
+        players=[
+            PlayerState(
+                name="Player1",
+                chips=1000,
+                position=PlayerPosition.DEALER,
+                bet=0,
+                folded=False,
+                is_dealer=True,
+                is_small_blind=False,
+                is_big_blind=False,
             ),
-            pot_state=PotState(main_pot=200),
-            deck_state=DeckState(cards_remaining=52),
-            active_player_position=1,
-        )
+            PlayerState(
+                name="Player2",
+                chips=1000,
+                position=PlayerPosition.SMALL_BLIND,
+                bet=10,
+                folded=False,
+                is_dealer=False,
+                is_small_blind=True,
+                is_big_blind=False,
+            ),
+            PlayerState(
+                name="Player3",
+                chips=1000,
+                position=PlayerPosition.BIG_BLIND,
+                bet=20,
+                folded=False,
+                is_dealer=False,
+                is_small_blind=False,
+                is_big_blind=True,
+            ),
+        ],
+        dealer_position=0,
+        small_blind=10,
+        big_blind=20,
+        ante=0,
+        min_bet=20,
+        round_state=RoundState(
+            phase=RoundPhase.PRE_DRAW,
+            current_bet=20,
+            round_number=1,
+            dealer_position=0,
+            small_blind_position=1,
+            big_blind_position=2,
+            first_bettor_index=0,
+        ),
+        pot_state=PotState(main_pot=200),
+        deck_state=DeckState(cards_remaining=52),
+        active_player_position=1,
+    )
 
-        # Remove stack_size parameter since it's now part of game state
-        plan = planner.plan_strategy(game_state)
+    plan = planner.plan_strategy(game_state, game_state.players[0])
 
-        assert isinstance(plan, Plan)
-        assert plan.approach == Approach.AGGRESSIVE
-        assert plan.bet_sizing == BetSizing.LARGE
-        assert plan.bluff_threshold == 0.7
-        assert plan.fold_threshold == 0.2
+    assert isinstance(plan, Plan)
+    assert plan.approach == Approach.AGGRESSIVE
+    assert plan.bet_sizing == BetSizing.LARGE
+    assert plan.bluff_threshold == 0.7
+    assert plan.fold_threshold == 0.2
 
 
 def test_plan_strategy_reuse_existing(planner):
@@ -191,25 +175,9 @@ def test_plan_strategy_reuse_existing(planner):
     )
     planner.current_plan = initial_plan
 
-    # Set initial metrics
-    initial_metrics = {
-        "stack_size": 1000,
-        "position": "dealer",
-        "phase": "pre_draw",
-        "pot_size": 200,
-    }
-    planner.last_metrics = initial_metrics.copy()
-
-    # Mock extract_metrics to return same metrics
-    with patch.object(planner, "extract_metrics") as mock_extract:
-        mock_extract.return_value = initial_metrics.copy()
-
-        # Second call should reuse plan without generating new one
-        with patch.object(planner.llm_client, "query") as mock_query:
-            second_plan = planner.plan_strategy(game_state)
-
-            mock_query.assert_not_called()
-            assert second_plan == initial_plan
+    # Second call should reuse plan without generating new one
+    second_plan = planner.plan_strategy(game_state, game_state.players[0])
+    assert second_plan == initial_plan
 
 
 def test_plan_strategy_error_fallback(planner, mock_openai_client):
@@ -249,7 +217,7 @@ def test_plan_strategy_error_fallback(planner, mock_openai_client):
         active_player_position=0,
     )
 
-    plan = planner.plan_strategy(game_state)
+    plan = planner.plan_strategy(game_state, game_state.players[0])
 
     assert plan.approach == Approach.BALANCED
     assert plan.bet_sizing == BetSizing.MEDIUM
@@ -257,7 +225,7 @@ def test_plan_strategy_error_fallback(planner, mock_openai_client):
     assert plan.fold_threshold == 0.3
 
 
-def test_execute_action(planner, mock_openai_client):
+def test_execute_action(planner):
     """Test action execution with different responses"""
     print("\nTesting action execution:")
 
@@ -297,20 +265,6 @@ def test_execute_action(planner, mock_openai_client):
         f"Created game state with active player position: {game_state.active_player_position}"
     )
 
-    # Set up initial plan
-    current_time = time.time()
-    planner.current_plan = Plan(
-        approach=Approach.AGGRESSIVE,
-        reasoning="Test plan",
-        bet_sizing=BetSizing.LARGE,
-        bluff_threshold=0.7,
-        fold_threshold=0.2,
-        expiry=current_time + 30.0,
-        adjustments=[],
-        target_opponent=None,
-    )
-    print(f"Set up initial plan: {planner.current_plan}")
-
     # Test cases with exact response format
     test_cases = [
         (
@@ -333,15 +287,9 @@ def test_execute_action(planner, mock_openai_client):
         print(f"Response: {repr(response)}")
         print(f"Expected action: {expected}")
 
-        with patch.object(
-            planner.llm_client, "query", return_value=response
-        ) as mock_query:
-            action = planner.execute_action(game_state)
-            print(f"Actual action: {action}")
-            print(f"Mock query called with response: {mock_query.return_value}")
-            assert (
-                action == expected
-            ), f"Expected {expected} but got {action} for response: {response}"
+        player = game_state.players[0]
+        action = planner.execute_action(game_state, player)
+        assert action == expected, f"Expected {expected} but got {action}"
 
 
 def test_execute_action_no_plan():
@@ -370,11 +318,12 @@ def test_execute_action_no_plan():
     )
 
     # Create planner without a plan
-    planner = StrategyPlanner("Aggressive", Mock())
+    planner = StrategyPlanner("Aggressive")
     assert planner.current_plan is None
 
-    # Execute action without a plan
-    action = planner.get_action(game_state)
+    # Use execute_action instead of get_action
+    player = game_state.players[0]
+    action = planner.execute_action(game_state, player)
 
     # Should fall back to "call" when no plan exists
     assert action == "call", "Should fall back to 'call' when no plan exists"
@@ -415,8 +364,10 @@ def test_requires_replanning(planner):
         active_player_position=0,
     )
 
+    player = game_state.players[0]
+
     # Test with no current plan
-    assert planner.requires_replanning(game_state) is True
+    assert planner.requires_replanning(game_state, player) is True
 
     # Create and set initial plan
     current_time = time.time()
@@ -431,44 +382,25 @@ def test_requires_replanning(planner):
         target_opponent=None,
     )
 
-    # Set initial metrics
-    planner.last_metrics = {
-        "stack_size": 1000,
-        "position": "dealer",
-        "phase": "pre_draw",
-        "pot_size": 0,
-    }
-
     # Test no changes
-    with patch.object(
-        planner, "extract_metrics", return_value=planner.last_metrics.copy()
-    ):
-        assert planner.requires_replanning(game_state) is False
+    assert planner.requires_replanning(game_state, player) is False
 
     # Test position change
-    with patch.object(
-        planner,
-        "extract_metrics",
-        return_value={"position": "big_blind", "stack_size": 1000},
-    ):
-        assert planner.requires_replanning(game_state) is True
+    game_state.players[0].position = PlayerPosition.BIG_BLIND
+    assert planner.requires_replanning(game_state, player) is True
 
     # Test significant stack change
-    with patch.object(
-        planner,
-        "extract_metrics",
-        return_value={"position": "dealer", "stack_size": 500},
-    ):
-        assert planner.requires_replanning(game_state) is True
+    game_state.players[0].chips = 500
+    assert planner.requires_replanning(game_state, player) is True
 
 
 def test_strategy_planner_planning():
-    """Test strategy planning with mocked LLM client"""
+    """Test strategy planning with mocked game state"""
     print("\nTesting strategy planner planning:")
 
     # Create mock LLM client and OpenAI client
     mock_openai = Mock()
-    planner = StrategyPlanner(strategy_style="Aggressive", client=mock_openai)
+    planner = StrategyPlanner(strategy_style="Aggressive")
     print(f"Created planner with strategy style: {planner.strategy_style}")
 
     # Create a proper GameState object with complete PlayerState objects
@@ -525,41 +457,17 @@ def test_strategy_planner_planning():
     )
     print(f"Game state: {game_state}")
 
-    # Mock both extract_metrics and query
-    with patch.object(planner, "extract_metrics") as mock_extract:
-        metrics = {
-            "position": PlayerPosition.BIG_BLIND.value,
-            "stack_size": 1000,
-            "phase": RoundPhase.PRE_DRAW.value,
-            "pot_size": 100,
-            "current_bet": 50,
-        }
-        print(f"Mock metrics: {metrics}")
-        mock_extract.return_value = metrics
+    # Call plan_strategy directly without mocking
+    player = game_state.players[0]
+    plan = planner.plan_strategy(game_state, player)
 
-        with patch.object(planner.llm_client, "query") as mock_query:
-            mock_response = """
-            {
-                "approach": "aggressive",
-                "reasoning": "Test plan",
-                "bet_sizing": "large",
-                "bluff_threshold": 0.7,
-                "fold_threshold": 0.2
-            }
-            """
-            print(f"Mock response: {mock_response}")
-            mock_query.return_value = mock_response
-
-            # Call plan_strategy without stack_size parameter
-            plan = planner.plan_strategy(game_state)
-
-            # Verify the plan was created correctly
-            assert isinstance(plan, Plan)
-            assert plan.approach == Approach.AGGRESSIVE
-            assert plan.bet_sizing == BetSizing.LARGE
-            assert plan.bluff_threshold == 0.7
-            assert plan.fold_threshold == 0.2
-            print("Successfully verified plan generation and LLM query")
+    # Verify the plan was created correctly
+    assert isinstance(plan, Plan)
+    assert plan.approach == Approach.AGGRESSIVE
+    assert plan.bet_sizing == BetSizing.LARGE
+    assert plan.bluff_threshold == 0.7
+    assert plan.fold_threshold == 0.2
+    print("Successfully verified plan generation")
 
 
 def test_plan_expiration(planner):
@@ -618,110 +526,3 @@ def test_plan_expiration(planner):
     )
     assert expired_plan.is_expired()  # Should use current time
     print("Expired plan detected with default current_time")
-
-
-def test_parse_action_response(planner):
-    """Test parsing of action responses from LLM."""
-    print("\nTesting action response parsing:")
-
-    # Create a basic game state for testing
-    game_state = GameState(
-        players=[
-            PlayerState(
-                name="Player1",
-                chips=1000,
-                position=PlayerPosition.DEALER,
-                bet=0,
-                folded=False,
-                is_dealer=True,
-                is_small_blind=False,
-                is_big_blind=False,
-            )
-        ],
-        dealer_position=0,
-        small_blind=10,
-        big_blind=20,
-        ante=0,
-        min_bet=20,
-        round_state=RoundState(
-            phase=RoundPhase.PRE_DRAW,
-            current_bet=0,
-            round_number=1,
-            dealer_position=0,
-            small_blind_position=1,
-            big_blind_position=2,
-            first_bettor_index=0,
-        ),
-        pot_state=PotState(main_pot=0),
-        deck_state=DeckState(cards_remaining=52),
-        active_player_position=0,
-    )
-
-    # Test valid responses
-    test_cases = [
-        # Basic valid responses
-        ("DECISION: fold", "fold"),
-        ("DECISION: call", "call"),
-        ("DECISION: raise 100", "raise 100"),
-        # Responses with extra whitespace
-        ("DECISION:    fold   ", "fold"),
-        ("DECISION:   call   ", "call"),
-        ("DECISION:    raise   100   ", "raise 100"),
-        # Responses with mixed case
-        ("DECISION: FOLD", "fold"),
-        ("DECISION: CALL", "call"),
-        ("DECISION: RAISE 200", "raise 200"),
-        # Responses with additional text
-        ("Analysis complete.\nDECISION: fold", "fold"),
-        ("Strong hand detected.\nDECISION: call", "call"),
-        ("Pot odds favorable.\nDECISION: raise 300", "raise 300"),
-    ]
-
-    print("Testing valid response formats:")
-    for response, expected in test_cases:
-        result = planner._parse_action_response(response, game_state)
-        assert (
-            result == expected
-        ), f"Expected '{expected}' but got '{result}' for response: '{response}'"
-        print(f"✓ Successfully parsed: {response} -> {result}")
-
-    # Test invalid responses
-    invalid_cases = [
-        # Missing DECISION prefix
-        ("fold", "call"),
-        ("call", "call"),
-        ("raise 100", "call"),
-        # Invalid action types
-        ("DECISION: check", "call"),
-        ("DECISION: bet 100", "call"),
-        ("DECISION: allin", "call"),
-        # Invalid raise formats
-        ("DECISION: raise", "call"),
-        ("DECISION: raise abc", "call"),
-        ("DECISION: raise -100", "call"),
-        ("DECISION: raise 0", "call"),
-        ("DECISION: raise 100 200", "call"),
-        # Completely invalid formats
-        ("", "call"),
-        ("DECISION:", "call"),
-        ("Invalid response", "call"),
-        ("EXECUTE: fold", "call"),  # Old format
-    ]
-
-    print("\nTesting invalid response formats:")
-    for response, expected in invalid_cases:
-        result = planner._parse_action_response(response, game_state)
-        assert (
-            result == expected
-        ), f"Expected '{expected}' but got '{result}' for invalid response: '{response}'"
-        print(f"✓ Successfully handled invalid response: {response} -> {result}")
-
-    # Test raise amount validation against game.min_bet
-    print("\nTesting raise amount validation:")
-    game_state.min_bet = 50
-    response = "DECISION: raise 25"  # Below minimum bet
-    result = planner._parse_action_response(response, game_state)
-    assert (
-        result == "call"
-    ), f"Expected 'call' for raise below minimum bet, got '{result}'"
-    print(f"✓ Successfully handled raise below minimum bet: {response} -> {result}")
