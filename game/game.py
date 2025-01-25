@@ -161,6 +161,7 @@ class AgenticPoker:
             #! make a private method for this _pre_draw
             logging.info(f"====== Pre-draw betting ======\n")
             should_continue = betting.handle_betting_round(self)
+            logging.info(f"====== Pre-draw betting Complete ======\n")
 
             if not should_continue:
                 self._reset_round()
@@ -170,10 +171,13 @@ class AgenticPoker:
             #! make a private method for this _draw
             logging.info(f"====== Draw Phase ======\n")
             draw.handle_draw_phase(self)
+            logging.info(f"====== Draw Phase Complete ======\n")
 
             # Post-draw betting round
             #! make a private method for this _post_draw
+            logging.info(f"====== Post-draw betting ======\n")
             should_continue = betting.handle_betting_round(self)
+            logging.info(f"====== Post-draw betting Complete ======\n")
 
             if not should_continue:
                 self._reset_round()
@@ -187,6 +191,7 @@ class AgenticPoker:
                 initial_chips=initial_chips,
                 pot_manager=self.pot_manager,
             )
+            logging.info(f"====== Showdown Complete ======\n")
 
             self._reset_round()
 

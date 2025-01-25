@@ -24,7 +24,6 @@ def handle_showdown(
         - Updates player chip counts
         - Logs showdown results and chip movements
     """
-    #! passing game with players and pot manager
     active_players = [p for p in players if not p.folded]
 
     # Log showdown hands
@@ -35,20 +34,10 @@ def handle_showdown(
     # Handle single player case first (everyone else folded)
     if len(active_players) == 1:
         winner = active_players[0]
-        try:
-            # Try to get the pot amount directly
-            pot_amount = int(pot_manager.pot)
-        except (TypeError, ValueError):
-            # If pot_manager is a mock, try to get the value from initial_chips
-            total_bets = sum(initial_chips[p] - p.chips for p in players if p != winner)
-            pot_amount = total_bets
+        pot_amount = pot_manager.pot
 
         # Update winner's chips
-        if isinstance(winner.chips, int):
-            winner.chips += pot_amount
-        else:
-            # Handle mock player by setting chips directly
-            winner.chips = initial_chips[winner] + pot_amount
+        winner.chips += pot_amount
 
         ShowdownLogger.log_single_winner(winner.name, pot_amount)
         _log_chip_movements(players, initial_chips)
@@ -56,19 +45,24 @@ def handle_showdown(
 
     # Get side pots from pot manager
     try:
-        side_pots = pot_manager.calculate_side_pots(active_players, [])
+        # Changed to pass only active_players
+        side_pots = pot_manager.calculate_side_pots(active_players)
 
         # If no side pots, create one main pot
         if not side_pots:
-            pot_amount = int(pot_manager.pot)
+            pot_amount = pot_manager.pot
             side_pots = [
                 SidePot(
                     amount=pot_amount, eligible_players=[p.name for p in active_players]
                 )
             ]
     except (AttributeError, TypeError):
-        # Handle mock pot_manager by creating a single pot from initial chips
-        total_pot = sum(initial_chips[p] - p.chips for p in players)
+        # Calculate total pot from chip differences
+        total_pot = 0
+        for player in players:
+            if player in initial_chips:
+                total_pot += initial_chips[player] - player.chips
+
         side_pots = [
             SidePot(amount=total_pot, eligible_players=[p.name for p in active_players])
         ]
@@ -91,18 +85,21 @@ def handle_showdown(
                         amount += 1
 
                     # Update winner's chips
-                    if isinstance(winner.chips, int):
-                        winner.chips += amount
-                    else:
-                        # Handle mock player
-                        winner.chips = initial_chips[winner] + amount
+                    winner.chips += amount
 
                     ShowdownLogger.log_pot_win(
                         winner.name, amount, is_split=(len(winners) > 1)
                     )
 
-    # Log final chip movements
-    _log_chip_movements(players, initial_chips)
+    # Log final chip movements for players in initial_chips
+    for player in players:
+        if player in initial_chips:
+            ShowdownLogger.log_chip_movements(
+                player.name, initial_chips[player], player.chips
+            )
+        else:
+            # For players not in initial_chips (like RandomAgent), just log current chips
+            ShowdownLogger.log_chip_movements(player.name, player.chips, player.chips)
 
 
 def _evaluate_hands(players: List[Player]) -> List[Player]:
