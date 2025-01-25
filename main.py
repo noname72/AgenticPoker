@@ -97,7 +97,7 @@ def main():
     logger.info("New Poker Game Session Started")
     logger.info("=" * 70 + "\n")
 
-    game.start_game()
+    game.play_game()
 
 
 if __name__ == "__main__":

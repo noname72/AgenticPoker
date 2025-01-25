@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional
 
 from data.states.game_state import GameState
 from data.states.round_state import RoundState
@@ -11,7 +11,6 @@ from .deck import Deck
 from .hand import Hand
 from .player import Player
 from .pot_manager import PotManager
-from .utils import log_chip_movements
 
 
 class AgenticPoker:
@@ -113,6 +112,7 @@ class AgenticPoker:
         self.max_rounds = self.config.max_rounds
         self.ante = self.config.ante
         self.last_raiser = None
+        self.initial_chips = {}
 
         # Log game configuration
         logging.info(f"\n{'='*50}")
@@ -128,10 +128,35 @@ class AgenticPoker:
             logging.info(f"Session ID: {self.config.session_id}")
         logging.info(f"{'='*50}\n")
 
-    def start_game(self) -> None:
-        #! change to "play_game"
+    def play_game(self) -> None:
         """
         Execute the main game loop until a winner is determined.
+
+        This method manages the core game flow through multiple rounds until completion.
+        Each round consists of four phases:
+        1. Pre-draw betting
+        2. Draw (card exchange)
+        3. Post-draw betting
+        4. Showdown (if multiple players remain)
+
+        The game continues until one of these conditions is met:
+        - Only one player remains with chips
+        - Maximum number of rounds is reached (if configured)
+        - All players are eliminated (bankrupt)
+
+        Side Effects:
+            - Updates player chip counts
+            - Tracks eliminated players
+            - Logs game progress and results
+            - Rotates dealer position between rounds
+            - Updates game state (round number, pot, etc.)
+
+        Example round flow:
+            1. Check for eliminations and game end conditions
+            2. Start new round (deal cards, collect blinds/antes)
+            3. Execute betting/drawing phases
+            4. Distribute pot to winner(s)
+            5. Reset for next round
         """
         eliminated_players = []
 
@@ -147,57 +172,88 @@ class AgenticPoker:
             if not self._handle_player_eliminations(eliminated_players):
                 break
 
-            # Start new round with remaining players
-            #! maybe have eligible_players as a property of player queue
-            eligible_players = [p for p in self.table if p.chips > 0]
+            self._start_new_round()
 
-            # Store initial chips before starting round
-            #! use later
-            initial_chips = {p: p.chips for p in eligible_players}
+            should_continue = self._handle_pre_draw_phase()
 
-            self.start_round()  #! _start_new_round
+            if should_continue:
+                self._handle_draw_phase()
 
-            # Pre-draw betting round
-            #! make a private method for this _pre_draw
-            logging.info(f"====== Pre-draw betting ======\n")
-            should_continue = betting.handle_betting_round(self)
-            logging.info(f"====== Pre-draw betting Complete ======\n")
+            if should_continue:
+                should_continue = self._handle_post_draw_phase()
 
-            if not should_continue:
-                self._reset_round()
-                continue
-
-            # Draw phase
-            #! make a private method for this _draw
-            logging.info(f"====== Draw Phase ======\n")
-            draw.handle_draw_phase(self)
-            logging.info(f"====== Draw Phase Complete ======\n")
-
-            # Post-draw betting round
-            #! make a private method for this _post_draw
-            logging.info(f"====== Post-draw betting ======\n")
-            should_continue = betting.handle_betting_round(self)
-            logging.info(f"====== Post-draw betting Complete ======\n")
-
-            if not should_continue:
-                self._reset_round()
-                continue
-
-            # Showdown
-            #! make a private method for this _showdown
-            logging.info(f"====== Showdown ======\n")
-            showdown.handle_showdown(
-                players=self.table.players,
-                initial_chips=initial_chips,
-                pot_manager=self.pot_manager,
-            )
-            logging.info(f"====== Showdown Complete ======\n")
+            if should_continue:
+                self._handle_showdown()
 
             self._reset_round()
 
         self._log_game_summary(eliminated_players)
 
-    def start_round(self) -> None:
+    def _handle_pre_draw_phase(self) -> None:
+        """
+        Handle the pre-draw betting round.
+
+        This phase occurs before players can exchange cards and consists of a single betting round.
+
+        Returns:
+            bool: True if the round should continue (at least 2 players still active),
+                 False if the round should end (all but one player folded)
+        """
+        logging.info(f"====== Pre-draw betting ======\n")
+        should_continue = betting.handle_betting_round(self)
+        logging.info(f"====== Pre-draw betting Complete ======\n")
+        return should_continue
+
+    def _handle_draw_phase(self) -> None:
+        """
+        Handle the draw phase where players can exchange cards.
+
+        During this phase, each active player gets one opportunity to discard and replace
+        up to all five cards in their hand.
+
+        Returns:
+            bool: True if the round should continue (at least 2 players still active),
+                 False if the round should end (all but one player folded)
+        """
+        logging.info(f"====== Draw Phase ======\n")
+        should_continue = draw.handle_draw_phase(self)
+        logging.info(f"====== Draw Phase Complete ======\n")
+        return should_continue
+
+    def _handle_post_draw_phase(self) -> None:
+        """
+        Handle the post-draw betting round.
+
+        This phase occurs after players have exchanged cards and consists of a final betting round.
+
+        Returns:
+            bool: True if the round should continue to showdown (at least 2 players still active),
+                 False if the round should end (all but one player folded)
+        """
+        logging.info(f"====== Post-draw betting ======\n")
+        should_continue = betting.handle_betting_round(self)
+        logging.info(f"====== Post-draw betting Complete ======\n")
+        return should_continue
+
+    def _handle_showdown(self) -> None:
+        """
+        Handle the showdown phase where remaining players reveal their hands.
+
+        During this phase:
+        1. All remaining players show their hands
+        2. The best hand(s) are determined
+        3. The pot is distributed to the winner(s)
+        4. Results are logged
+        """
+        logging.info(f"====== Showdown ======\n")
+        showdown.handle_showdown(
+            players=self.table.players,
+            initial_chips=self.initial_chips,
+            pot_manager=self.pot_manager,
+        )
+        logging.info(f"====== Showdown Complete ======\n")
+
+    def _start_new_round(self) -> None:
         """
         Start a new round of poker by initializing the round state and collecting mandatory bets.
 
@@ -214,11 +270,19 @@ class AgenticPoker:
             - Logs round information
             - Processes AI player messages
         """
+        # Start new round with remaining players
+        #! maybe have eligible_players as a property of player queue
+        eligible_players = [p for p in self.table if p.chips > 0]
+
+        # Store initial chips before starting round
+        self.initial_chips = {p: p.chips for p in eligible_players}
+
         self._initialize_round()
 
         self._log_round_info()
 
         # Collect blinds and antes AFTER logging initial state
+        #! doesnt betting module handle this?
         self._collect_blinds_and_antes()
 
         # Handle AI player pre-round messages
@@ -374,10 +438,6 @@ class AgenticPoker:
 
         return True
 
-    def _log_chip_movements(self, initial_chips: Dict[Player, int]) -> None:
-        """Log the chip movements for each player from their initial amounts."""
-        log_chip_movements(self.table, initial_chips)
-
     def _log_game_summary(self, eliminated_players: List[Player]) -> None:
         """Log the final game summary and standings."""
         logging.info("\n=== Game Summary ===")
@@ -439,6 +499,9 @@ class AgenticPoker:
         # Rotate dealer position for next round
         self.dealer_index = (self.dealer_index + 1) % len(self.table)
 
+    def get_state(self) -> GameState:
+        return GameState.from_game(self)
+
     def _deal_cards(self) -> None:
         """Deal new hands to all players."""
         for player in self.table:
@@ -446,17 +509,3 @@ class AgenticPoker:
             player.folded = False
             player.hand = Hand()
             player.hand.add_cards(self.deck.deal(5))
-
-    def get_state(self) -> GameState:
-        return GameState.from_game(self)
-
-    def _get_position_name(self, position: int) -> str:
-        """Convert numeric position to descriptive name."""
-        if position == self.dealer_index:
-            return "Dealer"
-        elif position == (self.dealer_index + 1) % len(self.table):
-            return "Small Blind"
-        elif position == (self.dealer_index + 2) % len(self.table):
-            return "Big Blind"
-        else:
-            return f"Position {position}"
