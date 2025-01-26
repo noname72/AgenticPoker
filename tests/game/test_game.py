@@ -108,3 +108,54 @@ def test_round_initialization(game, mock_players):
     assert all(player.bet == 0 for player in game.table)
     assert all(not player.folded for player in game.table)
     assert all(hasattr(player, "hand") for player in game.table)
+
+
+def test_collect_blinds_and_antes(game, player_factory):
+    """Test that blinds and antes are collected correctly and pot is updated properly."""
+    # Create players with known chip stacks
+    players = [
+        player_factory(name="Alice", chips=1000),
+        player_factory(name="Bob", chips=1000),
+        player_factory(name="Charlie", chips=1000),
+    ]
+    game.table.players = players
+
+    # Set up initial state
+    game.small_blind = 50
+    game.big_blind = 100
+    game.ante = 10
+    game.dealer_index = 0
+
+    # Store initial chip counts
+    initial_chips = {p: p.chips for p in game.table}
+
+    # Collect blinds and antes
+    game._collect_blinds_and_antes()
+
+    # Calculate expected pot amount
+    num_players = len(players)
+    expected_antes = num_players * game.ante  # 3 players * $10 = $30
+    expected_blinds = game.small_blind + game.big_blind  # $50 + $100 = $150
+    expected_pot = expected_antes + expected_blinds  # $30 + $150 = $180
+
+    # Verify pot amount
+    assert (
+        game.pot.pot == expected_pot
+    ), f"Expected pot of ${expected_pot}, got ${game.pot.pot}"
+
+    # Verify player chip counts
+    dealer = game.table[0]  # Alice
+    sb_player = game.table[1]  # Bob
+    bb_player = game.table[2]  # Charlie
+
+    # Check dealer's chips (only pays ante)
+    assert dealer.chips == initial_chips[dealer] - game.ante
+
+    # Check small blind player's chips (pays ante + small blind)
+    assert sb_player.chips == initial_chips[sb_player] - game.ante - game.small_blind
+
+    # Check big blind player's chips (pays ante + big blind)
+    assert bb_player.chips == initial_chips[bb_player] - game.ante - game.big_blind
+
+    # Verify current bet is set to big blind
+    assert game.current_bet == game.big_blind

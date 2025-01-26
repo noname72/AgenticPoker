@@ -265,11 +265,21 @@ def player_factory():
         bet=0,
         action_response=None,
     ):
-        player = MockPlayer(name=name, chips=chips)
+        player = Mock()
+        player.name = name
+        player.chips = chips
         player.is_all_in = is_all_in
         player.is_big_blind = is_big_blind
         player.folded = folded
         player.bet = bet
+
+        def place_bet(amount, game=None):
+            actual_amount = min(amount, player.chips)
+            player.chips -= actual_amount
+            player.bet = actual_amount  # Set bet directly instead of adding
+            return actual_amount
+
+        player.place_bet = MagicMock(side_effect=place_bet)
 
         if action_response:
             response = MagicMock()
@@ -1120,10 +1130,17 @@ def game_state(mock_players):
             chips=player.chips,
             bet=player.bet,
             position=(
-                PlayerPosition.DEALER if i == 0
-                else PlayerPosition.SMALL_BLIND if i == 1
-                else PlayerPosition.BIG_BLIND if i == 2
-                else PlayerPosition.UNDER_THE_GUN
+                PlayerPosition.DEALER
+                if i == 0
+                else (
+                    PlayerPosition.SMALL_BLIND
+                    if i == 1
+                    else (
+                        PlayerPosition.BIG_BLIND
+                        if i == 2
+                        else PlayerPosition.UNDER_THE_GUN
+                    )
+                )
             ),
             folded=player.folded,
             is_all_in=False,
