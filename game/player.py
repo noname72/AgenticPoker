@@ -26,12 +26,12 @@ class Player:
     """
 
     name: str
-    chips: int
+    chips: int  #! change to stack???
     bet: int
     folded: bool
     hand: Hand
     position: PlayerPosition
-    is_all_in: bool
+    is_all_in: bool  #! change to all_in
     checked: bool
     called: bool
 
@@ -56,9 +56,9 @@ class Player:
         self.name = name
         self.chips = chips
         self.bet = 0
-        self.folded = False
         self.hand = Hand()
         self.position = PlayerPosition.OTHER
+        self.folded = False
         self.is_all_in = False
         self.checked = False
         self.called = False
@@ -78,6 +78,7 @@ class Player:
 
         # If this is a raise, ensure it's at least double the current bet
         if hasattr(game, "current_bet") and amount <= game.current_bet:
+            #! change to logger
             logging.debug(
                 f"Raise amount {amount} too small compared to current bet {game.current_bet}"
             )
@@ -190,16 +191,9 @@ class Player:
         """Reset player state for a new round."""
         self.bet = 0
         self.folded = False
-        self.total_bet_this_round = 0
-        self.last_action = None
-        self.last_raise_amount = None
         self.is_all_in = False
         self.checked = False
         self.called = False
-        self.is_dealer = False
-        self.is_small_blind = False
-        self.is_big_blind = False
-        self.chips_at_start_of_hand = self.chips
 
         PlayerLogger.log_state_reset(self.name, context="new round")
 

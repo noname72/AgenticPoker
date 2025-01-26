@@ -157,7 +157,7 @@ class TestPlanResponse:
             "fold_threshold": 0.3,
         }
         model = PlanResponse(**data)
-        dumped = model.model_dump()
+        dumped = model.to_dict()
 
         assert isinstance(dumped, dict)
         assert dumped["approach"] == "aggressive"

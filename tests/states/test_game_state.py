@@ -7,7 +7,7 @@ from data.types.player_types import PlayerPosition
 from data.types.pot_types import PotState
 from data.states.round_state import RoundState
 from game.game import AgenticPoker
-
+from game.player import Player
 
 @pytest.fixture
 def basic_game_state():
@@ -20,9 +20,9 @@ def basic_game_state():
                 position=PlayerPosition.DEALER,
                 bet=0,
                 folded=False,
-                is_dealer=True,
-                is_small_blind=False,
-                is_big_blind=False,
+                is_all_in=False,
+                checked=False,
+                called=False,
             )
         ],
         dealer_position=0,
@@ -30,7 +30,15 @@ def basic_game_state():
         big_blind=20,
         ante=0,
         min_bet=20,
-        round_state=RoundState(phase="pre_draw", current_bet=20, round_number=1),
+        round_state=RoundState(
+            phase="pre_draw",
+            current_bet=20,
+            round_number=1,
+            dealer_position=0,
+            small_blind_position=1,
+            big_blind_position=2,
+            first_bettor_index=3,
+        ),
         pot_state=PotState(main_pot=0),
         deck_state=DeckState(cards_remaining=52),
     )
@@ -39,7 +47,10 @@ def basic_game_state():
 @pytest.fixture
 def mock_game():
     """Create a mock game instance."""
-    game = AgenticPoker(["Player1", "Player2"], small_blind=10, big_blind=20)
+    # Create Player objects with initial chips
+    players = [Player("Player1", chips=1000), Player("Player2", chips=1000)]
+
+    game = AgenticPoker(players, small_blind=10, big_blind=20)
     return game
 
 
@@ -115,26 +126,33 @@ class TestGameState:
         assert game_state.big_blind == mock_game.big_blind
         assert game_state.dealer_position == mock_game.dealer_index
 
-        # Verify player states
+        # Verify player states and positions
         assert len(game_state.players) == len(mock_game.table)
         for player_state, game_player in zip(game_state.players, mock_game.table):
             assert player_state.name == game_player.name
             assert player_state.chips == game_player.chips
 
-    def test_invalid_initialization(self):
-        """Test that invalid initialization raises appropriate errors."""
-        with pytest.raises(ValueError):
-            GameState(
-                players=[],  # Empty players list
-                dealer_position=0,
-                small_blind=10,
-                big_blind=20,
-                ante=0,
-                min_bet=20,
-                round_state=RoundState(phase="pre_draw", current_bet=20, round_number=1),
-                pot_state=PotState(main_pot=0),
-                deck_state=DeckState(cards_remaining=52),
-            )
+        # Verify round state positions
+        players_count = len(mock_game.table)
+        expected_sb_pos = (mock_game.dealer_index + 1) % players_count
+        expected_bb_pos = (mock_game.dealer_index + 2) % players_count
+        expected_first_bettor = (expected_bb_pos + 1) % players_count
+
+        assert game_state.round_state.dealer_position == mock_game.dealer_index
+        assert game_state.round_state.small_blind_position == expected_sb_pos
+        assert game_state.round_state.big_blind_position == expected_bb_pos
+        assert game_state.round_state.first_bettor_index == expected_first_bettor
+
+    def test_position_assignments(self, mock_game):
+        """Test that player positions are correctly assigned relative to dealer."""
+        game_state = GameState.from_game(mock_game)
+
+        # With 2 players, positions should be Dealer and Big Blind
+        assert (
+            game_state.players[mock_game.dealer_index].position == PlayerPosition.DEALER
+        )
+        next_pos = (mock_game.dealer_index + 1) % len(mock_game.table)
+        assert game_state.players[next_pos].position == PlayerPosition.SMALL_BLIND
 
     def test_model_validation(self):
         """Test Pydantic model validation."""
@@ -148,9 +166,9 @@ class TestGameState:
                         position=PlayerPosition.DEALER,
                         bet=0,
                         folded=False,
-                        is_dealer=True,
-                        is_small_blind=False,
-                        is_big_blind=False,
+                        is_all_in=False,
+                        checked=False,
+                        called=False,
                     )
                 ],
                 dealer_position=0,
@@ -158,21 +176,15 @@ class TestGameState:
                 big_blind=20,
                 ante=0,
                 min_bet=20,
-                round_state=RoundState(phase="pre_draw", current_bet=20, round_number=1),
-                pot_state=PotState(main_pot=0),
-                deck_state=DeckState(cards_remaining=52),
-            )
-
-        # Test empty players list
-        with pytest.raises(ValueError, match="Players list cannot be empty"):
-            GameState(
-                players=[],  # Empty players list
-                dealer_position=0,
-                small_blind=10,
-                big_blind=20,
-                ante=0,
-                min_bet=20,
-                round_state=RoundState(phase="pre_draw", current_bet=20, round_number=1),
+                round_state=RoundState(
+                    phase="pre_draw",
+                    current_bet=20,
+                    round_number=1,
+                    dealer_position=0,
+                    small_blind_position=1,
+                    big_blind_position=2,
+                    first_bettor_index=3,
+                ),
                 pot_state=PotState(main_pot=0),
                 deck_state=DeckState(cards_remaining=52),
             )

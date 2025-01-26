@@ -72,6 +72,18 @@ class PlanResponse(BaseModel):
                 "fold_threshold": 0.3,
             }
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the model instance to a dictionary.
+        
+        Returns:
+            Dict[str, Any]: Dictionary containing the model's data with enum values converted to strings
+        """
+        data = self.dict()
+        # Convert enum values to strings for serialization
+        data["approach"] = data["approach"].value
+        data["bet_sizing"] = data["bet_sizing"].value
+        return data
+
     class Config:
         """Pydantic model configuration."""
 
