@@ -185,7 +185,17 @@ class AgenticPoker:
 
     def _handle_pre_draw_phase(self) -> bool:
         GameLogger.log_phase_header("Pre-draw betting")
+
+        # Handle betting round first
         should_continue = betting.handle_betting_round(self)
+
+        if should_continue:
+            # Calculate side pots while bets are still set
+            self.pot.calculate_side_pots(self.table.players)
+
+            # Move bets to pot and reset them
+            self.pot.end_betting_round(self.table.players)
+
         GameLogger.log_phase_complete("Pre-draw betting")
         return should_continue
 
