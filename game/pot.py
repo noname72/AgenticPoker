@@ -22,8 +22,7 @@ class Pot:
 
     Attributes:
         pot (int): Current amount in the main pot
-        side_pots (Optional[List[SidePot]]): List of active side pots, if any.
-            None indicates no side pots have been calculated yet.
+        side_pots (List[SidePot]): List of active side pots, if any.
             Empty list indicates calculation returned no side pots.
 
     Usage:
@@ -51,7 +50,7 @@ class Pot:
     def __init__(self) -> None:
         """Initialize a new pot instance with empty pot and no side pots."""
         self.pot: int = 0
-        self.side_pots: Optional[List[SidePot]] = None
+        self.side_pots: List[SidePot] = []
 
     def add_to_pot(self, amount: int) -> None:
         """
@@ -90,7 +89,7 @@ class Pot:
         old_side_pots = self.side_pots
 
         self.pot = 0
-        self.side_pots = None
+        self.side_pots = []
 
         PotLogger.log_pot_reset(old_pot, old_side_pots)
 
@@ -117,6 +116,7 @@ class Pot:
         Side Effects:
             - Updates self.side_pots with the calculated side pots
             - Sets self.side_pots to empty list if no active players
+            - Merges new side pots with any existing side pots
             - Does NOT modify player.bet values - that's handled by end_betting_round
 
         Note:
@@ -134,10 +134,16 @@ class Pot:
         total_chips_before = (
             sum(p.chips + p.bet for p in active_players)  # Current chips + bets
             + self.pot  # Main pot
-            + (
-                sum(pot.amount for pot in self.side_pots) if self.side_pots else 0
-            )  # Side pots
+            + sum(pot.amount for pot in self.side_pots)  # Side pots
         )
+
+        # Add validation before processing
+        total_bets = sum(p.bet for p in active_players)
+        if total_bets == 0:
+            PotLogger.log_pot_validation_info(
+                "No bets to process, returning existing side pots"
+            )
+            return self.side_pots
 
         # Create dictionary of all bets from players who contributed
         posted_amounts = {
@@ -146,8 +152,13 @@ class Pot:
             if p.bet > 0  # Include all bets, even from folded players
         }
         if not posted_amounts:
-            # If no new bets, return existing side pots
-            return self.side_pots if self.side_pots else []
+            PotLogger.log_pot_validation_info(
+                "No posted amounts, returning existing side pots"
+            )
+            return self.side_pots
+
+        # Keep track of existing side pots
+        existing_pots = self.side_pots
 
         # Calculate new side pots from current bets
         new_side_pots = []
@@ -191,15 +202,20 @@ class Pot:
 
                 current_amount = amount
 
-        # Combine existing and new pots
-        final_pots = []
-        if self.side_pots:
-            final_pots.extend(self.side_pots)  # Keep existing pots first
-        final_pots.extend(new_side_pots)  # Add new pots from this round
-
         # Merge pots with identical eligible players
         merged_pots = {}
-        for side_pot in final_pots:
+        # First add existing pots to merged_pots
+        if existing_pots:
+            for existing_pot in existing_pots:
+                key = frozenset(existing_pot.eligible_players)
+                if key not in merged_pots:
+                    merged_pots[key] = existing_pot.amount
+                else:
+                    merged_pots[key] += existing_pot.amount
+                    PotLogger.log_pot_merge(existing_pot.amount, list(key))
+
+        # Then merge new pots, combining with existing ones if they have same eligible players
+        for side_pot in new_side_pots:
             # Use frozenset of eligible players as key for merging
             key = frozenset(side_pot.eligible_players)
             if key not in merged_pots:
@@ -208,23 +224,28 @@ class Pot:
                 merged_pots[key] += side_pot.amount
                 PotLogger.log_pot_merge(side_pot.amount, list(key))
 
-        # Convert merged pots back to list format
+        # Convert merged pots to final format
         final_pots = [
             SidePot(amount=amount, eligible_players=sorted(list(players)))
             for players, amount in merged_pots.items()
         ]
 
-        # Validate total chips haven't changed
-        total_chips_after = (
-            sum(p.chips for p in active_players)  # Current chips
-            + self.pot  # Main pot
-            + sum(pot.amount for pot in final_pots)  # All side pots
-        )
-
-        if total_chips_before != total_chips_after:
-            raise InvalidGameStateError(
-                f"Chip total mismatch in side pot calculation: {total_chips_before} vs {total_chips_after}"
+        # Verify all current bets were processed before combining with existing pots
+        total_in_new_pots = sum(pot.amount for pot in final_pots)
+        if total_in_new_pots != total_bets + sum(p.amount for p in existing_pots):
+            PotLogger.log_pot_validation_error(
+                total_bets=total_bets,
+                total_in_pots=total_in_new_pots,
+                main_pot=self.pot,
+                side_pots=final_pots,
+                active_players=[(p.name, p.chips, p.bet) for p in active_players],
             )
+            raise InvalidGameStateError(
+                f"Not all bets processed: bets={total_bets}, pots={total_in_new_pots}"
+            )
+
+        # Validate chip consistency
+        self.validate_chip_consistency(active_players, final_pots)
 
         self.side_pots = final_pots
         return final_pots
@@ -245,7 +266,7 @@ class Pot:
             for pot in self.side_pots
         ]
 
-    def log_side_pots(self, logger) -> None:
+    def log_side_pots(self) -> None:
         """
         Log the current side pot state.
         """
@@ -261,14 +282,14 @@ class Pot:
 
         Args:
             main_pot: Amount for the main pot (must be non-negative)
-            side_pots: Optional list of side pots to set
+            side_pots: Optional list of side pots to set. If None, self.side_pots will be set to None.
 
         Raises:
             ValueError: If main_pot is negative
 
         Side Effects:
             - Updates the main pot amount
-            - Updates the side pots list
+            - Updates the side pots list (sets to None if side_pots argument is None)
             - Logs the changes for debugging
 
         Note:
@@ -399,9 +420,54 @@ class Pot:
         """Get the current state of all pots."""
         return PotState(
             main_pot=self.pot,
-            side_pots=(
-                self.side_pots if self.side_pots else []
-            ),  # Convert None to empty list
-            total_pot=self.pot
-            + sum(pot.amount for pot in (self.side_pots or [])),  # Handle None case
+            side_pots=self.side_pots,
+            total_pot=self.pot + sum(pot.amount for pot in self.side_pots),
         )
+
+    def validate_chip_consistency(
+        self, active_players: List[Player], final_pots: List[SidePot]
+    ) -> None:
+        """
+        Validate that total chips remain constant during side pot calculation.
+
+        Args:
+            active_players: List of players in the hand
+            final_pots: List of calculated side pots
+
+        Raises:
+            InvalidGameStateError: If chip totals don't match before and after calculation
+
+        Note:
+            At this point in the game:
+            - Player bets are still in their bet property
+            - final_pots represents where those bets will go
+            - We should count either the bets OR the final pots, not both
+        """
+        # Calculate total chips before - count bets in their current location
+        total_chips_before = (
+            sum(p.chips for p in active_players)  # Current chips in stacks
+            + sum(p.bet for p in active_players)  # Current bets
+            + self.pot  # Main pot
+            + sum(pot.amount for pot in self.side_pots)  # Existing side pots
+        )
+
+        # Calculate total chips after - count bets in their future location (pots)
+        total_chips_after = (
+            sum(p.chips for p in active_players)  # Current chips in stacks
+            + self.pot  # Main pot
+            + sum(
+                pot.amount for pot in final_pots
+            )  # New side pots (includes current bets)
+        )
+
+        if total_chips_after != total_chips_before:
+            PotLogger.log_pot_validation_error(
+                total_bets=sum(p.bet for p in active_players),
+                total_in_pots=sum(pot.amount for pot in final_pots),
+                main_pot=self.pot,
+                side_pots=final_pots,
+                active_players=[(p.name, p.chips, p.bet) for p in active_players],
+            )
+            raise InvalidGameStateError(
+                f"Chip total mismatch: before={total_chips_before}, after={total_chips_after}"
+            )
