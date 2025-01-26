@@ -100,8 +100,8 @@ class AgenticPoker:
             raise ValueError("Players cannot have negative chips")
 
         #! make into betting class
-        self.current_bet = 0  # Add this line to initialize current_bet
-        self.pot = Pot()  #! change attr name to pot
+        self.current_bet = 0
+        self.pot = Pot()
 
         self.small_blind = self.config.small_blind
         self.big_blind = self.config.big_blind
