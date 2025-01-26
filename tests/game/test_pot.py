@@ -1590,3 +1590,132 @@ class TestPot:
             f"Main pot: {pot.pot}\n"
             f"Side pots: {[p.amount for p in side_pots]}"
         )
+
+    def test_calculate_side_pots_with_zero_bets(self, pot, mock_players):
+        """Test that zero bets returns existing side pots.
+
+        Scenario:
+        1. Set up existing side pot
+        2. Call calculate with all zero bets
+        3. Should return existing side pots unchanged
+        """
+        # Setup existing side pot
+        existing_pot = SidePot(amount=200, eligible_players=["Alice", "Bob"])
+        pot.side_pots = [existing_pot]
+
+        # All players have zero bets
+        for player in mock_players:
+            player.bet = 0
+            player.chips = 1000
+
+        side_pots = pot.calculate_side_pots(mock_players)
+
+        assert len(side_pots) == 1
+        assert side_pots[0].amount == 200
+        assert side_pots[0].eligible_players == ["Alice", "Bob"]
+
+    def test_calculate_side_pots_merge_with_different_players(self, pot, mock_players):
+        """Test merging pots with different eligible players.
+
+        Scenario:
+        1. Existing pot for Alice and Bob
+        2. New pot for Bob and Charlie
+        3. Should maintain separate pots
+        """
+        # Setup existing side pot for Alice and Bob
+        pot.side_pots = [SidePot(amount=200, eligible_players=["Alice", "Bob"])]
+
+        # Setup new bets - Bob and Charlie bet
+        mock_players[0].bet = 0  # Alice
+        mock_players[0].chips = 1000
+        mock_players[0].folded = False
+
+        mock_players[1].bet = 100  # Bob
+        mock_players[1].chips = 900
+        mock_players[1].folded = False
+
+        mock_players[2].bet = 100  # Charlie
+        mock_players[2].chips = 900
+        mock_players[2].folded = False
+
+        side_pots = pot.calculate_side_pots(mock_players)
+
+        assert len(side_pots) == 2, "Should have two separate pots"
+        # Verify first pot (Alice and Bob)
+        assert any(
+            pot.amount == 200 and set(pot.eligible_players) == {"Alice", "Bob"}
+            for pot in side_pots
+        )
+        # Verify second pot (Bob and Charlie)
+        assert any(
+            pot.amount == 200 and set(pot.eligible_players) == {"Bob", "Charlie"}
+            for pot in side_pots
+        )
+
+    def test_calculate_side_pots_multiple_rounds_same_players(self, pot, mock_players):
+        """Test accumulating pots across multiple rounds with same players.
+
+        Scenario:
+        1. Round 1: Alice and Bob bet 100 each
+        2. Round 2: Alice and Bob bet 200 each
+        3. Should merge into single pot of 600
+        """
+        # Round 1
+        mock_players[0].bet = 100  # Alice
+        mock_players[0].chips = 900
+        mock_players[1].bet = 100  # Bob
+        mock_players[1].chips = 900
+        mock_players[2].bet = 0  # Charlie
+        mock_players[2].chips = 1000
+
+        side_pots = pot.calculate_side_pots(mock_players)
+        assert len(side_pots) == 1
+        assert side_pots[0].amount == 200
+
+        # Store first round pot
+        pot.side_pots = side_pots
+
+        # Clear bets for round 2
+        for player in mock_players:
+            player.bet = 0
+
+        # Round 2
+        mock_players[0].bet = 200  # Alice
+        mock_players[0].chips = 700
+        mock_players[1].bet = 200  # Bob
+        mock_players[1].chips = 700
+
+        side_pots = pot.calculate_side_pots(mock_players)
+
+        assert len(side_pots) == 1, "Should merge into single pot"
+        assert side_pots[0].amount == 600, "Should total all bets"
+        assert set(side_pots[0].eligible_players) == {"Alice", "Bob"}
+
+    def test_calculate_side_pots_folded_player_contribution(self, pot, mock_players):
+        """Test that folded player's chips are included in pot but not eligibility.
+
+        Scenario:
+        1. Alice and Bob bet 100
+        2. Bob folds
+        3. Pot should include Bob's chips but only Alice eligible
+        """
+        # Setup bets
+        mock_players[0].bet = 100  # Alice
+        mock_players[0].chips = 900
+        mock_players[0].folded = False
+
+        mock_players[1].bet = 100  # Bob
+        mock_players[1].chips = 900
+        mock_players[1].folded = True  # Bob folds
+
+        mock_players[2].bet = 0  # Charlie
+        mock_players[2].chips = 1000
+        mock_players[2].folded = False
+
+        side_pots = pot.calculate_side_pots(mock_players)
+
+        assert len(side_pots) == 1
+        assert side_pots[0].amount == 200, "Should include folded player's chips"
+        assert side_pots[0].eligible_players == [
+            "Alice"
+        ], "Only non-folded player eligible"

@@ -139,6 +139,14 @@ class Pot:
             )  # Side pots
         )
 
+        # Add validation before processing
+        total_bets = sum(p.bet for p in active_players)
+        if total_bets == 0:
+            PotLogger.log_pot_validation_info(
+                "No bets to process, returning existing side pots"
+            )
+            return self.side_pots if self.side_pots else []
+
         # Create dictionary of all bets from players who contributed
         posted_amounts = {
             p: p.bet
@@ -146,8 +154,14 @@ class Pot:
             if p.bet > 0  # Include all bets, even from folded players
         }
         if not posted_amounts:
+            PotLogger.log_pot_validation_info(
+                "No posted amounts, returning existing side pots"
+            )
             # If no new bets, return existing side pots
             return self.side_pots if self.side_pots else []
+
+        # Keep track of existing side pots
+        existing_pots = self.side_pots if self.side_pots else []
 
         # Calculate new side pots from current bets
         new_side_pots = []
@@ -191,15 +205,20 @@ class Pot:
 
                 current_amount = amount
 
-        # Combine existing and new pots
-        final_pots = []
-        if self.side_pots:
-            final_pots.extend(self.side_pots)  # Keep existing pots first
-        final_pots.extend(new_side_pots)  # Add new pots from this round
-
         # Merge pots with identical eligible players
         merged_pots = {}
-        for side_pot in final_pots:
+        # First add existing pots to merged_pots
+        if existing_pots:
+            for existing_pot in existing_pots:
+                key = frozenset(existing_pot.eligible_players)
+                if key not in merged_pots:
+                    merged_pots[key] = existing_pot.amount
+                else:
+                    merged_pots[key] += existing_pot.amount
+                    PotLogger.log_pot_merge(existing_pot.amount, list(key))
+
+        # Then merge new pots, combining with existing ones if they have same eligible players
+        for side_pot in new_side_pots:
             # Use frozenset of eligible players as key for merging
             key = frozenset(side_pot.eligible_players)
             if key not in merged_pots:
@@ -208,25 +227,28 @@ class Pot:
                 merged_pots[key] += side_pot.amount
                 PotLogger.log_pot_merge(side_pot.amount, list(key))
 
-        # Convert merged pots back to list format
+        # Convert merged pots to final format
         final_pots = [
             SidePot(amount=amount, eligible_players=sorted(list(players)))
             for players, amount in merged_pots.items()
         ]
 
-        # Validate total chips haven't changed
-        total_chips_after = (
-            sum(p.chips for p in active_players)  # Current chips
-            + self.pot  # Main pot
-            + sum(pot.amount for pot in final_pots)  # All side pots
-        )
-
-        if total_chips_before != total_chips_after:
+        # Verify all current bets were processed before combining with existing pots
+        total_in_new_pots = sum(pot.amount for pot in final_pots)
+        if total_in_new_pots != total_bets + sum(p.amount for p in existing_pots):
+            PotLogger.log_pot_validation_error(
+                total_bets=total_bets,
+                total_in_pots=total_in_new_pots,
+                main_pot=self.pot,
+                side_pots=final_pots,
+                active_players=[(p.name, p.chips, p.bet) for p in active_players],
+            )
             raise InvalidGameStateError(
-                f"Chip total mismatch in side pot calculation: {total_chips_before} vs {total_chips_after}"
+                f"Not all bets processed: bets={total_bets}, pots={total_in_new_pots}"
             )
 
         self.side_pots = final_pots
+
         return final_pots
 
     def get_side_pots_view(self) -> List[Dict[str, Any]]:

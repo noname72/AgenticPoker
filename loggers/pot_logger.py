@@ -95,3 +95,12 @@ class PotLogger:
         logger.debug(
             f"Merging pot: ${amount} into existing pot with eligible players: {players_str}"
         )
+
+    @staticmethod
+    def log_pot_validation_info(message: str) -> None:
+        """Log informational messages during pot validation.
+
+        Args:
+            message: The validation message to log
+        """
+        logger.debug(f"Pot validation: {message}")
