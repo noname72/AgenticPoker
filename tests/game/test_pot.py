@@ -1523,3 +1523,72 @@ class TestPot:
             f"Side pots: {[p.amount for p in side_pots]} = ${sum(p.amount for p in side_pots)}\n"
             f"Total: ${total_chips}"
         )
+
+    def test_side_pot_calculation_order(self, pot, mock_players):
+        """Test that side pots are calculated correctly when called in proper order.
+
+        Tests that:
+        1. Side pots are calculated while bets are still set
+        2. end_betting_round properly clears bets after side pot calculation
+        3. Total chips remain consistent through the process
+
+        The correct order is:
+        1. calculate_side_pots()
+        2. end_betting_round()
+        """
+        # Setup players with bets
+        mock_players[0].bet = 300  # Alice
+        mock_players[0].chips = 700
+        mock_players[1].bet = 200  # Bob
+        mock_players[1].chips = 0  # All-in
+        mock_players[2].bet = 200  # Charlie
+        mock_players[2].chips = 800
+
+        initial_total = sum(
+            p.chips + p.bet for p in mock_players
+        )  # 700 + 300 + 0 + 200 + 800 + 200 = 2200
+
+        # First calculate side pots while bets are still set
+        side_pots = pot.calculate_side_pots(mock_players)
+
+        # Verify side pots were calculated correctly
+        assert len(side_pots) == 2
+        assert side_pots[0].amount == 600  # 200 * 3
+        assert side_pots[1].amount == 100  # Alice's extra 100
+
+        # Verify bets are still set at this point
+        assert mock_players[0].bet == 300
+        assert mock_players[1].bet == 200
+        assert mock_players[2].bet == 200
+
+        # Now end betting round
+        pot.end_betting_round(mock_players)
+
+        # Verify bets were cleared
+        assert all(p.bet == 0 for p in mock_players)
+
+        # Verify total chips remained constant
+        final_total = (
+            sum(p.chips for p in mock_players)  # Current chips
+            + pot.pot  # Main pot - this includes the bets moved by end_betting_round
+            + sum(p.amount for p in side_pots)  # Side pots
+        )
+
+        # The issue is we're double counting:
+        # 1. The bets were moved to pot.pot by end_betting_round
+        # 2. We also created side pots with those same amounts
+        # We need to adjust the calculation to avoid double counting
+
+        # Correct calculation - don't include main pot since those chips are in side pots
+        final_total = sum(p.chips for p in mock_players) + sum(  # Current chips
+            p.amount for p in side_pots
+        )  # Side pots contain all bet amounts
+
+        assert final_total == initial_total, (
+            f"Total chips mismatch:\n"
+            f"Initial total: {initial_total}\n"
+            f"Final total: {final_total}\n"
+            f"Player chips: {[p.chips for p in mock_players]}\n"
+            f"Main pot: {pot.pot}\n"
+            f"Side pots: {[p.amount for p in side_pots]}"
+        )

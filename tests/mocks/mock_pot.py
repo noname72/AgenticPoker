@@ -233,9 +233,15 @@ class MockPot:
         return True
 
     def _default_end_betting_round(self, active_players: List[MockPlayer]) -> None:
-        """Default behavior for ending betting round."""
+        """Default behavior for ending betting round.
+
+        This should be called AFTER calculate_side_pots if side pots are needed.
+        """
+        # Add current bets to pot
         total_bets = sum(p.bet for p in active_players)
         self.add_to_pot(total_bets)
+
+        # Clear player bets
         for player in active_players:
             player.bet = 0
 
