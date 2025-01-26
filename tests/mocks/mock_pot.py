@@ -113,8 +113,12 @@ class MockPot:
             return []
 
         # Track total chips before calculation
-        total_chips_before = sum(p.chips + p.bet for p in active_players) + (
-            sum(pot.amount for pot in self.side_pots) if self.side_pots else 0
+        total_chips_before = (
+            sum(p.chips + p.bet for p in active_players)  # Current chips + bets
+            + self.pot  # Main pot
+            + (
+                sum(pot.amount for pot in self.side_pots) if self.side_pots else 0
+            )  # Side pots
         )
 
         # Create dictionary of all bets from players who contributed
@@ -165,8 +169,24 @@ class MockPot:
         # Combine existing and new pots
         final_pots = []
         if self.side_pots:
-            final_pots.extend(self.side_pots)
-        final_pots.extend(new_side_pots)
+            final_pots.extend(self.side_pots)  # Keep existing pots first
+        final_pots.extend(new_side_pots)  # Add new pots from this round
+
+        # Merge pots with identical eligible players
+        merged_pots = {}
+        for side_pot in final_pots:
+            # Use frozenset of eligible players as key for merging
+            key = frozenset(side_pot.eligible_players)
+            if key not in merged_pots:
+                merged_pots[key] = side_pot.amount
+            else:
+                merged_pots[key] += side_pot.amount
+
+        # Convert merged pots back to list format
+        final_pots = [
+            SidePot(amount=amount, eligible_players=sorted(list(players)))
+            for players, amount in merged_pots.items()
+        ]
 
         # Validate total chips haven't changed
         total_chips_after = sum(p.chips for p in active_players) + sum(
@@ -213,9 +233,15 @@ class MockPot:
         return True
 
     def _default_end_betting_round(self, active_players: List[MockPlayer]) -> None:
-        """Default behavior for ending betting round."""
+        """Default behavior for ending betting round.
+
+        This should be called AFTER calculate_side_pots if side pots are needed.
+        """
+        # Add current bets to pot
         total_bets = sum(p.bet for p in active_players)
         self.add_to_pot(total_bets)
+
+        # Clear player bets
         for player in active_players:
             player.bet = 0
 

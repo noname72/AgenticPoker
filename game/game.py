@@ -196,8 +196,26 @@ class AgenticPoker:
         return should_continue
 
     def _handle_post_draw_phase(self) -> bool:
+        """Handle the post-draw betting phase.
+
+        The order of operations is important:
+        1. Run the betting round
+        2. Calculate side pots while bets are still set
+        3. End betting round which moves bets to pot
+        """
         GameLogger.log_phase_header("Post-draw betting")
+
+        # First handle the betting
         should_continue = betting.handle_betting_round(self)
+
+        if should_continue:
+            # Calculate side pots BEFORE ending betting round
+            # This ensures side pots are calculated while bets are still set
+            self.pot.calculate_side_pots(self.table.players)
+
+            # Now end the betting round which moves bets to pot and resets them
+            self.pot.end_betting_round(self.table.players)
+
         GameLogger.log_phase_complete("Post-draw betting")
         return should_continue
 

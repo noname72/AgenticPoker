@@ -98,6 +98,10 @@ class Pot:
         """
         Calculate side pots when one or more players is all-in.
 
+        This method should be called BEFORE end_betting_round, while player.bet values
+        are still set. The method calculates pot distributions but does not modify
+        player bets - that's handled by end_betting_round.
+
         Args:
             active_players (List[Player]): List of ALL players who were dealt into the hand,
                 including:
@@ -113,15 +117,13 @@ class Pot:
         Side Effects:
             - Updates self.side_pots with the calculated side pots
             - Sets self.side_pots to empty list if no active players
+            - Does NOT modify player.bet values - that's handled by end_betting_round
 
         Note:
-            - Players who folded after betting are included in pot creation but not
-              eligible to win
+            - Must be called before end_betting_round while bets are still set
+            - Players who folded after betting are included in pot creation but not eligible
             - All-in players are eligible for pots up to their contribution amount
-            - The method uses player.folded status to determine pot eligibility
-            - Side pots with identical eligible players are merged, even across betting rounds.
-              This is standard poker behavior since pot eligibility is determined by total
-              contribution, not when the contribution was made.
+            - Side pots with identical eligible players are merged
         """
         # Validate inputs
         if not active_players:
@@ -129,11 +131,13 @@ class Pot:
             return []
 
         # Track total chips in play before calculation
-        total_chips_before = sum(
-            p.chips + p.bet for p in active_players
-        ) + (  # Current chips + bets
-            sum(pot.amount for pot in self.side_pots) if self.side_pots else 0
-        )  # Existing pots
+        total_chips_before = (
+            sum(p.chips + p.bet for p in active_players)  # Current chips + bets
+            + self.pot  # Main pot
+            + (
+                sum(pot.amount for pot in self.side_pots) if self.side_pots else 0
+            )  # Side pots
+        )
 
         # Create dictionary of all bets from players who contributed
         posted_amounts = {
@@ -187,16 +191,35 @@ class Pot:
 
                 current_amount = amount
 
-        # Combine existing and new pots, preserving order
+        # Combine existing and new pots
         final_pots = []
         if self.side_pots:
             final_pots.extend(self.side_pots)  # Keep existing pots first
         final_pots.extend(new_side_pots)  # Add new pots from this round
 
+        # Merge pots with identical eligible players
+        merged_pots = {}
+        for side_pot in final_pots:
+            # Use frozenset of eligible players as key for merging
+            key = frozenset(side_pot.eligible_players)
+            if key not in merged_pots:
+                merged_pots[key] = side_pot.amount
+            else:
+                merged_pots[key] += side_pot.amount
+                PotLogger.log_pot_merge(side_pot.amount, list(key))
+
+        # Convert merged pots back to list format
+        final_pots = [
+            SidePot(amount=amount, eligible_players=sorted(list(players)))
+            for players, amount in merged_pots.items()
+        ]
+
         # Validate total chips haven't changed
-        total_chips_after = sum(p.chips for p in active_players) + sum(  # Current chips
-            pot.amount for pot in final_pots
-        )  # All side pots
+        total_chips_after = (
+            sum(p.chips for p in active_players)  # Current chips
+            + self.pot  # Main pot
+            + sum(pot.amount for pot in final_pots)  # All side pots
+        )
 
         if total_chips_before != total_chips_after:
             raise InvalidGameStateError(
@@ -345,12 +368,21 @@ class Pot:
         """
         Handle the end of a betting round.
 
+        This method should be called AFTER calculate_side_pots (if needed). It moves
+        all current bets into the main pot and resets player bet amounts to 0.
+
         Args:
             active_players: List of players still in the hand
 
         Side Effects:
-            - Updates pot amount with current bets
-            - Clears player bet amounts
+            - Adds current bets to main pot
+            - Clears player bet amounts to 0
+            - Logs betting round completion
+
+        Note:
+            - Call calculate_side_pots first if side pots are needed
+            - This method moves ALL current bets to the main pot
+            - Player bet amounts are reset to 0 after moving to pot
         """
         # Add current bets to pot
         total_bets = sum(p.bet for p in active_players)
