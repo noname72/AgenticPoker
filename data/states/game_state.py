@@ -186,9 +186,6 @@ class GameState(BaseModel):
 
             # Update position-specific information
             player_state.position = position
-            player_state.is_dealer = position == PlayerPosition.DEALER
-            player_state.is_small_blind = position == PlayerPosition.SMALL_BLIND
-            player_state.is_big_blind = position == PlayerPosition.BIG_BLIND
 
             player_states.append(player_state)
 

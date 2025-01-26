@@ -81,13 +81,6 @@ class MockPlayer(Player):
         self.is_all_in = False
         self.checked = False
         self.called = False
-        self.total_bet_this_round = 0
-        self.last_action = None
-        self.last_raise_amount = None
-        self.is_dealer = False
-        self.is_small_blind = False
-        self.is_big_blind = False
-        self.chips_at_start_of_hand = chips
 
     @property
     def position(self) -> PlayerPosition:

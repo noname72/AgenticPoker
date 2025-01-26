@@ -19,10 +19,7 @@ def basic_game_state():
                 chips=1000,
                 position=PlayerPosition.DEALER,
                 bet=0,
-                folded=False,
-                is_dealer=True,
-                is_small_blind=False,
-                is_big_blind=False,
+                folded=False
             )
         ],
         dealer_position=0,
@@ -147,10 +144,7 @@ class TestGameState:
                         chips=1000,
                         position=PlayerPosition.DEALER,
                         bet=0,
-                        folded=False,
-                        is_dealer=True,
-                        is_small_blind=False,
-                        is_big_blind=False,
+                        folded=False
                     )
                 ],
                 dealer_position=0,
