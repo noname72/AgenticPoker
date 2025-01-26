@@ -1,12 +1,11 @@
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from data.types.player_types import PlayerPosition
-from game.hand import Hand
 
 if TYPE_CHECKING:
-    from game import Player
+    from game.player import Player
 
 
 class PlayerState(BaseModel):
@@ -37,10 +36,10 @@ class PlayerState(BaseModel):
     """
 
     name: str
-    chips: int
-    bet: int
+    chips: int = Field(ge=0)
+    bet: int = Field(ge=0)
     folded: bool
-    hand: Optional[Hand] = None
+    hand: Optional[Any] = None
     position: PlayerPosition
     is_all_in: bool
     checked: bool

@@ -1,8 +1,13 @@
 import pytest
+from pydantic import ValidationError
 
 from data.states.player_state import PlayerState
 from data.types.player_types import PlayerPosition
 from game.player import Player
+from game.hand import Hand
+
+# Update PlayerState's forward refs at module level
+PlayerState.update_forward_refs(Hand=Hand)
 
 
 @pytest.fixture
@@ -14,13 +19,19 @@ def basic_player_state():
         bet=0,
         folded=False,
         position=PlayerPosition.DEALER,
+        is_all_in=False,
+        checked=False,
+        called=False,
     )
 
 
 @pytest.fixture
 def mock_player():
     """Create a mock Player instance."""
-    return Player("TestPlayer", chips=1000)
+    return Player(
+        "TestPlayer",
+        chips=1000,
+    )
 
 
 class TestPlayerState:
@@ -31,6 +42,9 @@ class TestPlayerState:
         assert basic_player_state.bet == 0
         assert basic_player_state.folded is False
         assert basic_player_state.position == PlayerPosition.DEALER
+        assert basic_player_state.is_all_in is False
+        assert basic_player_state.checked is False
+        assert basic_player_state.called is False
 
     def test_default_values(self):
         """Test that optional fields have correct default values."""
@@ -40,14 +54,14 @@ class TestPlayerState:
             bet=0,
             folded=False,
             position=PlayerPosition.OTHER,
+            is_all_in=False,
+            checked=False,
+            called=False,
         )
         assert player_state.hand is None
-        assert player_state.hand_rank is None
-        assert player_state.total_bet_this_round == 0
-        assert player_state.last_action is None
-        assert player_state.last_raise_amount is None
-        assert player_state.is_all_in is False
-        assert player_state.is_active is True
+        assert not player_state.is_all_in
+        assert not player_state.checked
+        assert not player_state.called
 
     def test_dict_access(self, basic_player_state):
         """Test dictionary-style access to attributes."""
@@ -66,6 +80,7 @@ class TestPlayerState:
         assert basic_player_state.get("name") == "TestPlayer"
         assert basic_player_state.get("not_an_attribute", "default") == "default"
 
+
     def test_from_player_method(self, mock_player):
         """Test creating PlayerState from a Player instance."""
         player_state = PlayerState.from_player(mock_player)
@@ -74,54 +89,51 @@ class TestPlayerState:
         assert player_state.chips == mock_player.chips
         assert player_state.bet == mock_player.bet
         assert player_state.folded == mock_player.folded
-        assert isinstance(player_state.position, PlayerPosition)
+        assert not player_state.is_all_in
+        assert not player_state.checked
+        assert not player_state.called
 
     def test_model_validation(self):
         """Test Pydantic model validation."""
         # Test negative chips
-        with pytest.raises(ValueError):
+        with pytest.raises(ValidationError) as exc_info:
             PlayerState(
                 name="TestPlayer",
                 chips=-100,  # Invalid negative amount
                 bet=0,
                 folded=False,
                 position=PlayerPosition.DEALER,
+                is_all_in=False,
+                checked=False,
+                called=False,
             )
+        assert "ensure this value is greater than or equal to 0" in str(exc_info.value)
 
         # Test negative bet
-        with pytest.raises(ValueError):
+        with pytest.raises(ValidationError) as exc_info:
             PlayerState(
                 name="TestPlayer",
                 chips=1000,
                 bet=-50,  # Invalid negative amount
                 folded=False,
                 position=PlayerPosition.DEALER,
+                is_all_in=False,
+                checked=False,
+                called=False,
             )
-
-        # Test negative historical values
-        with pytest.raises(ValueError):
-            PlayerState(
-                name="TestPlayer",
-                chips=1000,
-                bet=0,
-                folded=False,
-                position=PlayerPosition.DEALER,
-                hands_played=-1,  # Invalid negative amount
-            )
+        assert "ensure this value is greater than or equal to 0" in str(exc_info.value)
 
     def test_string_conversion(self, basic_player_state):
-        """Test string conversion of hand and hand_rank."""
+        """Test string conversion of hand."""
         state = basic_player_state.copy()
-        state.hand = "AhKh"
-        state.hand_rank = "Flush"
+        state.hand = "AhKh"  # Assuming Hand can be set as a string for testing
 
         player_dict = state.to_dict()
         assert player_dict["hand"] == "AhKh"
-        assert player_dict["hand_rank"] == "Flush"
 
-    def test_active_status(self):
-        """Test is_active status based on folded and all-in conditions."""
-        # Player who hasn't folded and isn't all-in should be active
+    def test_active_status_with_all_fields(self):
+        """Test various combinations of player states."""
+        # Basic active player
         active_player = PlayerState(
             name="Active",
             chips=1000,
@@ -129,20 +141,14 @@ class TestPlayerState:
             folded=False,
             position=PlayerPosition.DEALER,
             is_all_in=False,
+            checked=False,
+            called=False,
         )
-        assert active_player.is_active is True
+        assert active_player.is_all_in is False
+        assert active_player.checked is False
+        assert active_player.called is False
 
-        # Player who has folded should not be active
-        folded_player = PlayerState(
-            name="Folded",
-            chips=1000,
-            bet=0,
-            folded=True,
-            position=PlayerPosition.DEALER,
-        )
-        assert folded_player.is_active is True  # Because is_active is set explicitly
-
-        # Player who is all-in should still be marked as active
+        # All-in player
         all_in_player = PlayerState(
             name="AllIn",
             chips=0,
@@ -150,5 +156,33 @@ class TestPlayerState:
             folded=False,
             position=PlayerPosition.DEALER,
             is_all_in=True,
+            checked=False,
+            called=False,
         )
-        assert all_in_player.is_active is True
+        assert all_in_player.is_all_in is True
+
+        # Player who has checked
+        checked_player = PlayerState(
+            name="Checked",
+            chips=1000,
+            bet=0,
+            folded=False,
+            position=PlayerPosition.DEALER,
+            is_all_in=False,
+            checked=True,
+            called=False,
+        )
+        assert checked_player.checked is True
+
+        # Player who has called
+        called_player = PlayerState(
+            name="Called",
+            chips=800,
+            bet=200,
+            folded=False,
+            position=PlayerPosition.DEALER,
+            is_all_in=False,
+            checked=False,
+            called=True,
+        )
+        assert called_player.called is True

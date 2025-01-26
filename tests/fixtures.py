@@ -1098,12 +1098,13 @@ def game_state(mock_players):
     """Create a standard game state for testing.
 
     Creates a GameState instance with:
-    - 4 players with standard positions (dealer, SB, BB, other)
+    - 4 players with standard positions (dealer, SB, BB, UTG)
     - Standard blinds (50/100)
     - Standard ante (10)
     - Pre-draw phase
     - Empty pot
     - Full deck
+    - Default raise limits
     """
     from data.states.game_state import GameState
     from data.states.player_state import PlayerState
@@ -1112,25 +1113,39 @@ def game_state(mock_players):
     from data.types.player_types import PlayerPosition
     from data.types.pot_types import PotState
 
-    # Create player states
+    # Create player states with proper positions
     player_states = [
         PlayerState(
             name=player.name,
             chips=player.chips,
             bet=player.bet,
             position=(
-                PlayerPosition.DEALER
-                if i == 0
-                else (
-                    PlayerPosition.SMALL_BLIND
-                    if i == 1
-                    else PlayerPosition.BIG_BLIND if i == 2 else PlayerPosition.OTHER
-                )
+                PlayerPosition.DEALER if i == 0
+                else PlayerPosition.SMALL_BLIND if i == 1
+                else PlayerPosition.BIG_BLIND if i == 2
+                else PlayerPosition.UNDER_THE_GUN
             ),
             folded=player.folded,
+            is_all_in=False,
+            checked=False,
+            called=False,
         )
         for i, player in enumerate(mock_players)
     ]
+
+    # Create round state with proper initialization
+    round_state = RoundState(
+        round_number=1,
+        phase=RoundPhase.PRE_DRAW,
+        current_bet=100,
+        raise_count=0,
+        dealer_position=0,
+        small_blind_position=1,
+        big_blind_position=2,
+        first_bettor_index=3,
+        main_pot=0,
+        side_pots=[],
+    )
 
     return GameState(
         players=player_states,
@@ -1139,14 +1154,12 @@ def game_state(mock_players):
         big_blind=100,
         ante=10,
         min_bet=100,
-        round_state=RoundState(
-            round_number=1,
-            phase=RoundPhase.PRE_DRAW,
-            current_bet=100,
-            raise_count=0,
-        ),
+        round_state=round_state,
         pot_state=PotState(main_pot=0),
         deck_state=DeckState(cards_remaining=52),
+        active_player_position=None,
+        max_raise_multiplier=3,
+        max_raises_per_round=4,
     )
 
 
