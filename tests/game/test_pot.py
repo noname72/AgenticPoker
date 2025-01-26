@@ -226,7 +226,7 @@ class TestPot:
         - Should not log anything when no side pots exist
         - Should not throw error when side_pots is None
         """
-        pot.log_side_pots(mock_logger)
+        pot.log_side_pots()
         mock_logger.info.assert_not_called()
 
     def test_calculate_side_pots_equal_bets(self, pot, mock_players):
@@ -1360,12 +1360,11 @@ class TestPot:
         - Should use consistent log format
         - Should not modify pot state during logging
         """
-        mock_logger = Mock()
         pot.side_pots = [
             SidePot(amount=100, eligible_players=["P1", "P2"]),
             SidePot(amount=200, eligible_players=["P1"]),
         ]
-        pot.log_side_pots(mock_logger)
+        pot.log_side_pots()
         # Verify PotLogger was called
         assert PotLogger.log_side_pots_info.called
 
@@ -1520,8 +1519,7 @@ class TestPot:
             f"Total chips should remain constant.\n"
             f"Player chips: {[p.chips for p in mock_players]} = ${sum(p.chips for p in mock_players)}\n"
             f"Main pot: ${pot.pot}\n"
-            f"Side pots: {[p.amount for p in side_pots]} = ${sum(p.amount for p in side_pots)}\n"
-            f"Total: ${total_chips}"
+            f"Side pots: {[p.amount for p in side_pots]}"
         )
 
     def test_side_pot_calculation_order(self, pot, mock_players):

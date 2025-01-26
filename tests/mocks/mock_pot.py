@@ -309,3 +309,9 @@ class MockPot:
         """Get a string representation of the pot state."""
         side_pots_str = f", {len(self.side_pots)} side pots" if self.side_pots else ""
         return f"MockPot: {self.pot} in main pot{side_pots_str}"
+
+    def log_side_pots(self) -> None:
+        """Mock implementation of log_side_pots."""
+        if not self.side_pots:
+            return
+        self.log_side_pots_info(self.side_pots)

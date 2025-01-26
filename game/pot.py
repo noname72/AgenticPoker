@@ -245,7 +245,7 @@ class Pot:
             for pot in self.side_pots
         ]
 
-    def log_side_pots(self, logger) -> None:
+    def log_side_pots(self) -> None:
         """
         Log the current side pot state.
         """
