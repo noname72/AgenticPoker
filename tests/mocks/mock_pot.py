@@ -113,8 +113,10 @@ class MockPot:
             return []
 
         # Track total chips before calculation
-        total_chips_before = sum(p.chips + p.bet for p in active_players) + (
-            sum(pot.amount for pot in self.side_pots) if self.side_pots else 0
+        total_chips_before = (
+            sum(p.chips + p.bet for p in active_players)  # Current chips + bets
+            + self.pot  # Main pot
+            + (sum(pot.amount for pot in self.side_pots) if self.side_pots else 0)  # Side pots
         )
 
         # Create dictionary of all bets from players who contributed

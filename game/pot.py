@@ -129,11 +129,13 @@ class Pot:
             return []
 
         # Track total chips in play before calculation
-        total_chips_before = sum(
-            p.chips + p.bet for p in active_players
-        ) + (  # Current chips + bets
-            sum(pot.amount for pot in self.side_pots) if self.side_pots else 0
-        )  # Existing pots
+        total_chips_before = (
+            sum(p.chips + p.bet for p in active_players)  # Current chips + bets
+            + self.pot  # Main pot
+            + (
+                sum(pot.amount for pot in self.side_pots) if self.side_pots else 0
+            )  # Side pots
+        )
 
         # Create dictionary of all bets from players who contributed
         posted_amounts = {
@@ -194,9 +196,11 @@ class Pot:
         final_pots.extend(new_side_pots)  # Add new pots from this round
 
         # Validate total chips haven't changed
-        total_chips_after = sum(p.chips for p in active_players) + sum(  # Current chips
-            pot.amount for pot in final_pots
-        )  # All side pots
+        total_chips_after = (
+            sum(p.chips for p in active_players)  # Current chips
+            + self.pot  # Main pot
+            + sum(pot.amount for pot in final_pots)  # All side pots
+        )
 
         if total_chips_before != total_chips_after:
             raise InvalidGameStateError(
