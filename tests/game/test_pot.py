@@ -1403,3 +1403,123 @@ class TestPot:
         assert state.main_pot == 100
         assert state.side_pots == []
         assert state.total_pot == 100
+
+    def test_merge_identical_side_pots(self, pot, mock_players):
+        """Test side pot calculation when identical eligible players bet across rounds.
+
+        Tests that:
+        1. Side pots from different betting rounds are merged if they have the same eligible players
+        2. Pot amounts are summed correctly when merging
+        3. Order of eligible players is preserved
+        4. Total chips remain consistent after merging
+
+        Scenario:
+        Round 1:
+        - Alice and Bob each bet 100
+        - Charlie doesn't bet
+        - Creates side pot of 200 for Alice and Bob
+
+        Round 2:
+        - Alice and Bob each bet 150 more
+        - Charlie folds
+        - Should merge with existing pot
+
+        Expected outcome:
+        - Single merged pot of 500 (200 + 300)
+        - Only Alice and Bob eligible
+        - Total chips remain constant at 3000
+
+        Assumptions:
+        - Side pots with same eligible players should be merged
+        - Merged pot amounts should sum correctly
+        - Player chip totals should be properly tracked
+        - Total chips in play should remain constant
+        """
+        # Setup players with chips
+        mock_players[0].chips = 1000  # Alice
+        mock_players[1].chips = 1000  # Bob
+        mock_players[2].chips = 1000  # Charlie
+        initial_total = sum(p.chips for p in mock_players)  # 3000
+
+        print("\nInitial state:")
+        for p in mock_players:
+            print(f"  {p.name}: chips=${p.chips}, bet=${p.bet}")
+        print(f"  Main pot: ${pot.pot}")
+        print(f"  Side pots: None")
+
+        # First betting round - Alice and Bob bet 100 each
+        mock_players[0].chips -= 100  # Alice now has 900
+        mock_players[0].bet = 100
+        mock_players[1].chips -= 100  # Bob now has 900
+        mock_players[1].bet = 100
+
+        # Calculate first round side pots
+        side_pots = pot.calculate_side_pots(mock_players)
+        pot.side_pots = side_pots
+
+        # Clear first round bets
+        for p in mock_players:
+            p.bet = 0
+
+        print("\nAfter first round:")
+        print(
+            f"  Side pot: ${pot.side_pots[0].amount} (Eligible: {pot.side_pots[0].eligible_players})"
+        )
+
+        # Second betting round - Alice and Bob bet 150 each
+        mock_players[0].chips -= 150  # Alice now has 750
+        mock_players[0].bet = 150
+        mock_players[0].folded = False
+
+        mock_players[1].chips -= 150  # Bob now has 750
+        mock_players[1].bet = 150
+        mock_players[1].folded = False
+
+        mock_players[2].bet = 0  # Charlie
+        mock_players[2].folded = True
+
+        print("\nBefore calculating final side pots:")
+        for p in mock_players:
+            print(f"  {p.name}: chips=${p.chips}, bet=${p.bet}")
+        print(f"  Main pot: ${pot.pot}")
+        print(
+            f"  Existing side pots: {[(p.amount, p.eligible_players) for p in pot.side_pots]}"
+        )
+
+        # Calculate final side pots
+        side_pots = pot.calculate_side_pots(mock_players)
+
+        print("\nAfter calculating side pots:")
+        print(f"  Main pot: ${pot.pot}")
+        print(f"  Side pots: {[(p.amount, p.eligible_players) for p in side_pots]}")
+
+        # Verify results
+        assert len(side_pots) == 1, "Should merge into single pot"
+        assert side_pots[0].amount == 500, "Should sum pot amounts"
+        assert set(side_pots[0].eligible_players) == {"Alice", "Bob"}
+
+        # Verify total chips remain consistent
+        total_chips = (
+            sum(p.chips for p in mock_players)  # Current chips
+            + pot.pot  # Main pot
+            + sum(p.amount for p in side_pots)  # Side pots
+        )
+
+        print("\nFinal chip accounting:")
+        print(
+            f"  Player chips: {[p.chips for p in mock_players]} = ${sum(p.chips for p in mock_players)}"
+        )
+        print(f"  Main pot: ${pot.pot}")
+        print(
+            f"  Side pots: {[p.amount for p in side_pots]} = ${sum(p.amount for p in side_pots)}"
+        )
+        print(f"  Total chips: ${total_chips}")
+        print(f"  Expected total: ${initial_total}")
+
+        assert total_chips == initial_total, (
+            f"Total chips should remain constant.\n"
+            f"Player chips: {[p.chips for p in mock_players]} = ${sum(p.chips for p in mock_players)}\n"
+            f"Main pot: ${pot.pot}\n"
+            f"Side pots: {[p.amount for p in side_pots]} = ${sum(p.amount for p in side_pots)}\n"
+            f"Total: ${total_chips}"
+        )

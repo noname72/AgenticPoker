@@ -82,3 +82,16 @@ class PotLogger:
                 f"Side pots: {[(pot.amount, pot.eligible_players) for pot in side_pots]}"
             )
         logger.error(f"Active players: {active_players}")
+
+    @staticmethod
+    def log_pot_merge(amount: int, eligible_players: List[str]) -> None:
+        """Log when side pots with identical eligible players are merged.
+
+        Args:
+            amount: Amount being merged into existing pot
+            eligible_players: List of players eligible for the merged pot
+        """
+        players_str = ", ".join(eligible_players)
+        logger.debug(
+            f"Merging pot: ${amount} into existing pot with eligible players: {players_str}"
+        )

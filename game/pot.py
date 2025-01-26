@@ -189,11 +189,28 @@ class Pot:
 
                 current_amount = amount
 
-        # Combine existing and new pots, preserving order
+        # Combine existing and new pots
         final_pots = []
         if self.side_pots:
             final_pots.extend(self.side_pots)  # Keep existing pots first
         final_pots.extend(new_side_pots)  # Add new pots from this round
+
+        # Merge pots with identical eligible players
+        merged_pots = {}
+        for side_pot in final_pots:
+            # Use frozenset of eligible players as key for merging
+            key = frozenset(side_pot.eligible_players)
+            if key not in merged_pots:
+                merged_pots[key] = side_pot.amount
+            else:
+                merged_pots[key] += side_pot.amount
+                PotLogger.log_pot_merge(side_pot.amount, list(key))
+
+        # Convert merged pots back to list format
+        final_pots = [
+            SidePot(amount=amount, eligible_players=sorted(list(players)))
+            for players, amount in merged_pots.items()
+        ]
 
         # Validate total chips haven't changed
         total_chips_after = (
