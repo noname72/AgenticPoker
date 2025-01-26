@@ -187,10 +187,6 @@ def collect_blinds_and_antes(game, dealer_index, small_blind, big_blind, ante):
                 player.name, ante, ante_amount, is_ante=True
             )
 
-    # Reset bets after antes
-    for player in game.table:
-        player.bet = 0
-
     # Small blind
     sb_index = (dealer_index + 1) % num_players
     sb_player = game.table[sb_index]

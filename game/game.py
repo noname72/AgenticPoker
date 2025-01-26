@@ -267,7 +267,6 @@ class AgenticPoker:
         self._log_round_info()
 
         # Collect blinds and antes AFTER logging initial state
-        #! doesnt betting module handle this?
         self._collect_blinds_and_antes()
 
         # Handle AI player pre-round messages
@@ -301,6 +300,10 @@ class AgenticPoker:
         # Store starting stacks
         self.round_starting_stacks = {p: p.chips for p in self.table}
 
+        # Reset all bets before collecting
+        for player in self.table:
+            player.bet = 0
+
         # Use betting module to collect blinds and antes
         collected = betting.collect_blinds_and_antes(
             dealer_index=self.dealer_index,
@@ -313,8 +316,8 @@ class AgenticPoker:
         # Set the current bet to the big blind amount
         self.current_bet = self.big_blind
 
-        # Update pot through pot manager
-        self.pot.add_to_pot(collected)
+        # Update pot directly with collected amount
+        self.pot.pot = collected
 
     def _log_round_info(self) -> None:
         """Log complete round state including stacks, positions, and betting information."""
