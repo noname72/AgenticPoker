@@ -69,10 +69,10 @@ class MockPot:
     specific test scenarios.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize a mock pot with empty pot and no side pots."""
         self.pot: int = 0
-        self.side_pots: Optional[List[SidePot]] = None
+        self.side_pots: List[SidePot] = []
 
         # Create mock methods that can be configured in tests
         self.add_to_pot = MagicMock()
@@ -213,7 +213,7 @@ class MockPot:
     def _default_reset_pot(self) -> None:
         """Default behavior for resetting the pot."""
         self.pot = 0
-        self.side_pots = None
+        self.side_pots = []
 
     def _default_validate_pot_state(
         self, active_players: List[MockPlayer], initial_total: Optional[int] = None

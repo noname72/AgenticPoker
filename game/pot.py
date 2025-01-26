@@ -22,8 +22,7 @@ class Pot:
 
     Attributes:
         pot (int): Current amount in the main pot
-        side_pots (Optional[List[SidePot]]): List of active side pots, if any.
-            None indicates no side pots have been calculated yet.
+        side_pots (List[SidePot]): List of active side pots, if any.
             Empty list indicates calculation returned no side pots.
 
     Usage:
@@ -51,7 +50,7 @@ class Pot:
     def __init__(self) -> None:
         """Initialize a new pot instance with empty pot and no side pots."""
         self.pot: int = 0
-        self.side_pots: Optional[List[SidePot]] = None
+        self.side_pots: List[SidePot] = []
 
     def add_to_pot(self, amount: int) -> None:
         """
@@ -90,7 +89,7 @@ class Pot:
         old_side_pots = self.side_pots
 
         self.pot = 0
-        self.side_pots = None
+        self.side_pots = []
 
         PotLogger.log_pot_reset(old_pot, old_side_pots)
 
@@ -134,9 +133,7 @@ class Pot:
         total_chips_before = (
             sum(p.chips + p.bet for p in active_players)  # Current chips + bets
             + self.pot  # Main pot
-            + (
-                sum(pot.amount for pot in self.side_pots) if self.side_pots else 0
-            )  # Side pots
+            + sum(pot.amount for pot in self.side_pots)  # Side pots
         )
 
         # Add validation before processing
@@ -145,7 +142,7 @@ class Pot:
             PotLogger.log_pot_validation_info(
                 "No bets to process, returning existing side pots"
             )
-            return self.side_pots if self.side_pots else []
+            return self.side_pots
 
         # Create dictionary of all bets from players who contributed
         posted_amounts = {
@@ -157,11 +154,10 @@ class Pot:
             PotLogger.log_pot_validation_info(
                 "No posted amounts, returning existing side pots"
             )
-            # If no new bets, return existing side pots
-            return self.side_pots if self.side_pots else []
+            return self.side_pots
 
         # Keep track of existing side pots
-        existing_pots = self.side_pots if self.side_pots else []
+        existing_pots = self.side_pots
 
         # Calculate new side pots from current bets
         new_side_pots = []
@@ -421,9 +417,6 @@ class Pot:
         """Get the current state of all pots."""
         return PotState(
             main_pot=self.pot,
-            side_pots=(
-                self.side_pots if self.side_pots else []
-            ),  # Convert None to empty list
-            total_pot=self.pot
-            + sum(pot.amount for pot in (self.side_pots or [])),  # Handle None case
+            side_pots=self.side_pots,
+            total_pot=self.pot + sum(pot.amount for pot in self.side_pots),
         )

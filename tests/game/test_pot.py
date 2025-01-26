@@ -77,10 +77,10 @@ class TestPot:
 
         Assumptions:
         - New pot should have 0 chips
-        - Side pots should be None initially
+        - Side pots should be empty list initially
         """
         assert pot.pot == 0
-        assert pot.side_pots is None
+        assert pot.side_pots == []
 
     def test_add_to_pot(self, pot):
         """Test adding chips to the main pot.
@@ -111,7 +111,7 @@ class TestPot:
         pot.reset_pot()
 
         assert pot.pot == 0
-        assert pot.side_pots is None
+        assert pot.side_pots == []
         # Verify logging
         PotLogger.log_pot_reset.assert_called_once_with(old_pot, old_side_pots)
 
@@ -570,12 +570,12 @@ class TestPot:
         pot.side_pots = [SidePot(amount=100, eligible_players=[])]
         pot.reset_pot()
         assert pot.pot == 0
-        assert pot.side_pots is None
+        assert pot.side_pots == []
 
         # Second reset should have same result
         pot.reset_pot()
         assert pot.pot == 0
-        assert pot.side_pots is None
+        assert pot.side_pots == []
 
     def test_validate_pot_state(self, pot, mock_players):
         """Test pot state validation.
@@ -1390,14 +1390,12 @@ class TestPot:
         """Test get_state handles None side_pots correctly.
 
         Assumptions:
-        - Should convert None side_pots to empty list
+        - Should handle empty side_pots list
         - Should calculate total pot correctly without side pots
         - Should preserve main pot amount
-        - Should handle transition from None to empty list
         - Should maintain consistent state representation
         """
         pot.pot = 100
-        pot.side_pots = None
         state = pot.get_state()
         assert state.main_pot == 100
         assert state.side_pots == []
