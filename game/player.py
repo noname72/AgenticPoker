@@ -83,19 +83,14 @@ class Player:
                 f"Raise amount {amount} too small compared to current bet {game.current_bet}"
             )
             amount = game.current_bet * 2
-            amount = min(
-                amount, self.chips
-            )  # Still ensure we don't exceed available chips
+            amount = min(amount, self.chips)
 
         self.chips -= amount
         self.bet += amount
-        # Add the bet to the pot
-        game.pot.pot += amount
 
         PlayerLogger.log_bet_placement(
             self.name, amount, self.bet, self.chips, game.pot.pot
         )
-
         return amount
 
     def execute(self, action_decision: ActionDecision, game):

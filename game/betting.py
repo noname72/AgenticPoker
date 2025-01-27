@@ -89,6 +89,9 @@ def betting_round(game: "Game") -> None:
 
     _process_betting_cycle(game)
 
+    # After betting cycle completes, move all bets to pot
+    game.pot.end_betting_round(game.table.players)
+
 
 def _process_betting_cycle(game: "Game") -> None:
     """Process a single cycle of betting for all active players.
@@ -118,21 +121,22 @@ def _process_betting_cycle(game: "Game") -> None:
     complete = False
 
     while not complete:
-
-        previous_last_raiser = game.table.last_raiser
-
         agent = game.table.get_next_player()
         if not agent:
             # No more active players, clear needs_to_act and end round
             game.table.needs_to_act.clear()
             break
 
+        # Add current pot amount to logging
         BettingLogger.log_player_turn(
             player_name=agent.name,
             hand=agent.hand.show() if hasattr(agent, "hand") else "Unknown",
             chips=agent.chips,
             current_bet=agent.bet,
-            pot=game.pot.pot,
+            pot=game.pot.pot
+            + sum(
+                p.bet for p in game.table.players
+            ),  # Include current bets in pot total
             active_players=[p.name for p in game.table.players if not p.folded],
             last_raiser=game.table.last_raiser.name if game.table.last_raiser else None,
         )
@@ -140,14 +144,10 @@ def _process_betting_cycle(game: "Game") -> None:
         action_decision = agent.decide_action(game)
         agent.execute(action_decision, game)
 
+        # Update table state based on action
         game.table.update(action_decision, agent)
 
         complete, reason = game.table.is_round_complete()
-
-        # BettingLogger.log_debug(
-        #     f"Previous Raiser: {previous_last_raiser}, Current Raiser: {game.table.last_raiser},"
-        #     f"Round Complete: {complete}, Reason: {reason}"
-        # )
 
         BettingLogger.log_line_break()
 

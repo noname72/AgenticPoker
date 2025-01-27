@@ -36,7 +36,6 @@ class TestPlayer:
         assert actual_bet == bet_amount
         assert player.chips == 500  # Started with 1000
         assert player.bet == 500
-        assert mock_game.pot.pot == 500
 
     def test_place_bet_more_than_chips(self, player, mock_game):
         """Test placing a bet larger than available chips"""
@@ -46,7 +45,6 @@ class TestPlayer:
         assert actual_bet == 1000  # Should only bet what's available
         assert player.chips == 0
         assert player.bet == 1000
-        assert mock_game.pot.pot == 1000
 
     def test_place_negative_bet(self, player, mock_game):
         """Test that placing a negative bet raises ValueError"""
@@ -94,7 +92,6 @@ class TestPlayer:
 
         assert player.chips == 500
         assert player.bet == 500
-        assert mock_game.pot.pot == 500
 
     def test_bet_all_chips(self, player, mock_game):
         """Test betting all available chips"""
@@ -103,7 +100,6 @@ class TestPlayer:
         assert actual_bet == 1000
         assert player.chips == 0
         assert player.bet == 1000
-        assert mock_game.pot.pot == 1000
 
     def test_zero_bet(self, player, mock_game):
         """Test placing a zero bet"""
@@ -146,7 +142,6 @@ class TestPlayer:
         assert actual_bet == 500
         assert player.chips == 500
         assert player.bet == 500
-        assert mock_game.pot.pot == 500
 
     def test_decimal_chip_amount(self):
         """Test that initializing with decimal chip amount raises ValueError"""

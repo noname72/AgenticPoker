@@ -159,3 +159,90 @@ def test_collect_blinds_and_antes(game, player_factory):
 
     # Verify current bet is set to big blind
     assert game.current_bet == game.big_blind
+
+
+def test_pot_not_double_counted(game, player_factory):
+    """Test that pot amounts aren't double-counted during betting.
+
+    This test verifies that:
+    1. Individual bets don't directly increment the pot
+    2. Pot is only updated at end of betting round
+    3. Final pot matches actual player contributions
+    """
+    # Create players with known chip stacks
+    players = [
+        player_factory(name="Alice", chips=1000),  # Dealer
+        player_factory(name="Bob", chips=1000),  # Small Blind
+        player_factory(name="Charlie", chips=1000),  # Big Blind
+        player_factory(name="Randy", chips=1000),  # UTG
+    ]
+    game.table.players = players
+
+    # Set up initial state
+    game.small_blind = 50
+    game.big_blind = 100
+    game.ante = 10
+    game.dealer_index = 0
+
+    # Reset pot before collecting blinds
+    game.pot.reset_pot()
+
+    # Collect blinds and antes
+    game._collect_blinds_and_antes()
+
+    # Verify initial pot after blinds/antes
+    # Each player pays 10 ante (40 total)
+    # SB pays 50, BB pays 100
+    expected_initial_pot = 40 + 50 + 100
+    assert (
+        game.pot.pot == expected_initial_pot
+    ), f"Expected initial pot of ${expected_initial_pot}, got ${game.pot.pot}"
+
+    # Reset all player bets after blinds (since they're now in the pot)
+    for player in players:
+        player.bet = 0
+
+    # Simulate pre-draw betting round:
+    # Alice raises to 300
+    alice = players[0]
+    alice.place_bet(300, game)
+
+    # Bob folds (already put in SB)
+    bob = players[1]
+    bob.folded = True
+
+    # Charlie calls (already put in BB)
+    charlie = players[2]
+    charlie.place_bet(200, game)  # Additional 200 to match 300 total
+
+    # Randy calls
+    randy = players[3]
+    randy.place_bet(300, game)
+
+    # Before end_betting_round, pot should still be initial amount
+    assert (
+        game.pot.pot == expected_initial_pot
+    ), "Pot should not increase until end of betting round"
+
+    # End betting round which moves bets to pot
+    game.pot.end_betting_round(game.table.players)
+
+    # Calculate expected final pot:
+    # Initial pot: 190 (antes + blinds)
+    # Alice: +300
+    # Bob: +0 (folded after SB)
+    # Charlie: +200 (to match 300 total)
+    # Randy: +300
+    expected_final_pot = expected_initial_pot + 300 + 200 + 300
+
+    assert (
+        game.pot.pot == expected_final_pot
+    ), f"Expected final pot of ${expected_final_pot}, got ${game.pot.pot}"
+
+    # Verify player chip counts
+    assert alice.chips == 1000 - 10 - 300, f"Alice's chips incorrect: {alice.chips}"
+    assert bob.chips == 1000 - 10 - 50, f"Bob's chips incorrect: {bob.chips}"
+    assert (
+        charlie.chips == 1000 - 10 - 100 - 200
+    ), f"Charlie's chips incorrect: {charlie.chips}"
+    assert randy.chips == 1000 - 10 - 300, f"Randy's chips incorrect: {randy.chips}"

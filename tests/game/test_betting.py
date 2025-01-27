@@ -1,5 +1,5 @@
 from itertools import chain, repeat
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -275,3 +275,90 @@ def test_collect_blinds_and_antes_all_in_on_blinds(mock_game, player_factory):
     assert collected == 30  # 10 SB + 20 BB
     assert sb_player.is_all_in
     assert bb_player.is_all_in
+
+
+def test_betting_round_displays_current_pot(
+    mock_betting_state, player_factory, mock_betting_logger
+):
+    """Test that displayed pot includes current bets during betting round.
+
+    Verifies that:
+    1. Pot display includes both main pot and current bets
+    2. Each player sees correct total when acting
+    """
+    # Create players with specific bets
+    p1 = player_factory(name="P1", action_response=ActionType.CALL)
+    p1.bet = 100
+    p1.chips = 900
+
+    p2 = player_factory(name="P2", action_response=ActionType.CALL)
+    p2.bet = 50
+    p2.chips = 950
+
+    # Configure game state
+    mock_betting_state["game"].pot.pot = 200  # Main pot
+    mock_betting_state["game"].current_bet = 100
+
+    # Configure table
+    table = Table([p1, p2])
+    table.get_next_player = MagicMock(side_effect=[p2, None])
+    table.is_round_complete = MagicMock(side_effect=[(True, "All players acted")])
+    mock_betting_state["game"].table = table
+
+    # Run betting round
+    betting_round(mock_betting_state["game"])
+
+    # Verify pot display included current bets
+    mock_betting_logger.log_player_turn.assert_called_with(
+        player_name="P2",
+        hand=ANY,
+        chips=950,
+        current_bet=50,
+        pot=350,  # Should show 200 (main pot) + 100 (P1 bet) + 50 (P2 bet)
+        active_players=ANY,
+        last_raiser=ANY,
+    )
+
+
+def test_betting_round_pot_display_during_betting(
+    mock_betting_state, player_factory, mock_betting_logger
+):
+    """Test that pot display includes current bets during betting.
+
+    Verifies that:
+    1. Initial pot is shown correctly
+    2. Current bets are included in displayed pot
+    3. Each player sees accurate total when acting
+    """
+    # Create players with specific bets
+    caller = player_factory(name="Randy", action_response=ActionType.CALL)
+    caller.bet = 10  # Initial ante
+    caller.chips = 990
+
+    active = player_factory(name="Charlie", action_response=ActionType.CALL)
+    active.bet = 110  # ante + big blind
+    active.chips = 890
+
+    # Configure game state
+    mock_betting_state["game"].pot.pot = 190  # Initial pot from antes/blinds
+    mock_betting_state["game"].current_bet = 100  # Big blind amount
+
+    # Configure table
+    table = Table([caller, active])
+    table.get_next_player = MagicMock(side_effect=[caller, None])
+    table.is_round_complete = MagicMock(side_effect=[(True, "All players acted")])
+    mock_betting_state["game"].table = table
+
+    # Run betting round
+    betting_round(mock_betting_state["game"])
+
+    # Verify pot display included current bets when Randy acted
+    mock_betting_logger.log_player_turn.assert_called_with(
+        player_name="Randy",
+        hand=ANY,
+        chips=990,
+        current_bet=10,
+        pot=310,  # Should show 190 (main pot) + 110 (Charlie's bet) + 10 (Randy's bet)
+        active_players=ANY,
+        last_raiser=ANY,
+    )
