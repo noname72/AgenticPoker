@@ -104,3 +104,54 @@ class PotLogger:
             message: The validation message to log
         """
         logger.debug(f"Pot validation: {message}")
+
+    @staticmethod
+    def log_bet_cleared(player_name: str, old_bet: int) -> None:
+        """Log when a player's bet is cleared and moved to pot.
+
+        Args:
+            player_name: Name of the player whose bet was cleared
+            old_bet: Amount of bet that was cleared
+        """
+        logger.debug(f"Cleared {player_name}'s bet of ${old_bet}")
+
+    @staticmethod
+    def log_betting_round_start(initial_pot: int, total_bets: int) -> None:
+        """Log the start of a betting round with initial state.
+
+        Args:
+            initial_pot: Amount in main pot before betting
+            total_bets: Total amount of current bets
+        """
+        logger.debug(
+            f"Starting betting round - Main pot: ${initial_pot}, "
+            f"Current bets: ${total_bets}"
+        )
+
+    @staticmethod
+    def log_pot_total(main_pot: int, current_bets: int) -> None:
+        """Log the current total pot including bets.
+
+        Args:
+            main_pot: Amount in main pot
+            current_bets: Total of current bets
+        """
+        total = main_pot + current_bets
+        logger.debug(
+            f"Current pot total: ${total} "
+            f"(Main: ${main_pot} + Bets: ${current_bets})"
+        )
+
+    @staticmethod
+    def log_bet_moved_to_pot(player_name: str, bet_amount: int, new_pot: int) -> None:
+        """Log when a player's bet is moved to the pot.
+
+        Args:
+            player_name: Name of the player whose bet was moved
+            bet_amount: Amount of bet moved to pot
+            new_pot: New total pot amount after adding bet
+        """
+        logger.debug(
+            f"Moving {player_name}'s bet of ${bet_amount} to pot. "
+            f"New pot total: ${new_pot}"
+        )
