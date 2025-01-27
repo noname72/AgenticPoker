@@ -13,11 +13,21 @@ class TestPlayer:
 
     @pytest.fixture
     def mock_game(self):
-        """Create a basic mock game for testing bets"""
+        """Create a properly configured mock game for testing."""
         mock = Mock()
         mock.current_bet = 0
         mock.pot = Mock()
         mock.pot.pot = 0
+        
+        # Configure config with proper values instead of Mock objects
+        mock.config = Mock()
+        mock.config.max_raises_per_round = 4
+        mock.config.min_bet = 100
+        
+        # Configure round_state with proper values
+        mock.round_state = Mock()
+        mock.round_state.raise_count = 0
+        
         return mock
 
     def test_player_initialization(self, player):
@@ -178,3 +188,47 @@ class TestPlayer:
         assert actual_bet == bet_amount
         assert player.chips == large_amount - bet_amount
         assert player.bet == bet_amount
+
+    def test_all_in_raise_behavior(self, player, mock_game):
+        """Test that a player going all-in with a raise is handled correctly."""
+        player.chips = 500
+        mock_game.current_bet = 300
+        mock_game.config.min_bet = 100
+        mock_game.round_state.raise_count = 0
+        mock_game.config.max_raises_per_round = 4
+
+        # Player tries to raise to 600 but only has 500
+        player._raise(600, mock_game)
+
+        assert player.is_all_in
+        assert player.chips == 0
+        assert player.bet == 500
+
+    def test_all_in_call_behavior(self, player, mock_game):
+        """Test that a player going all-in with a call is handled correctly."""
+        player.chips = 300
+        mock_game.current_bet = 500
+        mock_game.round_state.raise_count = 0
+        mock_game.config.max_raises_per_round = 4
+        
+        # Player tries to call 500 but only has 300
+        player._call(500, mock_game)
+
+        assert player.is_all_in
+        assert player.chips == 0
+        assert player.bet == 300
+
+    def test_partial_raise_forces_all_in(self, player, mock_game):
+        """Test that a player who can't make minimum raise goes all-in."""
+        player.chips = 350
+        mock_game.current_bet = 300
+        mock_game.config.min_bet = 100
+        mock_game.round_state.raise_count = 0
+        mock_game.config.max_raises_per_round = 4
+
+        # Player tries to raise but can't meet minimum raise requirement
+        player._raise(400, mock_game)
+
+        assert player.is_all_in
+        assert player.chips == 0
+        assert player.bet == 350  # All-in call amount

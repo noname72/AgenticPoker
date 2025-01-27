@@ -127,6 +127,10 @@ def _process_betting_cycle(game: "Game") -> None:
             game.table.needs_to_act.clear()
             break
 
+        # Skip players who are all-in - they can't act anymore
+        if agent.is_all_in:
+            continue
+
         # Add current pot amount to logging
         BettingLogger.log_player_turn(
             player_name=agent.name,

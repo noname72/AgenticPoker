@@ -66,24 +66,16 @@ class Player:
         PlayerLogger.log_player_creation(name, chips)
 
     def place_bet(self, amount: int, game) -> int:
-        """
-        Place a bet, ensuring it doesn't exceed available chips.
-        """
+        """Place a bet, ensuring it doesn't exceed available chips."""
         if amount < 0:
             PlayerLogger.log_invalid_bet(self.name, "Cannot place negative bet")
             raise ValueError("Cannot place negative bet")
 
-        # Ensure we don't bet more than available chips
-        amount = min(amount, self.chips)
-
-        # If this is a raise, ensure it's at least double the current bet
-        if hasattr(game, "current_bet") and amount <= game.current_bet:
-            #! change to logger
-            logging.debug(
-                f"Raise amount {amount} too small compared to current bet {game.current_bet}"
-            )
-            amount = game.current_bet * 2
-            amount = min(amount, self.chips)
+        # If player doesn't have enough chips, they go all-in
+        if amount >= self.chips:
+            amount = self.chips
+            self.is_all_in = True
+            PlayerLogger.log_all_in(self.name, amount)
 
         self.chips -= amount
         self.bet += amount
@@ -113,9 +105,7 @@ class Player:
             raise
 
     def _raise(self, amount: int, game) -> None:
-        """
-        Mark the player as raised for the current hand.
-        """
+        """Handle raise action with proper all-in logic."""
         # Get current raise count and minimum bet
         raise_count = game.round_state.raise_count if game.round_state else 0
         min_bet = game.config.min_bet
@@ -125,23 +115,23 @@ class Player:
             self._call(game.current_bet, game)
             return
 
-        min_raise = game.current_bet + min_bet
+        # If player can't make minimum raise, they must go all-in or fold
+        if self.chips < (game.current_bet + min_bet):
+            if self.chips > game.current_bet:  # Can at least call
+                self._call(self.chips, game)  # All-in call
+            else:
+                self._fold()
+            return
 
-        if amount >= min_raise:
-            self.place_bet(amount, game)
+        # Normal raise handling
+        actual_amount = min(amount, self.chips)
+        self.place_bet(actual_amount, game)
 
-            if amount > game.current_bet:
-                game.last_raiser = self
-
-                if game.round_state is not None:
-                    game.round_state.raise_count += 1
-                    game.round_state.last_raiser = self.name
-
-            if self.chips == 0:
-                self.is_all_in = True
-                PlayerLogger.log_all_in(self.name, amount)
-        else:
-            self._call(game.current_bet, game)
+        if actual_amount > game.current_bet:
+            game.last_raiser = self
+            if game.round_state is not None:
+                game.round_state.raise_count += 1
+                game.round_state.last_raiser = self.name
 
     def _call(self, amount: int, game) -> None:
         """

@@ -136,3 +136,12 @@ class GameLogger:
     def log_new_deck_shuffled(round_number: int) -> None:
         """Log the new deck shuffled for a round."""
         logger.info(f"New deck shuffled for round {round_number}")
+
+    @staticmethod
+    def log_skip_betting(reason: str) -> None:
+        """Log when betting round is skipped.
+        
+        Args:
+            reason (str): The reason why betting was skipped
+        """
+        logger.info(f"Skipping betting round: {reason}")

@@ -1,12 +1,12 @@
 from datetime import datetime
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 
 from agents.agent import Agent
+from data.types.action_decision import ActionType
+from data.types.pot_types import SidePot
 from game import AgenticPoker
-from game.card import Card
-from game.draw import handle_draw_phase
 from game.hand import Hand
 
 
@@ -246,3 +246,19 @@ def test_pot_not_double_counted(game, player_factory):
         charlie.chips == 1000 - 10 - 100 - 200
     ), f"Charlie's chips incorrect: {charlie.chips}"
     assert randy.chips == 1000 - 10 - 300, f"Randy's chips incorrect: {randy.chips}"
+
+
+def test_post_draw_betting_skipped_all_all_in(game, player_factory):
+    """Test that post-draw betting is skipped when all remaining players are all-in."""
+    # Create players in all-in state
+    all_in1 = player_factory(name="AllIn1", chips=0, is_all_in=True, bet=500)
+    all_in2 = player_factory(name="AllIn2", chips=0, is_all_in=True, bet=300)
+    folded = player_factory(name="Folded", folded=True)
+
+    game.table.players = [all_in1, all_in2, folded]
+
+    # Run post-draw betting
+    result = game._handle_post_draw_phase()
+
+    # Verify betting was skipped and returned True to continue to showdown
+    assert result is True

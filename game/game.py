@@ -189,12 +189,12 @@ class AgenticPoker:
         # Handle betting round first
         should_continue = betting.handle_betting_round(self)
 
-        if should_continue:
-            # Calculate side pots while bets are still set
+        # Calculate side pots if any player is all-in
+        if any(p.is_all_in for p in self.table.players):
             self.pot.calculate_side_pots(self.table.players)
 
-            # Move bets to pot and reset them
-            self.pot.end_betting_round(self.table.players)
+        # Move bets to pot and reset them
+        self.pot.end_betting_round(self.table.players)
 
         GameLogger.log_phase_complete("Pre-draw betting")
         return should_continue
@@ -215,16 +215,20 @@ class AgenticPoker:
         """
         GameLogger.log_phase_header("Post-draw betting")
 
+        # Skip post-draw betting if everyone is all-in
+        if all(p.is_all_in or p.folded for p in self.table.players):
+            GameLogger.log_skip_betting("All remaining players are all-in")
+            return True
+
         # First handle the betting
         should_continue = betting.handle_betting_round(self)
 
-        if should_continue:
-            # Calculate side pots BEFORE ending betting round
-            # This ensures side pots are calculated while bets are still set
+        # Calculate side pots if any player is all-in
+        if any(p.is_all_in for p in self.table.players):
             self.pot.calculate_side_pots(self.table.players)
 
-            # Now end the betting round which moves bets to pot and resets them
-            self.pot.end_betting_round(self.table.players)
+        # Move bets to pot and reset them
+        self.pot.end_betting_round(self.table.players)
 
         GameLogger.log_phase_complete("Post-draw betting")
         return should_continue
