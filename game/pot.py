@@ -403,10 +403,10 @@ class Pot:
         # Calculate total bets including all player bets
         total_bets = sum(p.bet for p in active_players)
 
-        # Add current bets to pot
-        if total_bets > 0:
-            self.add_to_pot(total_bets)
-            PotLogger.log_pot_change(self.pot - total_bets, self.pot, total_bets)
+        # # Add current bets to pot
+        # if total_bets > 0:
+        #     self.add_to_pot(total_bets)
+        #     PotLogger.log_pot_change(self.pot - total_bets, self.pot, total_bets)
 
         # Clear player bets
         for player in active_players:

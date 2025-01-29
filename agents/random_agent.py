@@ -47,7 +47,6 @@ class RandomAgent(Player):
                 actions.append(ActionType.RAISE)
 
             action = random.choice(actions)
-            logger.info(f"{self.name} randomly decided to {action.value}")
 
             if action == ActionType.RAISE:
                 # Calculate valid raise range
@@ -58,16 +57,15 @@ class RandomAgent(Player):
                     raise_amount = random.randrange(
                         min_raise, max_raise + 1, 10
                     )  # Step by 10 chips
-                    logger.info(f"{self.name} raised to {raise_amount}")
+                    logger.info(f"{self.name} raised by {raise_amount}")
                     return ActionDecision(
                         action_type=ActionType.RAISE, raise_amount=raise_amount
                     )
+                else:
+                    logger.info(f"{self.name} cannot raise, falling back to call")
+                    return ActionDecision(action_type=ActionType.CALL)
 
-                logger.info(f"{self.name} raised to {min_raise}, falling back to call")
-                return ActionDecision(action_type=ActionType.CALL)
-
-            logger.info(f"{self.name} decided to call")
-            return ActionDecision(action_type=ActionType.CALL)
+            return ActionDecision(action_type=action)
 
         except Exception as e:
             logger.error(f"Random decision error: {str(e)}")

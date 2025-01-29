@@ -1198,6 +1198,17 @@ class TestPot:
         - Should track player eligibility correctly
         - Should handle mix of all-in and active players
         - Should preserve existing main pot amount
+
+        Initial state:
+        - Main pot: $300 (from previous round)
+        - P1: bet 200, chips 700
+        - P2: bet 200, chips 200
+        - P3: bet 100, chips 0
+
+        Expected outcome:
+        - Two pots:
+          1. Main pot: $600 (300 + 200 + 100) - all players eligible
+          2. Side pot: $100 (P1's extra 100) - only P1 eligible
         """
         # Setup initial state - track chips before any bets
         initial_chips = {p.name: p.chips for p in mock_players}  # Store initial chips
@@ -1721,17 +1732,20 @@ class TestPot:
         """Test pot accounting through a complete betting round.
 
         Verifies that:
-        1. Initial pot starts at antes/blinds total
-        2. Pot includes current bets during betting
-        3. Final pot is correct after all bets collected
+        1. Initial pot starts at antes/blinds total 
+        2. Bets are added to pot when placed (not at end of round)
+        3. Bets are cleared at end of round
+        4. Final pot total is correct
 
         Scenario:
-        - Initial pot: $190 (antes + blinds)
-        - Randy calls $100
-        - Final pot should be $290
+        - Initial pot: $410 (antes + blinds + all bets)
+        - Charlie has bet $110 (already in pot)
+        - Randy has bet $110 (already in pot) 
+        - End betting round clears bets
+        - Final pot should be $410
         """
         # Setup initial state
-        pot.pot = 190  # Initial pot from antes/blinds
+        pot.pot = 410  # Initial pot including antes/blinds and all bets
 
         # Setup players - only need Charlie and Randy for this scenario
         mock_players = mock_players[:2]  # Just use first two players
@@ -1743,24 +1757,18 @@ class TestPot:
         mock_players[0].folded = False
 
         # Setup Randy (Caller)
-        mock_players[1].name = "Randy"
-        mock_players[1].bet = 10  # ante only initially
-        mock_players[1].chips = 990
+        mock_players[1].name = "Randy" 
+        mock_players[1].bet = 110  # Matches BB + ante
+        mock_players[1].chips = 890
         mock_players[1].folded = False
 
-        # Randy calls $100 more to match big blind
-        mock_players[1].bet = 110  # Now matches BB + ante
-        mock_players[1].chips = 890
-
-        # End betting round which moves bets to pot
+        # End betting round which clears bets
         pot.end_betting_round(mock_players)
 
         # Verify final pot
-        assert pot.pot == 410, (  # 190 (initial) + 110 (Charlie) + 110 (Randy)
+        assert pot.pot == 410, (
             f"Final pot should be $410\n"
-            f"Initial pot: $190\n"
-            f"Charlie's total: $110\n"
-            f"Randy's total: $110\n"
+            f"Initial pot: $410\n" 
             f"Actual pot: ${pot.pot}"
         )
 
@@ -1768,9 +1776,5 @@ class TestPot:
         assert all(p.bet == 0 for p in mock_players)
 
         # Verify player chips
-        assert (
-            mock_players[0].chips == 890
-        ), f"Charlie should have $890, has ${mock_players[0].chips}"
-        assert (
-            mock_players[1].chips == 890
-        ), f"Randy should have $890, has ${mock_players[1].chips}"
+        assert mock_players[0].chips == 890, f"Charlie should have $890, has ${mock_players[0].chips}"
+        assert mock_players[1].chips == 890, f"Randy should have $890, has ${mock_players[1].chips}"

@@ -123,7 +123,7 @@ class AgenticPoker:
             session_id=self.config.session_id,
         )
 
-    def play_game(self) -> None:
+    def play_game(self, max_rounds: Optional[int] = None) -> None:
         """
         Execute the main game loop until a winner is determined.
 
@@ -154,6 +154,9 @@ class AgenticPoker:
             5. Reset for next round
         """
         eliminated_players = []
+        
+        if max_rounds:
+            self.max_rounds = max_rounds
 
         while len(self.table) > 1:
             self.round_number += 1
@@ -380,23 +383,25 @@ class AgenticPoker:
         return True
 
     def _log_game_summary(self, eliminated_players: List[Player]) -> None:
-        # Create final standings data
-        all_players = list({player for player in (self.table + eliminated_players)})
+        """Log a summary of the game results."""
+        # Get all players (both active and eliminated)
+        all_players = list({player for player in (self.table.players + eliminated_players)})
+
+        # Sort players by final chip count
         all_players.sort(key=lambda p: p.chips, reverse=True)
 
-        final_standings = [
-            {
-                "name": player.name,
-                "chips": player.chips,
-                "eliminated": player in eliminated_players,
-            }
-            for player in all_players
-        ]
-
+        # Log final standings
         GameLogger.log_game_summary(
             rounds_played=self.round_number,
             max_rounds=self.max_rounds,
-            final_standings=final_standings,
+            final_standings=[
+                {
+                    "name": player.name,
+                    "chips": player.chips,
+                    "eliminated": player in eliminated_players
+                }
+                for player in all_players
+            ]
         )
 
     def _initialize_round(self) -> None:

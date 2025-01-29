@@ -79,16 +79,27 @@ class Table:
             return None
 
         # Find next active player
+        start_index = self.index  # Remember where we started
         while True:
             if self.index >= len(self.players):
                 self.index = 0
             player = self.players[self.index]
-            self.index += 1
+
+            # Only increment after we've checked the current player
             if player in self.active_players():
+                self.index = (self.index + 1) % len(
+                    self.players
+                )  # Increment for next time
                 TableLogger.log_next_player(
                     player.name, self.index - 1, [p.name for p in self.needs_to_act]
                 )
                 return player
+
+            self.index = (self.index + 1) % len(self.players)
+
+            # If we've gone full circle without finding an active player
+            if self.index == start_index:
+                return None
 
     def is_round_complete(self) -> Tuple[bool, str]:
         """Determine if the current betting round is complete.
@@ -118,7 +129,7 @@ class Table:
         # Check if all active players have either called or are all-in
         for player in active_players:
             if not player.folded and not player.is_all_in:
-                if player.bet != self.current_bet:
+                if player.bet < self.current_bet:
                     return False, "not all players have called"
 
         return True, "betting round complete"
