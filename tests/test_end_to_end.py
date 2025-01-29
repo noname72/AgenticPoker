@@ -64,10 +64,9 @@ import unittest
 from unittest.mock import patch
 
 from game.game import AgenticPoker
-from config import GameConfig
+from game.config import GameConfig
 from agents.agent import Agent
 from agents.random_agent import RandomAgent
-
 
 
 class ListHandler(logging.Handler):
@@ -84,18 +83,20 @@ class ListHandler(logging.Handler):
 
 
 class EndToEndTestCase(unittest.TestCase):
-    def setUp(self):
+    @classmethod
+    def setUpClass(cls):
+        """Run once before all tests to set up shared game state."""
         # Prepare a custom log handler
-        self.log_handler = ListHandler()
-        self.log_handler.setLevel(logging.DEBUG)
+        cls.log_handler = ListHandler()
+        cls.log_handler.setLevel(logging.DEBUG)
 
         # Store original handlers
-        self.logger = logging.getLogger()
-        self.original_handlers = self.logger.handlers[:]
-        self.logger.handlers = [self.log_handler]
+        cls.logger = logging.getLogger()
+        cls.original_handlers = cls.logger.handlers[:]
+        cls.logger.handlers = [cls.log_handler]
 
         # Create players
-        self.players = [
+        cls.players = [
             Agent(
                 "Alice",
                 chips=1000,
@@ -132,41 +133,48 @@ class EndToEndTestCase(unittest.TestCase):
             ),
         ]
 
-        # Create game config
-        config = GameConfig()
+        # Create game config with non-zero ante
+        config = GameConfig(
+            starting_chips=1000,
+            small_blind=10,
+            big_blind=20,
+            ante=5,  # Add a non-zero ante
+            min_bet=20,
+        )
 
-        # Create game instance with players and config
-        self.game = AgenticPoker(self.players, config=config)
+        # Create and run game instance
+        cls.game = AgenticPoker(cls.players, config=config)
+        cls.game.play_game(max_rounds=1)
 
-    def tearDown(self):
-        """Clean up after each test."""
+        # Print logs for debugging
+        print("\nCaptured Logs:")
+        print("=" * 50)
+        for log in cls.log_handler.records:
+            print(log)
+        print("=" * 50)
+
+    @classmethod
+    def tearDownClass(cls):
+        """Clean up after all tests."""
         # Restore original handlers
-        self.logger.handlers = self.original_handlers
+        cls.logger.handlers = cls.original_handlers
 
         # Clean up AI agents
-        if hasattr(self, 'game') and self.game.table:
-            for player in self.game.table.players:
+        if hasattr(cls, "game") and cls.game.table:
+            for player in cls.game.table.players:
                 if hasattr(player, "memory"):
                     player.memory = None
                 if hasattr(player, "current_plan"):
                     player.current_plan = None
 
-    def test_game_flow(self):
-        """Test a single round of poker gameplay."""
-        # Run one round of the game
-        self.game.play_game(max_rounds=1)
+    def test_basic_game_flow(self):
+        """Test basic game flow and player actions.
 
-        # Get all logs
-        all_logs = "\n".join(self.log_handler.records)
-
-        # Print logs for debugging
-        print("\nCaptured Logs:")
-        print("=" * 50)
-        for log in self.log_handler.records:
-            print(log)
-        print("=" * 50)
-
-        # Basic game flow checks
+        Assumptions:
+        - At least two players (Alice and Bob) participate in the game
+        - The game table is properly initialized
+        - Players remain in the game until at least one action is taken
+        """
         self.assertTrue(
             any("Alice" in log for log in self.log_handler.records),
             "Should see actions from Alice",
@@ -175,36 +183,22 @@ class EndToEndTestCase(unittest.TestCase):
             any("Bob" in log for log in self.log_handler.records),
             "Should see actions from Bob",
         )
-
-        # Verify basic game state
         self.assertIsNotNone(self.game.table, "Game should have a table")
         self.assertTrue(len(self.game.table.players) > 0, "Should have players")
 
-        # More specific betting checks
-        betting_actions = [
-            log
-            for log in self.log_handler.records
-            if any(
-                action in log
-                for action in [
-                    "executes: FOLD",
-                    "executes: CALL",
-                    "executes: RAISE",
-                    "posts ante",
-                    "posts small blind",
-                    "posts big blind",
-                ]
-            )
-        ]
+    def test_betting_actions(self):
+        """Test betting actions and mandatory bets.
 
-        print("\nFound Betting Actions:")
-        for action in betting_actions:
-            print(f"- {action}")
-
-        # Verify betting occurred with more specific checks
+        Assumptions:
+        - Game is configured with non-zero ante (5 chips)
+        - Small blind (10 chips) and big blind (20 chips) are enforced
+        - Players have enough chips to post mandatory bets
+        - At least one betting action (FOLD/CALL/RAISE) occurs
+        """
         self.assertTrue(
-            any("Collecting antes" in log for log in self.log_handler.records),
-            "Should see ante collection",
+            any("posts ante" in log for log in self.log_handler.records)
+            or any("Collecting antes" in log for log in self.log_handler.records),
+            "Should see ante collection when ante > 0",
         )
         self.assertTrue(
             any("posts small blind" in log for log in self.log_handler.records),
@@ -224,7 +218,15 @@ class EndToEndTestCase(unittest.TestCase):
             "Should see betting actions in logs",
         )
 
-        # Verify game phases
+    def test_game_phases(self):
+        """Test that all game phases occur in correct order.
+
+        Assumptions:
+        - Game always includes pre-draw betting phase
+        - Draw phase and post-draw betting only occur if hand doesn't end early
+        - Hand ends early if all but one player folds
+        - Showdown phase always occurs (even with early winner)
+        """
         self.assertTrue(
             any(
                 "====== Pre-draw betting ======" in log
@@ -232,35 +234,72 @@ class EndToEndTestCase(unittest.TestCase):
             ),
             "Should see pre-draw betting phase",
         )
-        self.assertTrue(
-            any("====== Draw Phase ======" in log for log in self.log_handler.records),
-            "Should see draw phase",
+
+        hand_ended_early = (
+            len(
+                [
+                    log
+                    for log in self.log_handler.records
+                    if "wins" in log and "all others folded" in log
+                ]
+            )
+            > 0
         )
-        self.assertTrue(
-            any(
-                "====== Post-draw betting ======" in log
-                for log in self.log_handler.records
-            ),
-            "Should see post-draw betting phase",
-        )
+
+        if not hand_ended_early:
+            self.assertTrue(
+                any(
+                    "====== Draw Phase ======" in log
+                    for log in self.log_handler.records
+                ),
+                "Should see draw phase when hand doesn't end early",
+            )
+            self.assertTrue(
+                any(
+                    "====== Post-draw betting ======" in log
+                    for log in self.log_handler.records
+                ),
+                "Should see post-draw betting phase when hand doesn't end early",
+            )
+
         self.assertTrue(
             any("====== Showdown ======" in log for log in self.log_handler.records),
             "Should see showdown phase",
         )
 
-        # Verify hand evaluation
+    def test_hand_evaluation(self):
+        """Test hand evaluation and winner determination.
+
+        Assumptions:
+        - Each player's hand is evaluated and logged
+        - At least one player wins chips from the pot
+        - Hand rankings are properly logged (High Card through Three of a Kind)
+        - Winner determination is logged with amount won
+        """
         self.assertTrue(
             any("hand:" in log.lower() for log in self.log_handler.records),
             "Should see hand evaluations",
         )
-
-        # Verify winner determination
         self.assertTrue(
             any("wins $" in log for log in self.log_handler.records),
             "Should see pot being awarded to winner",
         )
+        self.assertTrue(
+            any("High Card" in log for log in self.log_handler.records)
+            or any("One Pair" in log for log in self.log_handler.records)
+            or any("Two Pair" in log for log in self.log_handler.records)
+            or any("Three of a Kind" in log for log in self.log_handler.records),
+            "Should see poker hand rankings",
+        )
 
-        # Verify game completion
+    def test_game_completion(self):
+        """Test game completion and final standings.
+
+        Assumptions:
+        - Game ends after configured max_rounds (1)
+        - Final standings are logged showing all players
+        - Game state is properly cleaned up after completion
+        """
         self.assertTrue(
             any("Game ended" in log for log in self.log_handler.records),
             "Game should end after max rounds",
@@ -270,7 +309,16 @@ class EndToEndTestCase(unittest.TestCase):
             "Should see final standings",
         )
 
-        # Verify player positions
+    def test_player_positions(self):
+        """Test player positions and roles.
+
+        Assumptions:
+        - Players are in fixed positions for this test:
+          * Alice is Dealer
+          * Bob is Small Blind
+          * Charlie is Big Blind
+        - Position information is logged at start of hand
+        """
         self.assertTrue(
             any("Dealer: Alice" in log for log in self.log_handler.records),
             "Should see dealer position",
@@ -284,60 +332,124 @@ class EndToEndTestCase(unittest.TestCase):
             "Should see big blind position",
         )
 
-        # Verify hand evaluations and rankings
-        self.assertTrue(
-            any("High Card" in log for log in self.log_handler.records)
-            or any("One Pair" in log for log in self.log_handler.records)
-            or any("Two Pair" in log for log in self.log_handler.records)
-            or any("Three of a Kind" in log for log in self.log_handler.records),
-            "Should see poker hand rankings",
-        )
+    def test_chip_tracking(self):
+        """Test chip tracking and accounting.
 
-        # Verify chip tracking
+        Assumptions:
+        - All players start with 1000 chips
+        - Starting stacks are logged before betting
+        - Final standings include chip counts in format "N. Name: $amount"
+        - Chip totals remain constant (no chips created/destroyed)
+        """
         self.assertTrue(
             any("Starting stacks" in log for log in self.log_handler.records),
             "Should see initial chip counts",
         )
+
+        # Look for final standings with numbered entries and dollar amounts
+        final_standings_found = False
+        for log in self.log_handler.records:
+            if "Final Standings:" in log:
+                next_logs = self.log_handler.records[
+                    self.log_handler.records.index(
+                        log
+                    ) : self.log_handler.records.index(log)
+                    + 5
+                ]
+                if any(
+                    log.strip().startswith(str(i)) and ": $" in log
+                    for i in range(1, 5)
+                    for log in next_logs
+                ):
+                    final_standings_found = True
+                    break
+
         self.assertTrue(
-            any(
-                "Final Standings" in log and "$" in log
-                for log in self.log_handler.records
-            ),
-            "Should see final chip counts",
+            final_standings_found,
+            "Should see final standings with numbered entries and chip counts",
         )
 
-        # Verify deck management
+    def test_deck_management(self):
+        """Test deck management and card dealing.
+
+        Assumptions:
+        - New deck is shuffled at start of hand
+        - Card remaining count is logged
+        - If hand doesn't end early:
+          * Draw phase occurs with discards
+          * Remaining cards are tracked after draws
+        """
         self.assertTrue(
             any("Cards remaining" in log for log in self.log_handler.records),
             "Should track remaining cards",
         )
-        self.assertTrue(
-            any(
-                "Draw phase" in log and "discarding" in log
-                for log in self.log_handler.records
-            ),
-            "Should see card discards during draw phase",
+
+        hand_ended_early = (
+            len(
+                [
+                    log
+                    for log in self.log_handler.records
+                    if "wins" in log and "all others folded" in log
+                ]
+            )
+            > 0
         )
 
-        # Verify betting structure
-        self.assertTrue(
-            any(
-                all(
-                    term in log
-                    for term in ["small blind", "big blind", "ante", "minimum bet"]
+        if not hand_ended_early:
+            self.assertTrue(
+                any(
+                    "Draw phase" in log and "discarding" in log
+                    for log in self.log_handler.records
+                ),
+                "Should see card discards during draw phase",
+            )
+
+    def test_betting_structure(self):
+        """Test betting structure configuration.
+
+        Assumptions:
+        - Game config includes:
+          * Small blind: 10 chips
+          * Big blind: 20 chips
+          * Ante: 5 chips
+          * Minimum bet: 20 chips
+        - Betting structure is logged under "Betting structure:" header
+        """
+        # Look for the betting structure section and verify all components
+        betting_structure_found = False
+        for log in self.log_handler.records:
+            if "Betting structure:" in log:
+                next_logs = self.log_handler.records[
+                    self.log_handler.records.index(
+                        log
+                    ) : self.log_handler.records.index(log)
+                    + 5
+                ]
+                betting_structure_found = all(
+                    any(f"{term}:" in line for line in next_logs)
+                    for term in ["Small blind", "Big blind", "Ante", "Minimum bet"]
                 )
-                for log in self.log_handler.records
-            ),
-            "Should see complete betting structure",
+                if betting_structure_found:
+                    break
+
+        self.assertTrue(
+            betting_structure_found,
+            "Should see complete betting structure with all components",
         )
 
-        # Verify active player tracking
+    def test_player_tracking(self):
+        """Test player tracking and AI strategy logging.
+
+        Assumptions:
+        - Active players are tracked and logged each betting round
+        - AI players (Alice, Bob, Charlie) log their strategy decisions
+        - AI players log their actions with reasoning
+        - Random player (Randy) takes actions without strategy logging
+        """
         self.assertTrue(
             any("Active players:" in log for log in self.log_handler.records),
             "Should track active players",
         )
-
-        # Verify strategy logging (for AI players)
         self.assertTrue(
             any(
                 "[Strategy]" in log or "[Action]" in log

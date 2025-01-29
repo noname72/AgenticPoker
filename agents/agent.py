@@ -274,7 +274,9 @@ class Agent(Player):
 
         except Exception as e:
             AgentLogger.log_action(None, error=e)
-            return ActionDecision(action_type=ActionType.CALL, reasoning="Failed to decide action")
+            return ActionDecision(
+                action_type=ActionType.CALL, reasoning="Failed to decide action"
+            )
 
     def get_message(self, game) -> str:
         """Generate table talk using LLM.
@@ -382,12 +384,14 @@ class Agent(Player):
             discard: DiscardDecision = LLMResponseGenerator.generate_discard(
                 self, game_state, self.hand.cards
             )
-            
+
             return discard
 
         except Exception as e:
             AgentLogger.log_discard_error(e)
-            return DiscardDecision(discard_indices=[], reasoning="Failed to decide discard")
+            return DiscardDecision(
+                discard_indices=[], reasoning="Failed to decide discard"
+            )
 
     def update_strategy(self, game_outcome: Dict[str, Any]) -> None:
         #! need to refactor and combine with strategy_planner (with strategy_manager)
@@ -554,4 +558,3 @@ class Agent(Player):
 
     def __repr__(self):
         return f"Agent(name={self.name}, strategy={self.strategy_style})"
-
