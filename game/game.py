@@ -123,7 +123,7 @@ class AgenticPoker:
             session_id=self.config.session_id,
         )
 
-    def play_game(self) -> None:
+    def play_game(self, max_rounds: Optional[int] = None) -> None:
         """
         Execute the main game loop until a winner is determined.
 
@@ -154,6 +154,9 @@ class AgenticPoker:
             5. Reset for next round
         """
         eliminated_players = []
+        
+        if max_rounds:
+            self.max_rounds = max_rounds
 
         while len(self.table) > 1:
             self.round_number += 1
@@ -189,12 +192,12 @@ class AgenticPoker:
         # Handle betting round first
         should_continue = betting.handle_betting_round(self)
 
-        if should_continue:
-            # Calculate side pots while bets are still set
+        # Calculate side pots if any player is all-in
+        if any(p.is_all_in for p in self.table.players):
             self.pot.calculate_side_pots(self.table.players)
 
-            # Move bets to pot and reset them
-            self.pot.end_betting_round(self.table.players)
+        # Move bets to pot and reset them
+        self.pot.end_betting_round(self.table.players)
 
         GameLogger.log_phase_complete("Pre-draw betting")
         return should_continue
@@ -215,16 +218,20 @@ class AgenticPoker:
         """
         GameLogger.log_phase_header("Post-draw betting")
 
+        # Skip post-draw betting if everyone is all-in
+        if all(p.is_all_in or p.folded for p in self.table.players):
+            GameLogger.log_skip_betting("All remaining players are all-in")
+            return True
+
         # First handle the betting
         should_continue = betting.handle_betting_round(self)
 
-        if should_continue:
-            # Calculate side pots BEFORE ending betting round
-            # This ensures side pots are calculated while bets are still set
+        # Calculate side pots if any player is all-in
+        if any(p.is_all_in for p in self.table.players):
             self.pot.calculate_side_pots(self.table.players)
 
-            # Now end the betting round which moves bets to pot and resets them
-            self.pot.end_betting_round(self.table.players)
+        # Move bets to pot and reset them
+        self.pot.end_betting_round(self.table.players)
 
         GameLogger.log_phase_complete("Post-draw betting")
         return should_continue
@@ -376,23 +383,25 @@ class AgenticPoker:
         return True
 
     def _log_game_summary(self, eliminated_players: List[Player]) -> None:
-        # Create final standings data
-        all_players = list({player for player in (self.table + eliminated_players)})
+        """Log a summary of the game results."""
+        # Get all players (both active and eliminated)
+        all_players = list({player for player in (self.table.players + eliminated_players)})
+
+        # Sort players by final chip count
         all_players.sort(key=lambda p: p.chips, reverse=True)
 
-        final_standings = [
-            {
-                "name": player.name,
-                "chips": player.chips,
-                "eliminated": player in eliminated_players,
-            }
-            for player in all_players
-        ]
-
+        # Log final standings
         GameLogger.log_game_summary(
             rounds_played=self.round_number,
             max_rounds=self.max_rounds,
-            final_standings=final_standings,
+            final_standings=[
+                {
+                    "name": player.name,
+                    "chips": player.chips,
+                    "eliminated": player in eliminated_players
+                }
+                for player in all_players
+            ]
         )
 
     def _initialize_round(self) -> None:

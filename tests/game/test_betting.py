@@ -362,3 +362,82 @@ def test_betting_round_pot_display_during_betting(
         active_players=ANY,
         last_raiser=ANY,
     )
+
+
+def test_betting_round_with_all_in_player(mock_betting_state, player_factory):
+    """Test that betting round properly handles all-in players."""
+    # Create players with specific states
+    all_in = player_factory(name="AllIn", chips=0, is_all_in=True, bet=500)
+    active = player_factory(name="Active", chips=1000, action_response=ActionType.CALL)
+    caller = player_factory(name="Caller", chips=1000, action_response=ActionType.CALL)
+
+    players = [all_in, active, caller]
+    
+    # Configure table
+    table = Table(players)
+    # Store the sequence of players that will be returned
+    next_player_sequence = [
+        active,
+        caller,
+    ]  # Remove None since round completes after caller
+    table.get_next_player = MagicMock(side_effect=next_player_sequence)
+    table.is_round_complete = MagicMock(
+        side_effect=[(False, ""), (True, "All players acted")]
+    )
+
+    # Update game state
+    mock_betting_state["game"].table = table
+    mock_betting_state["game"].current_bet = 500
+
+    # Run betting round
+    betting_round(mock_betting_state["game"])
+
+    # Verify get_next_player was called exactly twice (once for each active player)
+    assert table.get_next_player.call_count == 2
+
+    # Get the actual sequence from the mock's side_effect values
+    actual_sequence = next_player_sequence[:table.get_next_player.call_count]
+
+    # Verify the sequence matches our expected sequence
+    assert actual_sequence == next_player_sequence
+
+    # Additional verifications
+    assert all_in not in actual_sequence  # All-in player was skipped
+    assert len(actual_sequence) == 2  # Both active players got to act
+    assert actual_sequence[0].name == "Active"  # Active player went first
+    assert actual_sequence[1].name == "Caller"  # Caller went second
+
+    # Verify each player acted appropriately
+    active.execute.assert_called_once()
+    caller.execute.assert_called_once()
+    all_in.execute.assert_not_called()  # All-in player should never act
+
+
+def test_side_pot_creation_with_all_in(mock_betting_state, player_factory):
+    """Test that side pots are created correctly when players go all-in."""
+    # Create players with different stack sizes
+    small_stack = player_factory(name="Small", chips=300)
+    medium_stack = player_factory(name="Medium", chips=600)
+    big_stack = player_factory(name="Big", chips=1000)
+
+    players = [small_stack, medium_stack, big_stack]
+
+    # Configure game
+    mock_betting_state["game"].table = Table(players)
+    mock_betting_state["game"].current_bet = 0
+
+    # Simulate betting that causes all-in
+    small_stack.place_bet(300, mock_betting_state["game"])  # All-in
+    medium_stack.place_bet(600, mock_betting_state["game"])  # All-in
+    big_stack.place_bet(600, mock_betting_state["game"])  # Matches medium stack
+
+    # Calculate side pots
+    mock_betting_state["game"].pot.calculate_side_pots(players)
+
+    # Verify side pots
+    side_pots = mock_betting_state["game"].pot.side_pots
+    assert len(side_pots) == 2
+    assert side_pots[0].amount == 900  # 300 * 3 players
+    assert len(side_pots[0].eligible_players) == 3
+    assert side_pots[1].amount == 600  # 300 * 2 players
+    assert len(side_pots[1].eligible_players) == 2

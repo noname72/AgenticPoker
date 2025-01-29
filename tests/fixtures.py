@@ -277,6 +277,8 @@ def player_factory():
             actual_amount = min(amount, player.chips)
             player.chips -= actual_amount
             player.bet = actual_amount  # Set bet directly instead of adding
+            if player.chips == 0:  # Add this check
+                player.is_all_in = True
             return actual_amount
 
         player.place_bet = MagicMock(side_effect=place_bet)

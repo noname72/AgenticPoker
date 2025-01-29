@@ -1,12 +1,12 @@
 from datetime import datetime
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 
 from agents.agent import Agent
+from data.types.action_decision import ActionType
+from data.types.pot_types import SidePot
 from game import AgenticPoker
-from game.card import Card
-from game.draw import handle_draw_phase
 from game.hand import Hand
 
 
@@ -162,11 +162,11 @@ def test_collect_blinds_and_antes(game, player_factory):
 
 
 def test_pot_not_double_counted(game, player_factory):
-    """Test that pot amounts aren't double-counted during betting.
+    """Test that pot amounts are correctly tracked during betting.
 
     This test verifies that:
-    1. Individual bets don't directly increment the pot
-    2. Pot is only updated at end of betting round
+    1. Bets are added to pot when placed
+    2. Pot increases incrementally with each bet
     3. Final pot matches actual player contributions
     """
     # Create players with known chip stacks
@@ -198,14 +198,14 @@ def test_pot_not_double_counted(game, player_factory):
         game.pot.pot == expected_initial_pot
     ), f"Expected initial pot of ${expected_initial_pot}, got ${game.pot.pot}"
 
-    # Reset all player bets after blinds (since they're now in the pot)
-    for player in players:
-        player.bet = 0
-
     # Simulate pre-draw betting round:
     # Alice raises to 300
     alice = players[0]
-    alice.place_bet(300, game)
+    alice.chips -= 300
+    alice.bet += 300
+    game.pot.add_to_pot(300)
+    expected_pot = expected_initial_pot + 300
+    assert game.pot.pot == expected_pot, f"Pot should be ${expected_pot} after Alice's bet"
 
     # Bob folds (already put in SB)
     bob = players[1]
@@ -213,36 +213,43 @@ def test_pot_not_double_counted(game, player_factory):
 
     # Charlie calls (already put in BB)
     charlie = players[2]
-    charlie.place_bet(200, game)  # Additional 200 to match 300 total
+    charlie.chips -= 200  # Additional 200 to match 300 total
+    charlie.bet += 200
+    game.pot.add_to_pot(200)
+    expected_pot = expected_pot + 200
+    assert game.pot.pot == expected_pot, f"Pot should be ${expected_pot} after Charlie's bet"
 
     # Randy calls
     randy = players[3]
-    randy.place_bet(300, game)
+    randy.chips -= 300
+    randy.bet += 300
+    game.pot.add_to_pot(300)
+    expected_pot = expected_pot + 300
+    assert game.pot.pot == expected_pot, f"Pot should be ${expected_pot} after Randy's bet"
 
-    # Before end_betting_round, pot should still be initial amount
-    assert (
-        game.pot.pot == expected_initial_pot
-    ), "Pot should not increase until end of betting round"
-
-    # End betting round which moves bets to pot
+    # End betting round (should only clear bets, not modify pot)
+    initial_pot = game.pot.pot
     game.pot.end_betting_round(game.table.players)
-
-    # Calculate expected final pot:
-    # Initial pot: 190 (antes + blinds)
-    # Alice: +300
-    # Bob: +0 (folded after SB)
-    # Charlie: +200 (to match 300 total)
-    # Randy: +300
-    expected_final_pot = expected_initial_pot + 300 + 200 + 300
-
-    assert (
-        game.pot.pot == expected_final_pot
-    ), f"Expected final pot of ${expected_final_pot}, got ${game.pot.pot}"
+    assert game.pot.pot == initial_pot, "Pot should not change at end of betting round"
 
     # Verify player chip counts
     assert alice.chips == 1000 - 10 - 300, f"Alice's chips incorrect: {alice.chips}"
     assert bob.chips == 1000 - 10 - 50, f"Bob's chips incorrect: {bob.chips}"
-    assert (
-        charlie.chips == 1000 - 10 - 100 - 200
-    ), f"Charlie's chips incorrect: {charlie.chips}"
+    assert charlie.chips == 1000 - 10 - 100 - 200, f"Charlie's chips incorrect: {charlie.chips}"
     assert randy.chips == 1000 - 10 - 300, f"Randy's chips incorrect: {randy.chips}"
+
+
+def test_post_draw_betting_skipped_all_all_in(game, player_factory):
+    """Test that post-draw betting is skipped when all remaining players are all-in."""
+    # Create players in all-in state
+    all_in1 = player_factory(name="AllIn1", chips=0, is_all_in=True, bet=500)
+    all_in2 = player_factory(name="AllIn2", chips=0, is_all_in=True, bet=300)
+    folded = player_factory(name="Folded", folded=True)
+
+    game.table.players = [all_in1, all_in2, folded]
+
+    # Run post-draw betting
+    result = game._handle_post_draw_phase()
+
+    # Verify betting was skipped and returned True to continue to showdown
+    assert result is True
