@@ -1,31 +1,45 @@
-from typing import Dict
+from typing import Dict, Optional
 
 
 class GameConfig:
-    #! how is this different with game.config.py?
     """Configuration for poker game settings."""
 
-    # Database settings
-    DATABASE_URL: str = "sqlite:///poker_game.db"
+    def __init__(
+        self,
+        small_blind: int = 10,
+        big_blind: int = 20,
+        ante: int = 0,
+        session_id: Optional[str] = None,
+        starting_chips: int = 1000,
+        max_rounds: Optional[int] = None,
+        min_bet: int = 20,
+    ):
+        # Game settings passed in constructor
+        self.small_blind = small_blind
+        self.big_blind = big_blind
+        self.ante = ante
+        self.session_id = session_id
+        self.starting_chips = starting_chips
+        self.max_rounds = max_rounds
+        self.min_bet = min_bet
 
-    # Game defaults
-    DEFAULT_STARTING_CHIPS: int = 1000
-    DEFAULT_SMALL_BLIND: int = 10
-    DEFAULT_BIG_BLIND: int = 20
-    DEFAULT_ANTE: int = 0
-    MIN_PLAYERS: int = 2
-    MAX_PLAYERS: int = 10
+        # Database settings
+        self.DATABASE_URL: str = "sqlite:///poker_game.db"
 
-    # Timing settings
-    DECISION_TIMEOUT: int = 30  # seconds
-    ROUND_TIMEOUT: int = 300  # seconds
+        # Game defaults
+        self.MIN_PLAYERS: int = 2
+        self.MAX_PLAYERS: int = 10
 
-    # AI settings
-    AI_CONFIDENCE_THRESHOLD: float = 0.7
+        # Timing settings
+        self.DECISION_TIMEOUT: int = 30  # seconds
+        self.ROUND_TIMEOUT: int = 300  # seconds
 
-    # Betting limits
-    MIN_RAISE: int = 20
-    MAX_RAISE_MULTIPLIER: int = 4  # max raise = current_bet * multiplier
+        # AI settings
+        self.AI_CONFIDENCE_THRESHOLD: float = 0.7
+
+        # Betting limits
+        self.MIN_RAISE: int = 20
+        self.MAX_RAISE_MULTIPLIER: int = 4  # max raise = current_bet * multiplier
 
     class Config:
         env_file = ".env"

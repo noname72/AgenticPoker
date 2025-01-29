@@ -65,7 +65,6 @@ from unittest.mock import patch
 
 from game.game import AgenticPoker
 from config import GameConfig
-from game.agents import Agent, RandomAgent
 from agents.agent import Agent
 from agents.random_agent import RandomAgent
 
@@ -134,16 +133,7 @@ class EndToEndTestCase(unittest.TestCase):
         ]
 
         # Create game config
-        config = GameConfig(
-            starting_chips=1000,
-            small_blind=50,
-            big_blind=100,
-            ante=10,
-            session_id="test_session",
-            max_raise_multiplier=3,
-            max_raises_per_round=4,
-            min_bet=100,
-        )
+        config = GameConfig()
 
         # Create game instance with players and config
         self.game = AgenticPoker(self.players, config=config)
