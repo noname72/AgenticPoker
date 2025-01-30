@@ -2,7 +2,7 @@ import logging
 from typing import Optional, Union
 import time
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("loggers.llm_logger")
 
 
 class LLMLogger:
@@ -79,4 +79,4 @@ class LLMLogger:
         log_message += f"RESPONSE:\n{response}\n"
         log_message += f"{separator}\n"
 
-        logger.info(log_message)
+        logger.debug(log_message)

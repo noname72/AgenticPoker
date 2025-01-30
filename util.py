@@ -11,24 +11,19 @@ from typing import Dict
 logger = logging.getLogger(__name__)
 
 
-def setup_logging(session_id=0):
+def setup_logging(session_id: str) -> None:
     """
     Configure logging with UTF-8 encoding support and session management.
 
     Sets up a logging system that outputs to both console and file, with UTF-8 encoding.
-    Creates a new log file for each session and configures the root logger with
-    appropriate formatting.
+    Creates/overwrites a single log file for all sessions.
 
     Args:
-        session_id (int | str, optional): Unique identifier for this game session.
-            If 0 or falsy, generates timestamp-based ID. Defaults to 0.
-
-    Returns:
-        None
+        session_id (str): Unique identifier for this game session.
 
     Side Effects:
         - Clears existing logging handlers
-        - Creates new log file named 'poker_game.log'
+        - Creates/overwrites 'poker_game.log'
         - Configures console and file output with UTF-8 encoding
         - Sets httpx logging level to WARNING
         - Logs session start information with timestamp
@@ -36,22 +31,18 @@ def setup_logging(session_id=0):
     # Clear any existing handlers
     logging.getLogger().handlers = []
 
-    # Generate session ID if not provided
-    if not session_id:
-        session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    # Create log filename with session ID
-    log_filename = f"poker_game.log"
+    # Use a single log file that gets overwritten each time
+    log_file = "poker_game.log"
 
     # Configure root logger
     logging.basicConfig(
-        level=logging.INFO,
-        format="%(message)s",
+        level=logging.INFO,  # Default level for root logger
+        format='%(message)s',
         handlers=[
             # Console handler with UTF-8 encoding
             logging.StreamHandler(sys.stdout),
-            # File handler with UTF-8 encoding and session-specific file
-            logging.FileHandler(log_filename, encoding="utf-8", mode="w"),
+            # File handler with UTF-8 encoding - mode="w" ensures file is cleared each time
+            logging.FileHandler(log_file, encoding="utf-8", mode="w"),
         ],
     )
 

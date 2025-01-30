@@ -4,6 +4,7 @@ from datetime import datetime
 from agents.agent import Agent
 from agents.random_agent import RandomAgent
 from game import AgenticPoker, GameConfig
+from loggers.config import configure_loggers
 from util import (
     clear_results_directory,
     ensure_directory_structure,
@@ -11,8 +12,7 @@ from util import (
     setup_logging,
 )
 
-# Set up logging
-logging.basicConfig(level=logging.DEBUG)
+# Remove the basicConfig call since setup_logging will handle it
 logger = logging.getLogger(__name__)
 
 # Ensure required directories exist
@@ -23,6 +23,15 @@ session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 # Set up logging with session ID
 setup_logging(session_id)
+
+# Configure specific logger levels
+configure_loggers(
+    {
+        "betting": logging.INFO,
+        "llm": logging.INFO,  # Set to DEBUG to see prompts/responses
+        "table": logging.INFO,
+    }
+)
 
 # Load existing agent configurations or create new ones
 agent_configs = load_agent_configs()

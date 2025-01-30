@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from data.types.pot_types import SidePot
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("loggers.betting_logger")
 
 
 class BettingLogger:
