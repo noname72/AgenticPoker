@@ -1,6 +1,6 @@
 import os
 import time
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from dotenv import load_dotenv
 from openai import AsyncOpenAI, OpenAI
@@ -59,6 +59,7 @@ class LLMClient:
         temperature: float = 0.7,
         max_tokens: int = 150,
         system_message: Optional[str] = None,
+        tags: Optional[List[str]] = None,
     ) -> str:
         """Execute synchronous LLM query with retry logic.
 
@@ -87,7 +88,9 @@ class LLMClient:
             raise ValueError("max_tokens must be positive")
 
         try:
-            return self._execute_query(prompt, temperature, max_tokens, system_message)
+            return self._execute_query(
+                prompt, temperature, max_tokens, system_message, tags
+            )
         except Exception as e:
             LLMLogger.log_query_error(e, "synchronous")
             raise LLMError(f"Query failed after retries: {str(e)}")
@@ -103,6 +106,7 @@ class LLMClient:
         temperature: float,
         max_tokens: int,
         system_message: Optional[str] = None,
+        tags: Optional[List[str]] = None,
     ) -> str:
         """Execute the actual query with retry logic."""
         start_time = time.time()
@@ -121,13 +125,24 @@ class LLMClient:
                 max_tokens=max_tokens,
             )
 
+            response_text = response.choices[0].message.content
+
+            # Log the prompt and response with tags
+            LLMLogger.log_prompt_and_response(
+                prompt=prompt,
+                response=response_text,
+                system_message=system_message,
+                model=self.model,
+                tags=", ".join(tags) if tags else None,  # Join list of tags into string
+            )
+
             # Update metrics
             duration = time.time() - start_time
             self.metrics["query_times"].append(duration)
             self.metrics["total_tokens"] += response.usage.total_tokens
 
             LLMLogger.log_metrics_update(duration, response.usage.total_tokens)
-            return response.choices[0].message.content
+            return response_text
 
         except Exception as e:
             # Only track retry count here

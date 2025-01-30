@@ -299,7 +299,10 @@ class Agent(Player):
 
             # Query LLM with lower temperature for more consistent messaging
             response = self.llm_client.query(
-                prompt=prompt, temperature=0.5, system_message=system_message
+                prompt=prompt,
+                temperature=0.5,
+                system_message=system_message,
+                tags=["table_talk"],
             )
 
             # Parse response - look for MESSAGE: prefix
@@ -424,7 +427,7 @@ class Agent(Player):
         Respond with just the number (1-4).
         """
 
-        response = self.llm_client.query(prompt).strip()
+        response = self.llm_client.query(prompt, tags=["strategy_update"]).strip()
 
         strategy_map = {
             "2": "Aggressive Bluffer",
@@ -530,7 +533,7 @@ class Agent(Player):
         """
 
         try:
-            response = self.llm_client.query(prompt)
+            response = self.llm_client.query(prompt, tags=["opponent_analysis"])
             analysis = eval(response.strip())  # Safe since we control LLM output format
 
             # Ensure all required keys are present

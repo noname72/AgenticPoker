@@ -23,7 +23,7 @@ class LLMResponseGenerator:
             hand_eval=hand_eval,
         )
         response = player.llm_client.query(
-            prompt=prompt, temperature=0.7, max_tokens=200
+            prompt=prompt, temperature=0.7, max_tokens=200, tags=["planning"]
         )
         return PlanResponse.parse_llm_response(response)
 
@@ -63,6 +63,7 @@ class LLMResponseGenerator:
             prompt=execution_prompt,
             temperature=0.7,
             max_tokens=100,
+            tags=["action_generation"],
         )
         return ActionDecision.parse_llm_response(response)
 
@@ -88,9 +89,7 @@ class LLMResponseGenerator:
         )
 
         response = player.llm_client.query(
-            prompt=prompt,
-            temperature=0.7,
-            max_tokens=100,
+            prompt=prompt, temperature=0.7, max_tokens=100, tags=["discard_generation"]
         )
 
         return DiscardDecision.parse_llm_response(response)

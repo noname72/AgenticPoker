@@ -1,5 +1,6 @@
 import logging
 from typing import Optional, Union
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -43,3 +44,39 @@ class LLMLogger:
             logger.warning(
                 f"Query failed - Duration: {duration:.2f}s, Error: {str(error)}"
             )
+
+    @staticmethod
+    def log_prompt_and_response(
+        prompt: str,
+        response: str,
+        system_message: Optional[str] = None,
+        model: str = "unknown",
+        tags: Optional[str] = None,
+    ) -> None:
+        """Log the prompt sent to and response received from the LLM.
+
+        Args:
+            prompt: The prompt sent to the LLM
+            response: The response received from the LLM
+            system_message: Optional system message included with the prompt
+            model: The LLM model used
+            tags: Optional tags to identify the interaction
+        """
+        separator = "=" * 50
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+
+        log_message = f"\n{separator}\n"
+        log_message += f"LLM Interaction - {timestamp}\n"
+        log_message += f"Model: {model}\n"
+        if tags:
+            log_message += f"Tags: {tags}\n"
+        log_message += f"{separator}\n"
+
+        if system_message:
+            log_message += f"SYSTEM MESSAGE:\n{system_message}\n\n"
+
+        log_message += f"PROMPT:\n{prompt}\n\n"
+        log_message += f"RESPONSE:\n{response}\n"
+        log_message += f"{separator}\n"
+
+        logger.info(log_message)
