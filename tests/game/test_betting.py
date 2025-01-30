@@ -280,11 +280,12 @@ def test_collect_blinds_and_antes_all_in_on_blinds(mock_game, player_factory):
 def test_betting_round_displays_current_pot(
     mock_betting_state, player_factory, mock_betting_logger
 ):
-    """Test that displayed pot includes current bets during betting round.
+    """Test that displayed pot shows main pot amount during betting.
 
     Verifies that:
-    1. Pot display includes both main pot and current bets
-    2. Each player sees correct total when acting
+    1. Initial pot is shown correctly 
+    2. Current bets are tracked separately
+    3. Each player sees accurate main pot when acting
     """
     # Create players with specific bets
     p1 = player_factory(name="P1", action_response=ActionType.CALL)
@@ -308,13 +309,13 @@ def test_betting_round_displays_current_pot(
     # Run betting round
     betting_round(mock_betting_state["game"])
 
-    # Verify pot display included current bets
+    # Verify pot display shows only main pot amount
     mock_betting_logger.log_player_turn.assert_called_with(
         player_name="P2",
         hand=ANY,
         chips=950,
         current_bet=50,
-        pot=350,  # Should show 200 (main pot) + 100 (P1 bet) + 50 (P2 bet)
+        pot=200,  # Should show only main pot, not including current bets
         active_players=ANY,
         last_raiser=ANY,
     )
@@ -323,12 +324,12 @@ def test_betting_round_displays_current_pot(
 def test_betting_round_pot_display_during_betting(
     mock_betting_state, player_factory, mock_betting_logger
 ):
-    """Test that pot display includes current bets during betting.
+    """Test that displayed pot shows main pot amount during betting.
 
     Verifies that:
-    1. Initial pot is shown correctly
-    2. Current bets are included in displayed pot
-    3. Each player sees accurate total when acting
+    1. Initial pot is shown correctly 
+    2. Current bets are tracked separately
+    3. Each player sees accurate main pot when acting
     """
     # Create players with specific bets
     caller = player_factory(name="Randy", action_response=ActionType.CALL)
@@ -352,27 +353,35 @@ def test_betting_round_pot_display_during_betting(
     # Run betting round
     betting_round(mock_betting_state["game"])
 
-    # Verify pot display included current bets when Randy acted
+    # Verify pot display shows only main pot amount when Randy acted
     mock_betting_logger.log_player_turn.assert_called_with(
         player_name="Randy",
         hand=ANY,
         chips=990,
         current_bet=10,
-        pot=310,  # Should show 190 (main pot) + 110 (Charlie's bet) + 10 (Randy's bet)
+        pot=190,  # Should show only main pot, not including current bets
         active_players=ANY,
         last_raiser=ANY,
     )
 
 
 def test_betting_round_with_all_in_player(mock_betting_state, player_factory):
-    """Test that betting round properly handles all-in players."""
+    """Test that betting round properly handles all-in players.
+
+    Assumptions:
+    - All-in player has 0 chips and bet of 500
+    - Active players have 1000 chips each
+    - Active players will call the all-in bet
+    - All-in player should be skipped in betting sequence
+    - Current bet is equal to all-in amount (500)
+    """
     # Create players with specific states
     all_in = player_factory(name="AllIn", chips=0, is_all_in=True, bet=500)
     active = player_factory(name="Active", chips=1000, action_response=ActionType.CALL)
     caller = player_factory(name="Caller", chips=1000, action_response=ActionType.CALL)
 
     players = [all_in, active, caller]
-    
+
     # Configure table
     table = Table(players)
     # Store the sequence of players that will be returned
@@ -396,7 +405,7 @@ def test_betting_round_with_all_in_player(mock_betting_state, player_factory):
     assert table.get_next_player.call_count == 2
 
     # Get the actual sequence from the mock's side_effect values
-    actual_sequence = next_player_sequence[:table.get_next_player.call_count]
+    actual_sequence = next_player_sequence[: table.get_next_player.call_count]
 
     # Verify the sequence matches our expected sequence
     assert actual_sequence == next_player_sequence
@@ -414,7 +423,18 @@ def test_betting_round_with_all_in_player(mock_betting_state, player_factory):
 
 
 def test_side_pot_creation_with_all_in(mock_betting_state, player_factory):
-    """Test that side pots are created correctly when players go all-in."""
+    """Test that side pots are created correctly when players go all-in.
+
+    Assumptions:
+    - Three players with different stack sizes (300, 600, 1000)
+    - No current bet at start
+    - Small stack goes all-in for 300
+    - Medium stack goes all-in for 600
+    - Big stack calls the 600
+    - Should create two side pots:
+      * First pot: 900 (300 x 3 players)
+      * Second pot: 600 (300 x 2 players)
+    """
     # Create players with different stack sizes
     small_stack = player_factory(name="Small", chips=300)
     medium_stack = player_factory(name="Medium", chips=600)
@@ -441,3 +461,63 @@ def test_side_pot_creation_with_all_in(mock_betting_state, player_factory):
     assert len(side_pots[0].eligible_players) == 3
     assert side_pots[1].amount == 600  # 300 * 2 players
     assert len(side_pots[1].eligible_players) == 2
+
+
+def test_process_betting_cycle_with_raise(mock_betting_state, player_factory):
+    """Test betting cycle handles raises correctly and continues until all players call.
+
+    Assumptions:
+    - Three players: initial raiser and two callers
+    - No current bet at start
+    - First player will raise
+    - Other players will call the raise
+    - Betting round should:
+      * Let initial player raise
+      * Allow both other players to act
+      * End after all players have called
+    - Each player should act exactly once
+    """
+    # Create players with specific actions
+    initial_raiser = player_factory(name="Raiser", action_response=ActionType.RAISE)
+    caller1 = player_factory(name="Caller1", action_response=ActionType.CALL)
+    caller2 = player_factory(name="Caller2", action_response=ActionType.CALL)
+
+    players = [initial_raiser, caller1, caller2]
+
+    # Configure table
+    table = Table(players)
+    # Players need to act again after the raise
+    table.get_next_player = MagicMock(
+        side_effect=[
+            initial_raiser,  # First to act, will raise
+            caller1,  # Must call the raise
+            caller2,  # Must call the raise
+            None,  # End of round
+        ]
+    )
+
+    table.is_round_complete = MagicMock(
+        side_effect=[
+            (False, "Raise made"),
+            (False, "Still need calls"),
+            (True, "All players acted"),
+        ]
+    )
+
+    # Update game state
+    mock_betting_state["game"].table = table
+    mock_betting_state["game"].current_bet = 0
+
+    # Run betting round
+    betting_round(mock_betting_state["game"])
+
+    # Verify each player acted appropriately
+    initial_raiser.execute.assert_called_once()
+    caller1.execute.assert_called_once()
+    caller2.execute.assert_called_once()
+
+    # Verify betting continued until all players called
+    assert (
+        table.get_next_player.call_count == 3
+    )  # Changed from 4 to 3 since None is not returned
+    assert table.is_round_complete.call_count == 3

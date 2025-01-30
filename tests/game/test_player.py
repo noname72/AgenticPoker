@@ -2,6 +2,9 @@ from unittest.mock import Mock
 
 import pytest
 
+from data.states.player_state import PlayerState
+from data.types.action_decision import ActionDecision, ActionType
+from data.types.player_types import PlayerPosition
 from game.hand import Hand
 from game.player import Player
 
@@ -18,16 +21,16 @@ class TestPlayer:
         mock.current_bet = 0
         mock.pot = Mock()
         mock.pot.pot = 0
-        
+
         # Configure config with proper values instead of Mock objects
         mock.config = Mock()
         mock.config.max_raises_per_round = 4
         mock.config.min_bet = 100
-        
+
         # Configure round_state with proper values
         mock.round_state = Mock()
         mock.round_state.raise_count = 0
-        
+
         return mock
 
     def test_player_initialization(self, player):
@@ -210,13 +213,26 @@ class TestPlayer:
         mock_game.current_bet = 500
         mock_game.round_state.raise_count = 0
         mock_game.config.max_raises_per_round = 4
-        
-        # Player tries to call 500 but only has 300
+
+        # Player tries to call 500 but only has 300, should go all-in
+        player._call(500, mock_game)
+
+        assert player.is_all_in is True
+        assert player.chips == 0  # Used all available chips
+        assert player.bet == 300  # Bet what they had
+        assert player.called is True  # Still marked as called
+
+    def test_exact_call_all_in(self, player, mock_game):
+        """Test that a player going all-in with an exact call amount is handled correctly."""
+        player.chips = 500
+        mock_game.current_bet = 500
+
         player._call(500, mock_game)
 
         assert player.is_all_in
         assert player.chips == 0
-        assert player.bet == 300
+        assert player.bet == 500
+        assert player.called is True
 
     def test_partial_raise_forces_all_in(self, player, mock_game):
         """Test that a player who can't make minimum raise goes all-in."""
@@ -232,3 +248,72 @@ class TestPlayer:
         assert player.is_all_in
         assert player.chips == 0
         assert player.bet == 350  # All-in call amount
+
+    def test_execute_raise_action(self, player, mock_game):
+        """Test executing a raise action"""
+        action = ActionDecision(action_type=ActionType.RAISE, raise_amount=500)
+        player.execute(action, mock_game)
+        assert player.bet == 500
+        assert player.chips == 500
+
+    def test_execute_call_action(self, player, mock_game):
+        """Test executing a call action"""
+        mock_game.current_bet = 300
+        action = ActionDecision(action_type=ActionType.CALL)
+        player.execute(action, mock_game)
+        assert player.bet == 300
+        assert player.called is True
+
+    def test_execute_check_action(self, player, mock_game):
+        """Test executing a check action"""
+        action = ActionDecision(action_type=ActionType.CHECK)
+        player.execute(action, mock_game)
+        assert player.checked is True
+
+    def test_execute_fold_action(self, player, mock_game):
+        """Test executing a fold action"""
+        action = ActionDecision(action_type=ActionType.FOLD)
+        player.execute(action, mock_game)
+        assert player.folded is True
+
+    def test_position_property(self, player):
+        """Test getting and setting player position"""
+        player.position = PlayerPosition.DEALER
+        assert player.position == PlayerPosition.DEALER
+
+        player.position = PlayerPosition.SMALL_BLIND
+        assert player.position == PlayerPosition.SMALL_BLIND
+
+    def test_get_state(self, player):
+        """Test getting player state"""
+        state = player.get_state()
+        assert isinstance(state, PlayerState)
+        assert state.name == player.name
+        assert state.chips == player.chips
+        assert state.bet == player.bet
+        assert state.folded == player.folded
+
+    def test_player_equality(self):
+        """Test player equality comparison"""
+        player1 = Player("TestPlayer", 1000)
+        player2 = Player("TestPlayer", 2000)  # Same name, different chips
+        player3 = Player("OtherPlayer", 1000)
+
+        assert player1 == player2  # Same name should be equal
+        assert player1 != player3  # Different name should not be equal
+        assert player1 != "TestPlayer"  # Different type should not be equal
+
+    def test_player_hash(self):
+        """Test player hash functionality"""
+        player1 = Player("TestPlayer", 1000)
+        player2 = Player("TestPlayer", 2000)
+        player3 = Player("OtherPlayer", 1000)
+
+        # Same name should hash to same value
+        assert hash(player1) == hash(player2)
+        # Different names should hash to different values
+        assert hash(player1) != hash(player3)
+
+        # Test using players in a set
+        player_set = {player1, player2, player3}
+        assert len(player_set) == 2  # player1 and player2 count as same
