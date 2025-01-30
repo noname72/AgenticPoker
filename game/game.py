@@ -5,6 +5,7 @@ from data.states.round_state import RoundState
 from game.config import GameConfig
 from game.table import Table
 from loggers.game_logger import GameLogger
+from loggers.table_logger import TableLogger
 
 from . import betting, draw, showdown
 from .deck import Deck
@@ -154,7 +155,7 @@ class AgenticPoker:
             5. Reset for next round
         """
         eliminated_players = []
-        
+
         if max_rounds:
             self.max_rounds = max_rounds
 
@@ -269,6 +270,11 @@ class AgenticPoker:
         # Store initial chips before starting round
         self.initial_chips = {p: p.chips for p in eligible_players}
 
+        # Remove players with 0 chips
+        for player in self.table:
+            if player.chips == 0:
+                self.table.remove_player(player)
+
         self._initialize_round()
 
         self._log_round_info()
@@ -306,10 +312,6 @@ class AgenticPoker:
         """
         # Store starting stacks
         self.round_starting_stacks = {p: p.chips for p in self.table}
-
-        # Reset all bets before collecting
-        for player in self.table:
-            player.bet = 0
 
         # Use betting module to collect blinds and antes
         collected = betting.collect_blinds_and_antes(
@@ -385,7 +387,9 @@ class AgenticPoker:
     def _log_game_summary(self, eliminated_players: List[Player]) -> None:
         """Log a summary of the game results."""
         # Get all players (both active and eliminated)
-        all_players = list({player for player in (self.table.players + eliminated_players)})
+        all_players = list(
+            {player for player in (self.table.players + eliminated_players)}
+        )
 
         # Sort players by final chip count
         all_players.sort(key=lambda p: p.chips, reverse=True)
@@ -398,10 +402,10 @@ class AgenticPoker:
                 {
                     "name": player.name,
                     "chips": player.chips,
-                    "eliminated": player in eliminated_players
+                    "eliminated": player in eliminated_players,
                 }
                 for player in all_players
-            ]
+            ],
         )
 
     def _initialize_round(self) -> None:

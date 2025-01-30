@@ -83,6 +83,11 @@ class TableLogger:
         logger.debug(f"Skipping {player_name}: {reason}")
 
     @staticmethod
+    def log_player_removed(player_name: str) -> None:
+        """Log when a player is removed from the table."""
+        logger.info(f"Player {player_name} removed from table")
+
+    @staticmethod
     def log_debug(message: str) -> None:
         """Log a debug message."""
         logger.debug(message)

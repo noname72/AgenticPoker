@@ -400,19 +400,11 @@ class Pot:
             - Clears player bet amounts to 0
             - Logs betting round completion
         """
-        # Calculate total bets including all player bets
-        total_bets = sum(p.bet for p in active_players)
-
-        # # Add current bets to pot
-        # if total_bets > 0:
-        #     self.add_to_pot(total_bets)
-        #     PotLogger.log_pot_change(self.pot - total_bets, self.pot, total_bets)
 
         # Clear player bets
         for player in active_players:
             if player.bet > 0:
                 old_bet = player.bet
-                player.bet = 0
                 PotLogger.log_bet_cleared(player.name, old_bet)
 
         # Log final pot amount for debugging
