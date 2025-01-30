@@ -201,21 +201,26 @@ Hand Evaluation:
 
 {pre_draw_note}
 
+Betting Range:
+- Minimum raise: {min_raise}
+- Maximum raise: {max_raise}
+- Current bet to call: {current_bet}
+
 You must respond with EXACTLY ONE of these formats:
 1. DECISION: fold
 2. DECISION: call
-3. DECISION: raise NUMBER
+3. DECISION: raise NUMBER (between {min_raise} and {max_raise})
 
 Examples of valid responses:
 DECISION: fold
-DECISION: call
+DECISION: call 
 DECISION: raise 200
 
 Rules:
 - Use ONLY the exact formats above
 - For raise, include only a number (no words/explanations)
 - Do not include any other text or explanations
-- NUMBER must be a positive integer
+- NUMBER must be between {min_raise} and {max_raise}
 
 What is your decision?
 """

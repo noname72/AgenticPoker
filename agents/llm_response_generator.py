@@ -29,7 +29,7 @@ class LLMResponseGenerator:
 
     @classmethod
     def generate_action(
-        cls, player, game_state, current_plan: Plan, hand_eval
+        cls, player, game, current_plan: Plan, hand_eval
     ) -> "ActionDecision":
         """
         Create an action by calling the LLM with the action prompt.
@@ -41,8 +41,14 @@ class LLMResponseGenerator:
         bluff_threshold = getattr(current_plan, "bluff_threshold", 0.5)
         fold_threshold = getattr(current_plan, "fold_threshold", 0.7)
 
-        # Determine if this is pre-draw phase from game state
-        is_pre_draw = game_state.round_state.phase == "PRE_DRAW"
+        # Calculate betting ranges
+        current_bet = game.table.current_bet
+        min_bet = game.config.min_bet
+        min_raise = current_bet + min_bet
+        max_raise = min(player.chips, current_bet + player.chips)
+
+        # Determine if this is pre-draw phase
+        is_pre_draw = game.round_state.phase == "PRE_DRAW"
         pre_draw_note = (
             "(Note: This is the pre-draw betting round. You will have a chance to discard and draw new cards after this betting round.)"
             if is_pre_draw
@@ -51,13 +57,16 @@ class LLMResponseGenerator:
 
         execution_prompt = ACTION_PROMPT.format(
             strategy_style=player.strategy_style,
-            game_state=game_state,
+            game_state=game.get_state(),
             hand_eval=hand_eval,
             plan_approach=plan_approach,
             plan_reasoning=plan_reasoning,
             bluff_threshold=bluff_threshold,
             fold_threshold=fold_threshold,
             pre_draw_note=pre_draw_note,
+            min_raise=min_raise,
+            max_raise=max_raise,
+            current_bet=current_bet
         )
         response = player.llm_client.query(
             prompt=execution_prompt,

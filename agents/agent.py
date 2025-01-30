@@ -259,7 +259,7 @@ class Agent(Player):
             # Delegate action creation to the strategy generator
             action: ActionDecision = LLMResponseGenerator.generate_action(
                 player=self,
-                game_state=game.get_state(),
+                game=game,
                 current_plan=current_plan,
                 hand_eval=hand_eval,
             )
