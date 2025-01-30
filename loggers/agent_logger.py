@@ -3,7 +3,7 @@ from typing import Optional
 
 from data.types.action_decision import ActionDecision
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("loggers.agent_logger")
 
 
 class AgentLogger:
