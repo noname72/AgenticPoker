@@ -207,14 +207,14 @@ Betting Range:
 - Current bet to call: {current_bet}
 
 You must respond with EXACTLY ONE of these formats:
-1. DECISION: fold
-2. DECISION: call
-3. DECISION: raise NUMBER (between {min_raise} and {max_raise})
+1. DECISION: fold REASONING: <reasoning>
+2. DECISION: call REASONING: <reasoning>
+3. DECISION: raise NUMBER (between {min_raise} and {max_raise}) REASONING: <reasoning>
 
 Examples of valid responses:
-DECISION: fold
-DECISION: call 
-DECISION: raise 200
+DECISION: fold REASONING: I have a weak hand and want to save chips
+DECISION: call REASONING: I have a strong hand and want to maximize my profit
+DECISION: raise 200 REASONING: I have a strong hand and want to maximize my profit
 
 Rules:
 - Use ONLY the exact formats above
