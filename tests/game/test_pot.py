@@ -1536,12 +1536,12 @@ class TestPot:
 
         Tests that:
         1. Side pots are calculated while bets are still set
-        2. end_betting_round properly clears bets after side pot calculation
+        2. end_betting_round logs bet clearing but doesn't modify bets
         3. Total chips remain consistent through the process
 
         The correct order is:
         1. calculate_side_pots()
-        2. end_betting_round()
+        2. end_betting_round() - logs bet clearing
         """
         # Setup players with bets
         mock_players[0].bet = 300  # Alice
@@ -1568,35 +1568,24 @@ class TestPot:
         assert mock_players[1].bet == 200
         assert mock_players[2].bet == 200
 
-        # Now end betting round
+        # Now end betting round - this only logs bet clearing
         pot.end_betting_round(mock_players)
 
-        # Verify bets were cleared
-        assert all(p.bet == 0 for p in mock_players)
+        # Verify bets are unchanged (clearing happens elsewhere)
+        assert mock_players[0].bet == 300
+        assert mock_players[1].bet == 200
+        assert mock_players[2].bet == 200
 
         # Verify total chips remained constant
-        final_total = (
-            sum(p.chips for p in mock_players)  # Current chips
-            + pot.pot  # Main pot - this includes the bets moved by end_betting_round
-            + sum(p.amount for p in side_pots)  # Side pots
-        )
-
-        # The issue is we're double counting:
-        # 1. The bets were moved to pot.pot by end_betting_round
-        # 2. We also created side pots with those same amounts
-        # We need to adjust the calculation to avoid double counting
-
-        # Correct calculation - don't include main pot since those chips are in side pots
-        final_total = sum(p.chips for p in mock_players) + sum(  # Current chips
-            p.amount for p in side_pots
-        )  # Side pots contain all bet amounts
+        final_total = sum(p.chips for p in mock_players)  # Current chips
+        final_total += sum(p.amount for p in side_pots)  # Side pots contain all bet amounts
 
         assert final_total == initial_total, (
             f"Total chips mismatch:\n"
             f"Initial total: {initial_total}\n"
             f"Final total: {final_total}\n"
             f"Player chips: {[p.chips for p in mock_players]}\n"
-            f"Main pot: {pot.pot}\n"
+            f"Player bets: {[p.bet for p in mock_players]}\n"
             f"Side pots: {[p.amount for p in side_pots]}"
         )
 
@@ -1735,14 +1724,14 @@ class TestPot:
         Verifies that:
         1. Initial pot starts at antes/blinds total
         2. Bets are added to pot when placed (not at end of round)
-        3. Bets are cleared at end of round
+        3. end_betting_round logs bet clearing but doesn't modify bets
         4. Final pot total is correct
 
         Scenario:
         - Initial pot: $410 (antes + blinds + all bets)
         - Charlie has bet $110 (already in pot)
         - Randy has bet $110 (already in pot)
-        - End betting round clears bets
+        - End betting round logs bet clearing
         - Final pot should be $410
         """
         # Setup initial state
@@ -1763,7 +1752,7 @@ class TestPot:
         mock_players[1].chips = 890
         mock_players[1].folded = False
 
-        # End betting round which clears bets
+        # End betting round which logs bet clearing but doesn't modify bets
         pot.end_betting_round(mock_players)
 
         # Verify final pot
@@ -1773,16 +1762,13 @@ class TestPot:
             f"Actual pot: ${pot.pot}"
         )
 
-        # Verify bets were cleared
-        assert all(p.bet == 0 for p in mock_players)
+        # Verify bets are unchanged
+        assert mock_players[0].bet == 110, f"Charlie's bet should be $110, has ${mock_players[0].bet}"
+        assert mock_players[1].bet == 110, f"Randy's bet should be $110, has ${mock_players[1].bet}"
 
         # Verify player chips
-        assert (
-            mock_players[0].chips == 890
-        ), f"Charlie should have $890, has ${mock_players[0].chips}"
-        assert (
-            mock_players[1].chips == 890
-        ), f"Randy should have $890, has ${mock_players[1].chips}"
+        assert mock_players[0].chips == 890, f"Charlie should have $890, has ${mock_players[0].chips}"
+        assert mock_players[1].chips == 890, f"Randy should have $890, has ${mock_players[1].chips}"
 
     def test_set_pots_comprehensive(self, pot):
         """Test set_pots with various valid inputs.
