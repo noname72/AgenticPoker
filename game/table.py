@@ -159,6 +159,11 @@ class Table:
         """
         return len(self.folded_players())
 
+    def remove_player(self, player: Player) -> None:
+        """Remove a player from the table."""
+        self.players.remove(player)
+        TableLogger.log_player_removed(player.name)
+
     def mark_player_acted(
         self, player: Player, action_decision: ActionDecision
     ) -> None:
