@@ -116,23 +116,47 @@ class Player:
             self._call(game.current_bet, game)
             return
 
+        # Calculate the total amount needed to raise
+        total_to_call = game.current_bet - self.bet
+
+        # Ensure raise amount is at least min_bet
+        if amount < min_bet:
+            amount = min_bet
+
+        total_amount_needed = total_to_call + amount
+
         # If player can't make minimum raise, they must go all-in or fold
-        if self.chips < (game.current_bet + min_bet):
-            if self.chips > game.current_bet:  # Can at least call
-                self._call(self.chips, game)  # All-in call
+        if self.chips <= total_to_call:
+            if self.chips > 0:  # Can at least put some chips in
+                self._call(game.current_bet, game)  # All-in call
             else:
                 self._fold()
             return
 
-        # Normal raise handling
-        actual_amount = min(amount, self.chips)
-        self.place_bet(actual_amount, game)
+        # If player can call but can't make minimum raise
+        if self.chips < total_amount_needed:
+            # Go all-in if they have more than the current bet
+            if self.chips > game.current_bet:
+                actual_raise = self.chips - total_to_call
+                self.place_bet(self.chips, game)
+                game.current_bet = self.bet
 
-        if actual_amount > game.current_bet:
-            game.last_raiser = self
-            if game.round_state is not None:
-                game.round_state.raise_count += 1
-                game.round_state.last_raiser = self.name
+                if actual_raise >= min_bet:
+                    game.last_raiser = self
+                    if game.round_state is not None:
+                        game.round_state.raise_count += 1
+                        game.round_state.last_raiser = self.name
+            else:
+                self._call(game.current_bet, game)
+            return
+
+        # Normal raise handling
+        self.place_bet(total_amount_needed, game)
+        game.current_bet = self.bet
+        game.last_raiser = self
+        if game.round_state is not None:
+            game.round_state.raise_count += 1
+            game.round_state.last_raiser = self.name
 
     def _call(self, amount: int, game) -> None:
         """

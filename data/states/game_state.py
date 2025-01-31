@@ -212,7 +212,7 @@ class GameState(BaseModel):
         game.round_state.side_pots = [
             {
                 "amount": pot.amount,
-                "eligible_players": [p.name for p in pot.eligible_players],
+                "eligible_players": pot.eligible_players,
             }
             for pot in (game.pot.side_pots or [])
         ]
