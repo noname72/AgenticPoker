@@ -152,10 +152,25 @@ def evaluate_hand(cards: List[Card]) -> HandEvaluation:
 
     elif sorted_counts[0][1] == 2:  # One pair
         pair_rank = sorted_counts[0][0]
-        kickers = sorted([r for r in ranks if r != pair_rank], reverse=True)[
-            :3
-        ]  # Take top 3 kickers
-        return (9, [pair_rank] + kickers, f"One Pair, {pair_rank}s")
+        # Sort remaining cards by rank for kickers
+        kickers = sorted([r for r in ranks if r != pair_rank], reverse=True)[:3]
+        return (
+            9,  # One Pair rank
+            [pair_rank] + kickers,  # Pair rank followed by kickers in descending order
+            f"One Pair, {_rank_to_name(pair_rank)}s"
+        )
 
     else:  # High card
         return (10, ranks, f"High Card, {ranks[0]}")
+
+
+def _rank_to_name(rank: int) -> str:
+    """Convert numeric rank to card name."""
+    names = {
+        14: "Ace",
+        13: "King", 
+        12: "Queen",
+        11: "Jack",
+        10: "10"
+    }
+    return names.get(rank, str(rank))

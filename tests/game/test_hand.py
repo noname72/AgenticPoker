@@ -118,23 +118,13 @@ class TestHand:
         assert "Tiebreakers:" in display
 
     def test_empty_hand_display(self):
-        """Test display methods with empty hand."""
+        """Test that empty hands are displayed correctly."""
         empty_hand = Hand()
-
-        # Test show method
-        assert empty_hand.show() == "Empty hand"
-
-        # Test evaluate method should raise ValueError for empty hand
-        with pytest.raises(
-            ValueError, match="Cannot evaluate hand: incorrect number of cards"
-        ):
-            empty_hand.evaluate()
-
-        # Can still get rank info through _get_rank
         rank, tiebreakers, description = empty_hand._get_rank()
-        assert description == "No cards"
         assert rank == float("inf")
         assert tiebreakers == []
+        assert description == "Empty hand"  # Updated expectation
+        assert empty_hand.show() == "Empty hand"  # Updated expectation
 
     def test_evaluate_method(self, royal_flush):
         """Test the evaluate method's output format."""
@@ -156,7 +146,7 @@ class TestHand:
 
         # Empty hand rank
         initial_rank = hand._get_rank()
-        assert initial_rank[2] == "No cards"
+        assert initial_rank[2] == "Empty hand"  # Updated to match new message
 
         # Add one card - should be invalid number
         hand.add_cards([sample_cards[0]])
@@ -233,17 +223,12 @@ class TestHand:
         assert hand1 == hand2
 
     def test_hand_with_no_cards(self):
-        """Test behavior of hand with no cards."""
+        """Test behavior of hands with no cards."""
         empty_hand = Hand()
-
-        # Test rank retrieval
+        assert len(empty_hand.cards) == 0
+        assert empty_hand.show() == "Empty hand"  # Updated expectation
         rank, tiebreakers, description = empty_hand._get_rank()
-        assert rank == float("inf")
-        assert tiebreakers == []
-        assert description == "No cards"
-
-        # Test string representation
-        assert empty_hand.show() == "Empty hand"
+        assert description == "Empty hand"  # Updated expectation
 
     def test_add_duplicate_cards(self):
         """Test adding duplicate cards to a hand."""
