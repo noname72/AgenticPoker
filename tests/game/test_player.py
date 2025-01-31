@@ -317,3 +317,77 @@ class TestPlayer:
         # Test using players in a set
         player_set = {player1, player2, player3}
         assert len(player_set) == 2  # player1 and player2 count as same
+
+    def test_raise_with_insufficient_chips_for_min_bet(self, player, mock_game):
+        """Test that a player who can't meet minimum raise requirements is handled correctly."""
+        # Setup: Player has enough to call but not enough to raise minimum
+        player.chips = 150  # Can call 100 but can't raise minimum 100
+        mock_game.current_bet = 100
+        mock_game.config.min_bet = 100
+
+        # Try to raise 200
+        player._raise(200, mock_game)
+
+        # Should result in a call since can't meet minimum raise
+        assert player.bet == 150  # All-in call
+        assert player.chips == 0
+        assert player.is_all_in
+        assert mock_game.last_raiser != player  # Should not be marked as raiser
+
+    def test_raise_with_partial_chips_above_current_bet(self, player, mock_game):
+        """Test raise when player has more than current bet but less than intended raise."""
+        player.chips = 300  # More than current bet but less than intended raise
+        mock_game.current_bet = 100
+        mock_game.config.min_bet = 100
+
+        # Try to raise to 500
+        player._raise(500, mock_game)
+
+        # Should go all-in since can't make full raise
+        assert player.bet == 300  # All remaining chips
+        assert player.chips == 0
+        assert player.is_all_in
+        assert (
+            mock_game.last_raiser == player
+        )  # Should be marked as raiser since bet > current_bet
+
+    def test_raise_exactly_min_bet_amount(self, player, mock_game):
+        """Test raising exactly the minimum bet amount."""
+        player.chips = 1000
+        mock_game.current_bet = 100
+        mock_game.config.min_bet = 100
+
+        player._raise(100, mock_game)
+
+        assert player.bet == 200  # Current bet + min bet
+        assert player.chips == 800
+        assert not player.is_all_in
+        assert mock_game.last_raiser == player
+
+    def test_raise_below_min_bet_adjusted(self, player, mock_game):
+        """Test that raise attempts below minimum bet are adjusted up."""
+        player.chips = 1000
+        mock_game.current_bet = 100
+        mock_game.config.min_bet = 100
+
+        # Try to raise only 50 (below min_bet)
+        player._raise(50, mock_game)
+
+        # Should be adjusted up to minimum bet
+        assert player.bet == 200  # Current bet + min_bet
+        assert player.chips == 800
+        assert mock_game.last_raiser == player
+
+    def test_raise_with_previous_bet(self, player, mock_game):
+        """Test raising when player has already bet in this round."""
+        player.chips = 1000
+        player.bet = 50  # Previous bet
+        mock_game.current_bet = 100
+        mock_game.config.min_bet = 100
+
+        player._raise(200, mock_game)
+
+        # Should only take additional chips needed
+        assert player.bet == 300  # Previous bet + raise amount
+        assert player.chips == 750  # Original - (new_bet - previous_bet)
+        assert mock_game.last_raiser == player
