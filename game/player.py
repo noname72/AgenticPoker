@@ -31,9 +31,10 @@ class Player:
     folded: bool
     hand: Hand
     position: PlayerPosition
-    is_all_in: bool  #! change to all_in
+    is_all_in: bool
     checked: bool
     called: bool
+    _logged_all_in: bool  # New flag to track if all-in was logged
 
     def __init__(self, name: str, chips: int = 1000) -> None:
         """
@@ -62,6 +63,7 @@ class Player:
         self.is_all_in = False
         self.checked = False
         self.called = False
+        self._logged_all_in = False  # Initialize flag
 
         PlayerLogger.log_player_creation(name, chips)
 
@@ -75,7 +77,10 @@ class Player:
         if amount >= self.chips:
             amount = self.chips
             self.is_all_in = True
-            PlayerLogger.log_all_in(self.name, amount)
+            # Only log all-in status once
+            if not self._logged_all_in:
+                PlayerLogger.log_all_in(self.name, amount)
+                self._logged_all_in = True
 
         self.chips -= amount
         self.bet += amount
@@ -165,10 +170,6 @@ class Player:
         self.place_bet(amount, game)
         self.called = True
 
-        if self.chips == 0:
-            self.is_all_in = True
-            PlayerLogger.log_all_in(self.name, amount)
-
     def _check(self) -> None:
         """
         Mark the player as checked for the current hand.
@@ -204,6 +205,7 @@ class Player:
         self.is_all_in = False
         self.checked = False
         self.called = False
+        self._logged_all_in = False  # Reset the logging flag
 
         if hasattr(self, "hand"):
             self.hand = None
