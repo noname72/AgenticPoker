@@ -253,3 +253,94 @@ def test_post_draw_betting_skipped_all_all_in(game, player_factory):
 
     # Verify betting was skipped and returned True to continue to showdown
     assert result is True
+
+
+def test_handle_player_eliminations_returns_false_one_player(game, player_factory):
+    """Test that _handle_player_eliminations returns False when one player remains."""
+    # Create players - one with chips, two without
+    players = [
+        player_factory(name="Alice", chips=1000),
+        player_factory(name="Bob", chips=0),
+        player_factory(name="Charlie", chips=0),
+    ]
+    game.table.players = players
+    eliminated_players = []
+    
+    # Need to call twice - first call removes Bob and Charlie, second call checks table size
+    first_result = game._handle_player_eliminations(eliminated_players)
+    second_result = game._handle_player_eliminations(eliminated_players)
+    
+    # Verify results
+    assert first_result is True  # First call should continue to process all eliminations
+    assert second_result is False  # Second call should detect single player and end game
+    assert len(eliminated_players) == 2  # Two players should be eliminated
+    assert len(game.table) == 1  # Only one player should remain
+    assert game.table[0].name == "Alice"  # Alice should be the remaining player
+
+
+def test_handle_player_eliminations_returns_false_no_players(game, player_factory):
+    """Test that _handle_player_eliminations returns False when no players remain."""
+    # Create players - all without chips
+    players = [
+        player_factory(name="Alice", chips=0),
+        player_factory(name="Bob", chips=0),
+        player_factory(name="Charlie", chips=0),
+    ]
+    game.table.players = players
+    eliminated_players = []
+    
+    # Need multiple calls to process all eliminations
+    results = []
+    while len(game.table) > 0:
+        results.append(game._handle_player_eliminations(eliminated_players))
+    
+    # Verify results
+    assert results[-1] is False  # Final call should return False
+    assert len(eliminated_players) == 3  # All players should be eliminated
+    assert len(game.table) == 0  # No players should remain
+
+
+def test_handle_player_eliminations_returns_true_multiple_players(game, player_factory):
+    """Test that _handle_player_eliminations returns True when multiple players remain."""
+    # Create players - two with chips, one without
+    players = [
+        player_factory(name="Alice", chips=1000),
+        player_factory(name="Bob", chips=1000),
+        player_factory(name="Charlie", chips=0),
+    ]
+    game.table.players = players
+    eliminated_players = []
+    
+    # Run elimination handling
+    result = game._handle_player_eliminations(eliminated_players)
+    
+    # Verify results
+    assert result is True  # Should return True to continue game
+    assert len(eliminated_players) == 1  # One player should be eliminated
+    assert len(game.table) == 2  # Two players should remain
+    assert all(p.name in ["Alice", "Bob"] for p in game.table)  # Verify remaining players
+
+
+def test_game_ends_when_one_player_remains(game, player_factory):
+    """Test that game ends immediately when only one player remains."""
+    # Create players with specific chip stacks
+    players = [
+        player_factory(name="Alice", chips=1000),
+        player_factory(name="Bob", chips=0),  # Will be eliminated
+        player_factory(name="Charlie", chips=0),  # Will be eliminated
+    ]
+    game.table.players = players
+    
+    # Mock _log_game_summary to verify it's called
+    game._log_game_summary = MagicMock()
+    
+    # Run the game
+    game.play_game()
+    
+    # Verify game ended after eliminations
+    assert game.round_number <= 2  # Game should end in first or second round
+    assert len(game.table) == 1  # Only Alice should remain
+    assert game.table[0].name == "Alice"
+    
+    # Verify game summary was logged
+    game._log_game_summary.assert_called_once()
