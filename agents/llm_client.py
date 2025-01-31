@@ -187,16 +187,14 @@ class LLMClient:
             raise  # Let tenacity handle the retry with exponential backoff
 
         except Exception as e:
-            # Only track retry count here
+            # Track retry count and failed query for each attempt
             self.metrics["retry_count"] += 1
+            self.metrics["failed_queries"] += 1
             LLMLogger.log_query_error(e)
 
-            # Track failed_queries only on last retry
-            if self.metrics["retry_count"] >= self.max_retries:
-                self.metrics["failed_queries"] += 1
-                LLMLogger.log_metrics_update(
-                    time.time() - start_time, 0, success=False, error=e
-                )
+            LLMLogger.log_metrics_update(
+                time.time() - start_time, 0, success=False, error=e
+            )
 
             raise  # Let tenacity handle the retry
 
