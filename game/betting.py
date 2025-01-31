@@ -156,8 +156,12 @@ def _process_betting_cycle(game: "Game") -> None:
                     )
 
         # Convert current_bet to int if needed (for testing with Mock objects)
-        current_bet = int(str(game.current_bet)) if not isinstance(game.current_bet, int) else game.current_bet
-        
+        current_bet = (
+            int(str(game.current_bet))
+            if not isinstance(game.current_bet, int)
+            else game.current_bet
+        )
+
         if all_in_bet > current_bet:
             game.current_bet = all_in_bet
 
