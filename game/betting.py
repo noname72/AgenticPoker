@@ -23,6 +23,8 @@ The module ensures proper poker betting rules are followed:
 
 from typing import TYPE_CHECKING
 
+from data.enums import ActionType
+from data.types.action_decision import ActionDecision
 from loggers.betting_logger import BettingLogger
 
 if TYPE_CHECKING:
@@ -119,19 +121,47 @@ def _process_betting_cycle(game: "Game") -> None:
         - Logs betting actions and game state
     """
     complete = False
+    highest_all_in = 0
 
     while not complete:
         agent = game.table.get_next_player()
         if not agent:
-            # No more active players, clear needs_to_act and end round
-            game.table.needs_to_act.clear()
+            # Only clear needs_to_act if no pending all-in decisions
+            pending_decisions = any(
+                not p.folded and not p.is_all_in and p.bet < highest_all_in
+                for p in game.table.players
+            )
+            if not pending_decisions:
+                game.table.needs_to_act.clear()
             break
 
-        # Skip players who are all-in - they can't act anymore
         if agent.is_all_in:
             continue
 
-        # Add current pot amount to logging
+        # Find highest bet from all-in players
+        all_in_bet = max((p.bet for p in game.table.players if p.is_all_in), default=0)
+        if all_in_bet > highest_all_in:
+            highest_all_in = all_in_bet
+            # Reset needs_to_act for everyone who hasn't matched the all-in
+            for player in game.table.players:
+                if (
+                    not player.folded
+                    and not player.is_all_in
+                    and player.bet < all_in_bet
+                    and player.chips > 0
+                ):  # Only add if they have chips to call
+                    game.table.needs_to_act.add(player)
+                    BettingLogger.log_message(
+                        f"{player.name} must act on all-in bet of ${all_in_bet}"
+                    )
+
+        # Convert current_bet to int if needed (for testing with Mock objects)
+        current_bet = int(str(game.current_bet)) if not isinstance(game.current_bet, int) else game.current_bet
+        
+        if all_in_bet > current_bet:
+            game.current_bet = all_in_bet
+
+        # Log player turn
         BettingLogger.log_player_turn(
             player_name=agent.name,
             hand=agent.hand.show() if hasattr(agent, "hand") else "Unknown",
@@ -142,14 +172,51 @@ def _process_betting_cycle(game: "Game") -> None:
             last_raiser=game.table.last_raiser.name if game.table.last_raiser else None,
         )
 
+        # Get player's action
         action_decision = agent.decide_action(game)
+
+        # Handle all-in situations
+        if action_decision.action_type == ActionType.RAISE:
+            # If player is raising all-in
+            if action_decision.raise_amount >= agent.chips:
+                total_bet = agent.bet + agent.chips
+                BettingLogger.log_message(
+                    f"{agent.name} is going all-in for total bet of ${total_bet}"
+                )
+                action_decision.raise_amount = agent.chips
+            # If player is facing an all-in
+            elif all_in_bet > agent.bet:
+                call_amount = all_in_bet - agent.bet
+                BettingLogger.log_message(
+                    f"{agent.name} must call ${call_amount} more to match all-in bet of ${all_in_bet}"
+                )
+                action_decision = ActionDecision(
+                    action_type=ActionType.CALL,
+                    raise_amount=min(call_amount, agent.chips),
+                )
+        elif action_decision.action_type == ActionType.CALL:
+            # If facing an all-in bet
+            if all_in_bet > agent.bet:
+                call_amount = min(all_in_bet - agent.bet, agent.chips)
+                action_decision.raise_amount = call_amount
+                total_bet = agent.bet + call_amount
+                if call_amount < all_in_bet - agent.bet:
+                    BettingLogger.log_message(
+                        f"{agent.name} can only call ${call_amount} more for total bet of ${total_bet} (going all-in)"
+                    )
+
+        # Execute the action
         agent.execute(action_decision, game)
 
-        # Update table state based on action
+        # Mark player as all-in if they used all their chips
+        if agent.chips == 0 and not agent.is_all_in:
+            agent.is_all_in = True
+            BettingLogger.log_message(f"{agent.name} is now all-in")
+
+        # Update table state
         game.table.update(action_decision, agent)
 
         complete, reason = game.table.is_round_complete()
-
         BettingLogger.log_line_break()
 
 

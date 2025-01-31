@@ -85,11 +85,11 @@ def _evaluate_hands(players: List[Player]) -> List[Player]:
     for player in players:
         rank, tiebreakers, description = player.hand.evaluate()
         ShowdownLogger.log_hand_evaluation(
-            player.name, 
+            player.name,
             [str(card) for card in player.hand.cards],
             description,
             rank,
-            tiebreakers
+            tiebreakers,
         )
 
     # Find best hand(s)
@@ -103,16 +103,16 @@ def _evaluate_hands(players: List[Player]) -> List[Player]:
             best_hand = player.hand
         elif comparison == 0:  # Tie
             best_players.append(player)
-        
+
         # Log comparison with hand descriptions
         _, _, player_desc = player.hand.evaluate()
-        _, _, best_desc = best_players[0].hand.evaluate()
+        _, _, best_desc = best_hand.evaluate()
         ShowdownLogger.log_hand_comparison(
             player.name,
-            best_players[0].name if player != best_players[0] else best_players[-1].name,  # Avoid comparing with self
+            best_players[0].name,  # Compare against first best player
             comparison,
             player_desc,
-            best_desc
+            best_desc,
         )
 
     return best_players

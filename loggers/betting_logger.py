@@ -131,3 +131,8 @@ class BettingLogger:
     def log_debug(message: str) -> None:
         """Log a debug message."""
         logger.info(message)
+
+    @staticmethod
+    def log_forced_call(player_name: str, amount: int) -> None:
+        """Log when a player is forced to call an all-in bet."""
+        logger.info(f"{player_name} must call {amount} to match all-in bet")
