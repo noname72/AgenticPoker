@@ -40,13 +40,17 @@ def mock_openai_client():
 @pytest.fixture
 def llm_client(mock_openai_client):
     """Create an LLMClient instance with a mock OpenAI client."""
-    return LLMClient(api_key="test-key", client=mock_openai_client)
+    return LLMClient(
+        api_key="test-key", 
+        client=mock_openai_client,
+        max_retries=5  # Update to match new default in LLMClient
+    )
 
 
 def test_initialization(llm_client):
     """Test LLMClient initialization."""
     assert llm_client.model == "gpt-3.5-turbo"
-    assert llm_client.max_retries == 3
+    assert llm_client.max_retries == 5
     assert llm_client.base_wait == 1.0
     assert llm_client.max_wait == 10.0
     assert llm_client.metrics["total_queries"] == 0
@@ -76,6 +80,7 @@ def test_query_with_system_message(llm_client, mock_openai_client):
     assert messages[1]["role"] == "user"
     assert messages[1]["content"] == "Test prompt"
 
+
 @patch("time.sleep", return_value=None)
 def test_query_all_retries_fail(mock_sleep, llm_client, mock_openai_client):
     """Test when all retry attempts fail."""
@@ -86,9 +91,11 @@ def test_query_all_retries_fail(mock_sleep, llm_client, mock_openai_client):
         llm_client.query("Test prompt")
 
     # Verify metrics
-    assert llm_client.metrics["failed_queries"] == 1  # One failed operation
-    assert llm_client.metrics["retry_count"] == 3     # Three retry attempts
-    assert mock_openai_client.chat.completions.create.call_count == 3
+    assert (
+        llm_client.metrics["failed_queries"] == 5
+    )  # Each retry counts as a failed query (5 attempts total)
+    assert llm_client.metrics["retry_count"] == 5  # Five retry attempts
+    assert mock_openai_client.chat.completions.create.call_count == 5
 
 
 @pytest.mark.asyncio

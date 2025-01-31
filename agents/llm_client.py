@@ -3,7 +3,7 @@ import time
 from typing import Any, Dict, List, Optional, Union
 
 from dotenv import load_dotenv
-from openai import AsyncOpenAI, OpenAI
+from openai import APIError, APITimeoutError, AsyncOpenAI, OpenAI, RateLimitError
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from exceptions import LLMError
@@ -38,8 +38,14 @@ class LLMClient:
             client: Optional pre-configured client for testing
         """
         self.model = model
-        self.client = client or OpenAI(api_key=api_key)
-        self.async_client = client or AsyncOpenAI(api_key=api_key)
+        self.client = client or OpenAI(
+            api_key=api_key,
+            timeout=30.0,  # Add timeout of 30 seconds
+        )
+        self.async_client = client or AsyncOpenAI(
+            api_key=api_key,
+            timeout=30.0,  # Add timeout for async client too
+        )
         self.max_retries = max_retries
         self.base_wait = base_wait
         self.max_wait = max_wait
@@ -51,6 +57,8 @@ class LLMClient:
             "retry_count": 0,
             "total_tokens": 0,
             "query_times": [],
+            "rate_limit_hits": 0,
+            "timeout_errors": 0,
         }
 
     def query(
@@ -96,8 +104,8 @@ class LLMClient:
             raise LLMError(f"Query failed after retries: {str(e)}")
 
     @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
+        stop=stop_after_attempt(5),  # Increase max attempts
+        wait=wait_exponential(multiplier=1, min=2, max=20),  # Adjust wait times
         reraise=True,
     )
     def _execute_query(
@@ -144,17 +152,49 @@ class LLMClient:
             LLMLogger.log_metrics_update(duration, response.usage.total_tokens)
             return response_text
 
-        except Exception as e:
-            # Only track retry count here
+        except (APITimeoutError, APIError) as e:
             self.metrics["retry_count"] += 1
+            error_type = "timeout" if isinstance(e, APITimeoutError) else "api_error"
+            LLMLogger.log_query_error(f"{error_type}: {str(e)}")
+
+            # Track timeouts separately
+            self.metrics.setdefault("timeout_errors", 0)
+            self.metrics["timeout_errors"] += 1
+
+            LLMLogger.log_metrics_update(
+                time.time() - start_time,
+                0,
+                success=False,
+                error=f"{error_type} occurred. Waiting before retry. Attempt {self.metrics['retry_count']}",
+            )
+            raise  # Let tenacity handle the retry
+
+        except RateLimitError as e:
+            self.metrics["retry_count"] += 1
+            LLMLogger.log_query_error(f"Rate limit exceeded: {str(e)}")
+
+            # Add rate limit specific metrics
+            self.metrics.setdefault("rate_limit_hits", 0)
+            self.metrics["rate_limit_hits"] += 1
+
+            # Log the rate limit hit with more detail
+            LLMLogger.log_metrics_update(
+                time.time() - start_time,
+                0,
+                success=False,
+                error=f"Rate limit hit. Waiting before retry. Attempt {self.metrics['retry_count']}",
+            )
+            raise  # Let tenacity handle the retry with exponential backoff
+
+        except Exception as e:
+            # Track retry count and failed query for each attempt
+            self.metrics["retry_count"] += 1
+            self.metrics["failed_queries"] += 1
             LLMLogger.log_query_error(e)
 
-            # Track failed_queries only on last retry
-            if self.metrics["retry_count"] >= self.max_retries:
-                self.metrics["failed_queries"] += 1
-                LLMLogger.log_metrics_update(
-                    time.time() - start_time, 0, success=False, error=e
-                )
+            LLMLogger.log_metrics_update(
+                time.time() - start_time, 0, success=False, error=e
+            )
 
             raise  # Let tenacity handle the retry
 
@@ -205,6 +245,19 @@ class LLMClient:
             metrics["average_query_time"] = sum(self.metrics["query_times"]) / len(
                 self.metrics["query_times"]
             )
+        # Add rate limit and timeout information
+        if "rate_limit_hits" in self.metrics:
+            metrics["rate_limit_percentage"] = (
+                self.metrics["rate_limit_hits"] / self.metrics["total_queries"] * 100
+                if self.metrics["total_queries"] > 0
+                else 0
+            )
+        if "timeout_errors" in self.metrics:
+            metrics["timeout_percentage"] = (
+                self.metrics["timeout_errors"] / self.metrics["total_queries"] * 100
+                if self.metrics["total_queries"] > 0
+                else 0
+            )
         return metrics
 
     def reset_metrics(self) -> None:
@@ -215,4 +268,6 @@ class LLMClient:
             "retry_count": 0,
             "total_tokens": 0,
             "query_times": [],
+            "rate_limit_hits": 0,
+            "timeout_errors": 0,
         }
