@@ -81,32 +81,38 @@ def _evaluate_hands(players: List[Player]) -> List[Player]:
     if not players:
         return []
 
+    # Log detailed hand evaluations for debugging
+    for player in players:
+        rank, tiebreakers, description = player.hand.evaluate()
+        ShowdownLogger.log_hand_evaluation(
+            player.name, 
+            [str(card) for card in player.hand.cards],
+            description,
+            rank,
+            tiebreakers
+        )
+
     # Find best hand(s)
     best_players = [players[0]]
     best_hand = players[0].hand
 
     for player in players[1:]:
-        try:
-            # Note: compare_to returns positive if player's hand is better
-            comparison = player.hand.compare_to(best_hand)
-            if comparison > 0:  # Current player has better hand
-                best_players = [player]
-                best_hand = player.hand
-            elif comparison == 0:  # Tie
-                best_players.append(player)
-        except AttributeError:
-            # For test mocks, use direct comparison
-            if player.hand > best_hand:
-                comparison = 1
-            elif player.hand == best_hand:
-                comparison = 0
-            else:
-                comparison = -1
-
-            if comparison > 0:  # Current player has better hand
-                best_players = [player]
-                best_hand = player.hand
-            elif comparison == 0:  # Tie
-                best_players.append(player)
+        comparison = player.hand.compare_to(best_hand)
+        if comparison > 0:  # Current player has better hand
+            best_players = [player]
+            best_hand = player.hand
+        elif comparison == 0:  # Tie
+            best_players.append(player)
+        
+        # Log comparison with hand descriptions
+        _, _, player_desc = player.hand.evaluate()
+        _, _, best_desc = best_players[0].hand.evaluate()
+        ShowdownLogger.log_hand_comparison(
+            player.name,
+            best_players[0].name if player != best_players[0] else best_players[-1].name,  # Avoid comparing with self
+            comparison,
+            player_desc,
+            best_desc
+        )
 
     return best_players

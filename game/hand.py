@@ -30,62 +30,29 @@ class Hand:
         self._rank: Optional[tuple] = None
 
     def __lt__(self, other: "Hand") -> bool:
-        """
-        Compare if this hand ranks lower than another hand.
-
-        Args:
-            other: Hand to compare against
-
-        Returns:
-            bool: True if this hand ranks lower than the other hand
-
-        Note:
-            Compares primary rank first (lower is better), then tiebreakers.
-            For tiebreakers, higher values are better (opposite of primary rank).
-        """
-        self_rank, self_tiebreakers, _ = self._get_rank()
-        other_rank, other_tiebreakers, _ = other._get_rank()
-
-        # First compare primary ranks (lower is better)
-        if self_rank != other_rank:
-            return self_rank > other_rank
-
-        # If ranks are equal, compare each tiebreaker (higher is better)
-        for self_value, other_value in zip(self_tiebreakers, other_tiebreakers):
-            if self_value != other_value:
-                return self_value < other_value
-
-        return False  # Equal hands
+        """Compare if this hand ranks lower than another hand."""
+        return self.compare_to(other) < 0
 
     def __gt__(self, other: "Hand") -> bool:
-        """Compare hands using poker rankings."""
-        self_rank, self_tiebreakers, _ = self._get_rank()
-        other_rank, other_tiebreakers, _ = other._get_rank()
-
-        if self_rank != other_rank:
-            return self_rank < other_rank  # Lower rank numbers are better
-
-        # If ranks are equal, compare tiebreakers in order
-        return self_tiebreakers > other_tiebreakers
+        """Compare if this hand ranks higher than another hand."""
+        return self.compare_to(other) > 0
 
     def __eq__(self, other: "Hand") -> bool:
         """Check if hands are exactly equal in rank and tiebreakers."""
-        self_rank, self_tiebreakers, _ = self._get_rank()
-        other_rank, other_tiebreakers, _ = other._get_rank()
-        return self_rank == other_rank and self_tiebreakers == other_tiebreakers
+        return self.compare_to(other) == 0
 
     def _get_rank(self) -> tuple:
         """Get the cached rank or calculate and cache it if needed."""
         if self._rank is None:
             if not self.cards:
-                return (float("inf"), [], "No cards")
+                return (float("inf"), [], "Empty hand")  # Use consistent "Empty hand" message
             if len(self.cards) != 5:
                 return (float("inf"), [], "Invalid number of cards")
             try:
-                self._rank = evaluate_hand(self.cards)
-            except (ValueError, KeyError):
-                return (float("inf"), [], "Invalid hand")
-        return self._rank or (float("inf"), [], "No cards")
+                self._rank = self.evaluate()
+            except (ValueError, KeyError) as e:
+                return (float("inf"), [], f"Invalid hand: {str(e)}")
+        return self._rank or (float("inf"), [], "Empty hand")
 
     def add_cards(self, cards: List[Card]) -> None:
         """Add cards to the hand and invalidate the cached rank."""
@@ -121,7 +88,15 @@ class Hand:
             return "Empty hand"
 
         cards_str = ", ".join(str(card) for card in self.cards)
-        rank, tiebreakers, description = self._get_rank()
+        
+        # Always use evaluate() for valid hands to ensure consistent evaluation
+        if len(self.cards) == 5:
+            try:
+                rank, tiebreakers, description = self.evaluate()
+            except (ValueError, KeyError):
+                rank, tiebreakers, description = float("inf"), [], "Invalid hand"
+        else:
+            rank, tiebreakers, description = float("inf"), [], "Invalid number of cards"
 
         # Create detailed evaluation string without Unicode characters
         eval_details = f"[Rank: {rank}, Tiebreakers: {tiebreakers}]"
@@ -151,3 +126,43 @@ class Hand:
             tiebreakers=list(self._rank[1]) if self._rank else [],  # Tiebreakers
             is_evaluated=self._rank is not None,
         )
+
+    def compare_to(self, other: "Hand") -> int:
+        """Compare this hand to another hand.
+
+        Args:
+            other: Hand to compare against
+
+        Returns:
+            int: Positive if this hand is better, negative if worse, 0 if equal
+
+        Note:
+            This method uses the same comparison logic as __gt__ and __lt__,
+            but returns an integer result suitable for sorting and comparison.
+            Invalid hands (empty or wrong size) are considered equal to each other
+            but worse than valid hands.
+        """
+        # Get ranks for both hands using _get_rank to handle invalid cases
+        self_rank, self_tiebreakers, _ = self._get_rank()
+        other_rank, other_tiebreakers, _ = other._get_rank()
+
+        # If both hands are invalid (infinite rank), they're equal
+        if self_rank == float("inf") and other_rank == float("inf"):
+            return 0
+
+        # If one hand is invalid, it loses
+        if self_rank == float("inf"):
+            return -1
+        if other_rank == float("inf"):
+            return 1
+
+        # First compare primary ranks (lower is better)
+        if self_rank != other_rank:
+            return other_rank - self_rank  # Reversed to make lower ranks return positive
+
+        # If ranks are equal, compare tiebreakers (higher is better)
+        for self_value, other_value in zip(self_tiebreakers, other_tiebreakers):
+            if self_value != other_value:
+                return self_value - other_value  # Higher tiebreaker values are better
+
+        return 0  # Hands are equal

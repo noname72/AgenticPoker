@@ -188,12 +188,33 @@ def test_two_pair(two_pair):
     assert description == "Two Pair, 14s and 13s"
 
 
-def test_one_pair(one_pair):
-    """Test one pair evaluation"""
-    rank, tiebreakers, description = evaluate_hand(one_pair)
+def test_one_pair():
+    """Test evaluation of one pair hands."""
+    # Test pair of aces
+    hand = [
+        Card("A", "♠"),
+        Card("A", "♣"),
+        Card("K", "♦"),
+        Card("Q", "♥"),
+        Card("J", "♠"),
+    ]
+    rank, tiebreakers, description = evaluate_hand(hand)
+    assert rank == 9  # One pair rank
+    assert tiebreakers == [14, 13, 12, 11]  # Pair rank followed by kickers
+    assert description == "One Pair, Aces"  # Updated to expect card name instead of numeric value
+
+    # Test pair of twos
+    hand = [
+        Card("2", "♠"),
+        Card("2", "♣"),
+        Card("K", "♦"),
+        Card("Q", "♥"),
+        Card("J", "♠"),
+    ]
+    rank, tiebreakers, description = evaluate_hand(hand)
     assert rank == 9
-    assert tiebreakers == [14, 13, 12, 11]  # Pair of aces with K,Q,J kickers
-    assert description == "One Pair, 14s"
+    assert tiebreakers == [2, 13, 12, 11]
+    assert description == "One Pair, 2s"  # Numbers below 10 stay as numbers
 
 
 def test_high_card(high_card):
@@ -859,3 +880,41 @@ def test_invalid_card_rank():
 
     with pytest.raises(KeyError):
         evaluate_hand(hand)
+
+
+def test_one_pair_ace_kicker_comparison():
+    """Test that one pair of aces with different kickers are evaluated correctly."""
+    # Charlie's hand
+    charlie_hand = [
+        Card("A", "♥"),
+        Card("A", "♠"),
+        Card("K", "♦"),
+        Card("9", "♦"),
+        Card("8", "♦"),
+    ]
+
+    # Alice's hand
+    alice_hand = [
+        Card("Q", "♠"),
+        Card("A", "♦"),
+        Card("7", "♠"),
+        Card("A", "♣"),
+        Card("10", "♠"),
+    ]
+
+    # Evaluate both hands
+    charlie_rank, charlie_tiebreakers, charlie_desc = evaluate_hand(charlie_hand)
+    alice_rank, alice_tiebreakers, alice_desc = evaluate_hand(alice_hand)
+
+    # Both should be one pair
+    assert charlie_rank == alice_rank == 9
+    assert "One Pair" in charlie_desc and "One Pair" in alice_desc
+
+    # Verify tiebreakers
+    assert charlie_tiebreakers == [14, 13, 9, 8], "Charlie's tiebreakers incorrect"
+    assert alice_tiebreakers == [14, 12, 10, 7], "Alice's tiebreakers incorrect"
+    assert charlie_tiebreakers > alice_tiebreakers, "Charlie's hand should win"
+
+    # Verify descriptions
+    assert "Aces" in charlie_desc  # Pair of Aces
+    assert "Aces" in alice_desc    # Pair of Aces
