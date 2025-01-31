@@ -111,6 +111,7 @@ class Table:
            - Called the current bet amount, or
            - Gone all-in, or
            - Folded
+        3. All players have had at least one chance to act
 
         Returns:
             Tuple[bool, str]: A tuple containing:
@@ -203,7 +204,6 @@ class Table:
         self.needs_to_act = set(self.active_players())
         self.current_bet = 0
         self.last_raiser = None
-        self.index = 0
 
         TableLogger.log_action_tracking_reset([p.name for p in self.active_players()])
 
