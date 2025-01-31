@@ -151,3 +151,30 @@ class Hand:
             tiebreakers=list(self._rank[1]) if self._rank else [],  # Tiebreakers
             is_evaluated=self._rank is not None,
         )
+
+    def compare_to(self, other: "Hand") -> int:
+        """Compare this hand to another hand.
+
+        Args:
+            other: Hand to compare against
+
+        Returns:
+            int: Positive if this hand is better, negative if worse, 0 if equal
+
+        Note:
+            This method uses the same comparison logic as __gt__ and __lt__,
+            but returns an integer result suitable for sorting and comparison.
+        """
+        self_rank, self_tiebreakers, _ = self._get_rank()
+        other_rank, other_tiebreakers, _ = other._get_rank()
+
+        # First compare primary ranks (lower is better)
+        if self_rank != other_rank:
+            return -1 if self_rank < other_rank else 1
+
+        # If ranks are equal, compare tiebreakers (higher is better)
+        for self_value, other_value in zip(self_tiebreakers, other_tiebreakers):
+            if self_value != other_value:
+                return 1 if self_value > other_value else -1
+
+        return 0  # Hands are equal

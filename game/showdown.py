@@ -86,27 +86,11 @@ def _evaluate_hands(players: List[Player]) -> List[Player]:
     best_hand = players[0].hand
 
     for player in players[1:]:
-        try:
-            # Note: compare_to returns positive if player's hand is better
-            comparison = player.hand.compare_to(best_hand)
-            if comparison > 0:  # Current player has better hand
-                best_players = [player]
-                best_hand = player.hand
-            elif comparison == 0:  # Tie
-                best_players.append(player)
-        except AttributeError:
-            # For test mocks, use direct comparison
-            if player.hand > best_hand:
-                comparison = 1
-            elif player.hand == best_hand:
-                comparison = 0
-            else:
-                comparison = -1
-
-            if comparison > 0:  # Current player has better hand
-                best_players = [player]
-                best_hand = player.hand
-            elif comparison == 0:  # Tie
-                best_players.append(player)
+        comparison = player.hand.compare_to(best_hand)
+        if comparison > 0:  # Current player has better hand
+            best_players = [player]
+            best_hand = player.hand
+        elif comparison == 0:  # Tie
+            best_players.append(player)
 
     return best_players

@@ -152,7 +152,9 @@ def evaluate_hand(cards: List[Card]) -> HandEvaluation:
 
     elif sorted_counts[0][1] == 2:  # One pair
         pair_rank = sorted_counts[0][0]
-        kickers = sorted([r for r in ranks if r != pair_rank], reverse=True)
+        kickers = sorted([r for r in ranks if r != pair_rank], reverse=True)[
+            :3
+        ]  # Take top 3 kickers
         return (9, [pair_rank] + kickers, f"One Pair, {pair_rank}s")
 
     else:  # High card

@@ -577,3 +577,43 @@ class TestHand:
         assert rank == 10  # High card
         assert "High Card" in description
         assert tiebreakers[0] == 13  # King high
+
+    def test_one_pair_kicker_comparison(self):
+        """Test that one pair hands are compared correctly with kickers."""
+        # Charlie's hand: A♥, A♠, K♦, 9♦, 8♦
+        # Pair of Aces with K,9,8 kickers
+        charlie_hand = Hand([
+            Card("A", "♥"),
+            Card("A", "♠"),
+            Card("K", "♦"),
+            Card("9", "♦"),
+            Card("8", "♦"),
+        ])
+
+        # Alice's hand: Q♠, A♦, 7♠, A♣, 10♠
+        # Pair of Aces with Q,10,7 kickers
+        alice_hand = Hand([
+            Card("Q", "♠"),
+            Card("A", "♦"),
+            Card("7", "♠"),
+            Card("A", "♣"),
+            Card("10", "♠"),
+        ])
+
+        # Direct comparison
+        assert charlie_hand > alice_hand, "Charlie's K kicker should beat Alice's Q kicker"
+        assert alice_hand < charlie_hand, "Alice's Q kicker should lose to Charlie's K kicker"
+        assert not (alice_hand > charlie_hand), "Alice's hand should not beat Charlie's"
+
+        # Compare using compare_to method
+        assert charlie_hand.compare_to(alice_hand) > 0, "compare_to should show Charlie's hand is better"
+        assert alice_hand.compare_to(charlie_hand) < 0, "compare_to should show Alice's hand is worse"
+
+        # Verify the actual rankings
+        charlie_rank, charlie_tiebreakers, _ = charlie_hand._get_rank()
+        alice_rank, alice_tiebreakers, _ = alice_hand._get_rank()
+
+        assert charlie_rank == alice_rank == 9, "Both should be rank 9 (one pair)"
+        assert charlie_tiebreakers == [14, 13, 9, 8], "Charlie's tiebreakers should be [14(A), 13(K), 9, 8]"
+        assert alice_tiebreakers == [14, 12, 10, 7], "Alice's tiebreakers should be [14(A), 12(Q), 10, 7]"
+        assert charlie_tiebreakers > alice_tiebreakers, "Charlie's tiebreakers should be higher"
