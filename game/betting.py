@@ -151,9 +151,6 @@ def _process_betting_cycle(game: "Game") -> None:
                     and player.chips > 0
                 ):  # Only add if they have chips to call
                     game.table.needs_to_act.add(player)
-                    BettingLogger.log_message(
-                        f"{player.name} must act on all-in bet of ${all_in_bet}"
-                    )
 
         # Convert current_bet to int if needed (for testing with Mock objects)
         current_bet = (
