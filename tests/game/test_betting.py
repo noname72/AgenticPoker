@@ -104,6 +104,7 @@ def test_handle_betting_round_continues_multiple_active(mock_game, player_factor
     # Set up game state with Table
     mock_game.table = Table(active_players)
     mock_game.pot.pot = 0
+    mock_game.current_bet = 0  # Set initial bet value
 
     # Run betting round
     should_continue = handle_betting_round(mock_game)
@@ -120,6 +121,7 @@ def test_handle_betting_round_ends_one_active(mock_game, player_factory):
     # Set up game state with Table
     mock_game.table = Table([active_player, folded_player])
     mock_game.pot.pot = 0
+    mock_game.current_bet = 0  # Set initial bet value
 
     # Run betting round
     should_continue = handle_betting_round(mock_game)
@@ -224,6 +226,8 @@ def test_betting_round_all_fold(mock_game, player_factory):
     )
 
     mock_game.table = table
+    mock_game.current_bet = 20  # Set a proper initial bet value
+
     betting_round(mock_game)
 
     # Verify round ended early due to folds
@@ -235,6 +239,7 @@ def test_handle_betting_round_pot_initialization(mock_game, mock_player):
     """Tests pot initialization in handle_betting_round."""
     mock_game.table = Table([mock_player])
     mock_game.pot.pot = None
+    mock_game.current_bet = 0
 
     handle_betting_round(mock_game)
 

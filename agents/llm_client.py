@@ -1,3 +1,4 @@
+import asyncio
 import os
 import time
 from typing import Any, Dict, List, Optional, Union
@@ -135,6 +136,9 @@ class LLMClient:
 
             response_text = response.choices[0].message.content
 
+            # Add a small delay after successful response (0.5 seconds)
+            time.sleep(0.5)
+
             # Log the prompt and response with tags
             LLMLogger.log_prompt_and_response(
                 prompt=prompt,
@@ -221,6 +225,9 @@ class LLMClient:
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
+
+            # Add a small delay after successful response
+            await asyncio.sleep(0.5)
 
             # Update metrics
             duration = time.time() - start_time
