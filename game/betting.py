@@ -181,9 +181,6 @@ def _process_betting_cycle(game: "Game") -> None:
             # If player is raising all-in
             if action_decision.raise_amount >= agent.chips:
                 total_bet = agent.bet + agent.chips
-                BettingLogger.log_message(
-                    f"{agent.name} is going all-in for total bet of ${total_bet}"
-                )
                 action_decision.raise_amount = agent.chips
             # If player is facing an all-in
             elif all_in_bet > agent.bet:
@@ -200,11 +197,6 @@ def _process_betting_cycle(game: "Game") -> None:
             if all_in_bet > agent.bet:
                 call_amount = min(all_in_bet - agent.bet, agent.chips)
                 action_decision.raise_amount = call_amount
-                total_bet = agent.bet + call_amount
-                if call_amount < all_in_bet - agent.bet:
-                    BettingLogger.log_message(
-                        f"{agent.name} can only call ${call_amount} more for total bet of ${total_bet} (going all-in)"
-                    )
 
         # Execute the action
         agent.execute(action_decision, game)
