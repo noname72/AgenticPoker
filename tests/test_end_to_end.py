@@ -63,10 +63,10 @@ import logging
 import unittest
 from unittest.mock import patch
 
-from game.game import AgenticPoker
-from game.config import GameConfig
 from agents.agent import Agent
 from agents.random_agent import RandomAgent
+from game.config import GameConfig
+from game.game import AgenticPoker
 
 
 class ListHandler(logging.Handler):
@@ -456,6 +456,43 @@ class EndToEndTestCase(unittest.TestCase):
                 for log in self.log_handler.records
             ),
             "Should see AI strategy decisions",
+        )
+
+    def test_chip_conservation(self):
+        """Test that chips are properly conserved throughout the game.
+
+        This test verifies that the total number of chips in the system remains constant
+        from the start of the game to the end - no chips should be created or destroyed.
+
+        Assumptions:
+        - All players start with 1000 chips
+        - Logs contain initial chip counts and final standings
+        - Any chips in pots are accounted for in player stacks by end of hand
+        """
+        # Calculate initial total chips (4 players × 1000 chips each)
+        initial_total = len(self.players) * 1000
+
+        # Find final chip counts from the final standings
+        final_chips = 0
+        in_final_standings = False
+        for log in self.log_handler.records:
+            if "Final Standings:" in log:
+                in_final_standings = True
+                continue
+            if in_final_standings and ": $" in log:
+                try:
+                    # Extract chip amount from format "N. Name: $amount"
+                    amount = int(log.split("$")[1].strip())
+                    final_chips += amount
+                except (IndexError, ValueError):
+                    continue
+            elif in_final_standings and not log.strip():  # Empty line
+                break
+
+        self.assertEqual(
+            initial_total,
+            final_chips,
+            f"Total chips should remain constant. Started with {initial_total}, ended with {final_chips}",
         )
 
 

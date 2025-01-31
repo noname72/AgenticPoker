@@ -181,6 +181,9 @@ class Player:
         self.checked = False
         self.called = False
 
+        if hasattr(self, "hand"):
+            self.hand = None
+
         PlayerLogger.log_state_reset(self.name, context="new round")
 
     @property

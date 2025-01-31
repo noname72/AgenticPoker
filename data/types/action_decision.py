@@ -46,36 +46,41 @@ class ActionDecision(BaseModel):
 
         Returns:
             ActionDecision: Parsed and validated action decision
-
-        Raises:
-            ValueError: If response cannot be parsed into a valid action
         """
-        if "DECISION:" not in response:
-            logger.warning("[Action] No DECISION directive found in response")
-            return cls(action_type=ActionType.CALL)
-
-        # Extract reasoning if present (everything before DECISION:)
-        pre_reasoning = (
-            response.split("DECISION:")[0].strip() if "DECISION:" in response else None
-        )
-
-        # Extract action and post-reasoning from response
-        action_part = response.split("DECISION:")[1].strip()
-
-        # Handle reasoning after the action
-        action_text = action_part
-        post_reasoning = None
-        if "REASONING:" in action_part:
-            action_text, post_reasoning = action_part.split("REASONING:", 1)
-            action_text = action_text.strip()
-            post_reasoning = post_reasoning.strip()
-
-        # Combine reasonings, preferring post-reasoning if both exist
-        reasoning = post_reasoning if post_reasoning else pre_reasoning
-
-        parts = action_text.lower().split()
-
         try:
+            if "DECISION:" not in response:
+                logger.warning("[Action] No DECISION directive found in response")
+                return cls(
+                    action_type=ActionType.CALL, reasoning="No DECISION directive found"
+                )
+
+            # Extract reasoning if present (everything before DECISION:)
+            pre_reasoning = (
+                response.split("DECISION:")[0].strip()
+                if "DECISION:" in response
+                else None
+            )
+
+            # Extract action and post-reasoning from response
+            action_part = response.split("DECISION:")[1].strip()
+
+            # Handle reasoning after the action
+            action_text = action_part
+            post_reasoning = None
+            if "REASONING:" in action_part:
+                action_text, post_reasoning = action_part.split("REASONING:", 1)
+                action_text = action_text.strip()
+                post_reasoning = post_reasoning.strip()
+
+            # Combine reasonings, preferring post-reasoning if both exist
+            reasoning = post_reasoning if post_reasoning else pre_reasoning
+
+            # Parse the action type and amount
+            parts = action_text.lower().split()
+            if not parts:
+                logger.warning("[Action] Empty action text")
+                return cls(action_type=ActionType.CALL, reasoning="Empty action text")
+
             # Clean the action type of any trailing punctuation
             action_type = parts[0].rstrip(",")
 
@@ -89,14 +94,26 @@ class ActionDecision(BaseModel):
                         raise_amount=amount,
                         reasoning=reasoning,
                     )
-                except (IndexError, ValueError):
-                    logger.warning("[Action] Invalid raise format")
-                    return cls(action_type=ActionType.CALL, reasoning=reasoning)
-            else:
+                except (IndexError, ValueError) as e:
+                    logger.warning(f"[Action] Invalid raise format: {e}")
+                    return cls(
+                        action_type=ActionType.CALL,
+                        reasoning=f"Invalid raise format: {e}",
+                    )
+            elif action_type in ("fold", "call"):
                 return cls(action_type=ActionType(action_type), reasoning=reasoning)
-        except ValueError:
-            logger.warning(f"[Action] Invalid action '{parts[0]}', defaulting to call")
-            return cls(action_type=ActionType.CALL, reasoning=reasoning)
+            else:
+                logger.warning(f"[Action] Invalid action type: {action_type}")
+                return cls(
+                    action_type=ActionType.CALL,
+                    reasoning=f"Invalid action type: {action_type}",
+                )
+
+        except Exception as e:
+            logger.warning(f"[Action] Error parsing response: {e}")
+            return cls(
+                action_type=ActionType.CALL, reasoning=f"Error parsing response: {e}"
+            )
 
     def __str__(self) -> str:
         """String representation of the action response.

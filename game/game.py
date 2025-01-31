@@ -282,6 +282,12 @@ class AgenticPoker:
         # Collect blinds and antes AFTER logging initial state
         self._collect_blinds_and_antes()
 
+        # Add this check: If all players except one are all-in after blinds/antes,
+        # skip straight to showdown
+        active_not_allin = [p for p in self.table if not p.is_all_in and not p.folded]
+        if len(active_not_allin) <= 1:
+            return
+
         # Handle AI player pre-round messages
         #! need to fix this
         # for player in self.table.players:
@@ -439,10 +445,7 @@ class AgenticPoker:
         """Reset the state after a round is complete."""
         # Clear hands and bets
         for player in self.table:
-            player.bet = 0
-            player.folded = False
-            if hasattr(player, "hand"):
-                player.hand = None
+            player.reset_for_new_round()
 
         # Reset pot in pot
         self.pot.reset_pot()
