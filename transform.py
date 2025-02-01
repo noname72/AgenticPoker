@@ -525,6 +525,173 @@ def transform_elimination_stats(game_data: Dict[str, Any]) -> pd.DataFrame:
     return pd.DataFrame(eliminations)
 
 
+def _calculate_roi(chip_change: int, amount_risked: int) -> float:
+    """Calculate Return on Investment (ROI) for a round."""
+    if amount_risked == 0:
+        return 0.0
+    return (chip_change / amount_risked) * 100
+
+
+def _calculate_hand_strength(hand_type: str, tiebreakers: List[int]) -> float:
+    """Convert hand type and tiebreakers into a numeric strength score."""
+    base_strength = _get_hand_rank(hand_type) * 1000
+    # Add tiebreaker values with decreasing weight
+    tiebreaker_value = sum(t * (0.1 ** (i + 1)) for i, t in enumerate(tiebreakers))
+    return base_strength + tiebreaker_value
+
+
+def _calculate_winning_margin(
+    winner_eval: Dict[str, Any], other_evals: List[Dict[str, Any]]
+) -> float:
+    """Calculate the margin by which the winning hand beat the next best hand."""
+    if not winner_eval or not other_evals:
+        return 0.0
+
+    winner_strength = _calculate_hand_strength(
+        winner_eval["rank"], winner_eval["tiebreakers"]
+    )
+    other_strengths = [
+        _calculate_hand_strength(eval["rank"], eval["tiebreakers"])
+        for eval in other_evals
+    ]
+    next_best = max(other_strengths) if other_strengths else winner_strength
+    return winner_strength - next_best
+
+
+def transform_round_outcomes(game_data: Dict[str, Any]) -> pd.DataFrame:
+    """Transform round outcomes into detailed metrics including ROI and winning margins."""
+    outcomes = []
+    session = game_data["session"]
+
+    for round_data in session["rounds"]:
+        round_num = round_data["round_number"]
+
+        # Track total amount risked by each player in the round
+        amount_risked = defaultdict(int)
+
+        # Add ante and blind amounts
+        for ante in round_data.get("antes", []):
+            amount_risked[ante["player"]] += ante["amount"]
+
+        # Add betting amounts from all phases
+        for phase in ["pre_draw_actions", "post_draw_actions"]:
+            if phase in round_data:
+                for action in round_data[phase]:
+                    if action["action"]["type"] in ["raise", "call"]:
+                        amount_risked[action["player"]] += action["action"].get(
+                            "amount", 0
+                        )
+
+        # Calculate showdown metrics if available
+        if "showdown" in round_data and "result" in round_data["showdown"]:
+            winner = round_data["showdown"]["result"]["winner"]
+            chip_changes = round_data["showdown"]["result"]["chip_changes"]
+
+            # Calculate winning margin if hand evaluations are available
+            winning_margin = 0.0
+            if "players" in round_data["showdown"]:
+                winner_eval = next(
+                    (
+                        p["evaluation"]
+                        for p in round_data["showdown"]["players"]
+                        if p["player"] == winner
+                    ),
+                    None,
+                )
+                other_evals = [
+                    p["evaluation"]
+                    for p in round_data["showdown"]["players"]
+                    if p["player"] != winner
+                ]
+                winning_margin = _calculate_winning_margin(winner_eval, other_evals)
+
+            # Record outcomes for each player
+            for player, chip_change in chip_changes.items():
+                outcomes.append(
+                    {
+                        "round_number": round_num,
+                        "player": player,
+                        "chip_change": chip_change,
+                        "amount_risked": amount_risked[player],
+                        "roi": _calculate_roi(chip_change, amount_risked[player]),
+                        "is_winner": player == winner,
+                        "winning_margin": winning_margin if player == winner else None,
+                        "pot_size": round_data["showdown"]["result"]["pot"],
+                        "num_active_players": len(round_data["showdown"]["players"]),
+                    }
+                )
+
+    return pd.DataFrame(outcomes)
+
+
+def transform_betting_trends(game_data: Dict[str, Any]) -> pd.DataFrame:
+    """Transform betting behavior into trend metrics."""
+    trends = []
+    session = game_data["session"]
+
+    # Track running metrics for each player
+    player_metrics = defaultdict(
+        lambda: {
+            "total_bets": 0,
+            "aggressive_actions": 0,
+            "total_actions": 0,
+            "wins": 0,
+            "chips": 0,
+        }
+    )
+
+    for round_data in session["rounds"]:
+        round_num = round_data["round_number"]
+
+        # Update chips from starting stacks
+        for player, chips in round_data["starting_stacks"].items():
+            player_metrics[player]["chips"] = chips
+
+        # Process actions
+        for phase in ["pre_draw_actions", "post_draw_actions"]:
+            if phase in round_data:
+                for action in round_data[phase]:
+                    player = action["player"]
+                    metrics = player_metrics[player]
+
+                    # Update action counts
+                    metrics["total_actions"] += 1
+                    if action["action"]["type"] == "raise":
+                        metrics["aggressive_actions"] += 1
+                        metrics["total_bets"] += action["action"].get("amount", 0)
+
+        # Record round-level trends for each active player
+        for player, metrics in player_metrics.items():
+            if player in round_data["starting_stacks"]:
+                aggression_ratio = (
+                    metrics["aggressive_actions"] / metrics["total_actions"]
+                    if metrics["total_actions"] > 0
+                    else 0
+                )
+
+                trends.append(
+                    {
+                        "round_number": round_num,
+                        "player": player,
+                        "cumulative_bets": metrics["total_bets"],
+                        "aggression_ratio": aggression_ratio,
+                        "avg_bet_size": (
+                            metrics["total_bets"] / metrics["aggressive_actions"]
+                            if metrics["aggressive_actions"] > 0
+                            else 0
+                        ),
+                        "chip_stack": metrics["chips"],
+                    }
+                )
+
+        # Update win counts from showdown
+        if "showdown" in round_data and "result" in round_data["showdown"]:
+            winner = round_data["showdown"]["result"]["winner"]
+            player_metrics[winner]["wins"] += 1
+
+    return pd.DataFrame(trends)
+
+
 def transform_game_data(game_data: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
     """Transform the entire game data into a collection of normalized DataFrames."""
     transformed = {
@@ -538,6 +705,8 @@ def transform_game_data(game_data: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
         "player_stats": transform_player_stats(game_data),
         "position_stats": transform_position_stats(game_data),
         "elimination_stats": transform_elimination_stats(game_data),
+        "round_outcomes": transform_round_outcomes(game_data),
+        "betting_trends": transform_betting_trends(game_data),
     }
 
     # Clean up NaN values before converting to JSON
