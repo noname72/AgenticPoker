@@ -335,15 +335,23 @@ def test_handle_player_eliminations_returns_true_multiple_players(game, player_f
     )  # Verify remaining players
 
 
-def test_game_ends_when_one_player_remains(game, player_factory):
+def test_game_ends_when_one_player_remains(game):
     """Test that game ends immediately when only one player remains."""
-    # Create proper Agent instances instead of Mocks
+    # Create proper Agent instances with required attributes
     players = [
         Agent(name="Alice", chips=1000),
         Agent(name="Bob", chips=0),  # Will be eliminated
         Agent(name="Charlie", chips=0),  # Will be eliminated
     ]
+    # Initialize required attributes for GameState serialization
+    for player in players:
+        player.folded = False
+        player.bet = 0
+        player.hand = Hand()
+        player.is_all_in = False
+    
     game.table.players = players
+    game.round_number = 0  # Ensure we start at round 0
 
     # Mock _log_game_summary to verify it's called
     game._log_game_summary = MagicMock()
@@ -352,9 +360,10 @@ def test_game_ends_when_one_player_remains(game, player_factory):
     game.play_game()
 
     # Verify game ended after eliminations
-    assert game.round_number <= 2  # Game should end in first or second round
-    assert len(game.table) == 1  # Only Alice should remain
-    assert game.table[0].name == "Alice"
+    assert len(game.table) == 1, "Only one player should remain"
+    assert game.table[0].name == "Alice", "Alice should be the remaining player"
+    assert game.round_number == 1, "Game should end in first round"
+    assert game.table[0].chips == 1000, "Alice's chips should be unchanged"
 
     # Verify game summary was logged
     game._log_game_summary.assert_called_once()

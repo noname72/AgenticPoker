@@ -39,3 +39,5 @@ results/
 !docs/example_log.log
 *.ipynb
 *.db
+*.csv
+*.json
