@@ -167,6 +167,12 @@ class AgenticPoker:
         """
         eliminated_players = []
 
+        # Get game state and convert to dict before saving
+        game_state = self.get_state()
+        self.db_client.save_game_snapshot(
+            self.session_id, self.round_number, game_state
+        )
+
         if max_rounds:
             self.max_rounds = max_rounds
 
@@ -195,6 +201,10 @@ class AgenticPoker:
             self._handle_showdown()
 
             self._reset_round()
+            # Save round state after converting to dict
+            self.db_client.save_round_snapshot(
+                self.session_id, self.round_number, self.round_state
+            )
 
         self._log_game_summary(eliminated_players)
 

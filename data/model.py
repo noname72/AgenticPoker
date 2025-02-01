@@ -66,6 +66,8 @@ class Game(Base):
     # Add new relationships
     chat_messages = relationship("ChatMessage", back_populates="game")
     game_snapshots = relationship("GameSnapshot", back_populates="game")
+    round_snapshots = relationship("RoundSnapshot", back_populates="game")
+    player_snapshots = relationship("PlayerSnapshot", back_populates="game")
 
     def __repr__(self):
         return f"<Game(id={self.id}, session_id={self.session_id})>"
@@ -264,8 +266,40 @@ class ChatMessage(Base):
     player = relationship("Player")
 
 
+class RoundSnapshot(Base):
+    """
+    Stores round state snapshots for replay/debugging.
+
+    Captures complete round state at specific points in time, enabling
+    round replay, debugging, and detailed analysis of round progression.
+
+    Attributes:
+        id (int): Unique identifier for the snapshot
+        game_id (int): Foreign key to the associated game
+        round_id (int): Foreign key to the current round
+        timestamp (datetime): When the snapshot was taken
+        round_state (dict): JSON structure containing complete round state
+    """
+
+    __tablename__ = "round_snapshots"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    game_id = Column(Integer, ForeignKey("games.id"), nullable=False)
+    round_id = Column(Integer, ForeignKey("rounds.id"), nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    round_state = Column(JSON, nullable=False)
+
+    # Relationships
+    game = relationship("Game", back_populates="round_snapshots")
+    round = relationship("Round")
+
+    def __repr__(self):
+        return f"<RoundSnapshot(id={self.id}, game_id={self.game_id}, round_id={self.round_id})>"
+
+
 class GameSnapshot(Base):
     """
+
     Stores game state snapshots for replay/debugging.
 
     Captures complete game state at specific points in time, enabling
@@ -338,8 +372,11 @@ class PlayerSnapshot(Base):
     __tablename__ = "player_snapshots"
 
     id = Column(Integer, primary_key=True)
-    game_id = Column(Integer, nullable=False)
-    round_id = Column(Integer, nullable=False)
+    game_id = Column(Integer, ForeignKey("games.id"), nullable=False)
+    round_id = Column(Integer, ForeignKey("rounds.id"), nullable=False)
     player_name = Column(String, nullable=False)
     player_state = Column(JSON, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationship
+    game = relationship("Game", back_populates="player_snapshots")

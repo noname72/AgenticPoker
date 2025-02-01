@@ -31,7 +31,7 @@ class TestRoundState:
         assert basic_round_state.last_raiser is None
         assert basic_round_state.last_aggressor is None
         assert basic_round_state.needs_to_act == []
-        assert basic_round_state.acted_this_phase == []
+        assert basic_round_state.acted_this_phase == set()
         assert basic_round_state.is_complete is False
         assert basic_round_state.winner is None
 
@@ -103,7 +103,7 @@ class TestRoundState:
     def test_pot_management(self):
         """Test pot management functionality."""
         round_state = basic_round_state
-        
+
         # Test main pot
         round_state.main_pot = 100
         assert round_state.main_pot == 100

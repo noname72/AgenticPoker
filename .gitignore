@@ -38,3 +38,4 @@ results/
 
 !docs/example_log.log
 *.ipynb
+*.db

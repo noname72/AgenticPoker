@@ -205,7 +205,9 @@ def test_pot_not_double_counted(game, player_factory):
     alice.bet += 300
     game.pot.add_to_pot(300)
     expected_pot = expected_initial_pot + 300
-    assert game.pot.pot == expected_pot, f"Pot should be ${expected_pot} after Alice's bet"
+    assert (
+        game.pot.pot == expected_pot
+    ), f"Pot should be ${expected_pot} after Alice's bet"
 
     # Bob folds (already put in SB)
     bob = players[1]
@@ -217,7 +219,9 @@ def test_pot_not_double_counted(game, player_factory):
     charlie.bet += 200
     game.pot.add_to_pot(200)
     expected_pot = expected_pot + 200
-    assert game.pot.pot == expected_pot, f"Pot should be ${expected_pot} after Charlie's bet"
+    assert (
+        game.pot.pot == expected_pot
+    ), f"Pot should be ${expected_pot} after Charlie's bet"
 
     # Randy calls
     randy = players[3]
@@ -225,7 +229,9 @@ def test_pot_not_double_counted(game, player_factory):
     randy.bet += 300
     game.pot.add_to_pot(300)
     expected_pot = expected_pot + 300
-    assert game.pot.pot == expected_pot, f"Pot should be ${expected_pot} after Randy's bet"
+    assert (
+        game.pot.pot == expected_pot
+    ), f"Pot should be ${expected_pot} after Randy's bet"
 
     # End betting round (should only clear bets, not modify pot)
     initial_pot = game.pot.pot
@@ -235,7 +241,9 @@ def test_pot_not_double_counted(game, player_factory):
     # Verify player chip counts
     assert alice.chips == 1000 - 10 - 300, f"Alice's chips incorrect: {alice.chips}"
     assert bob.chips == 1000 - 10 - 50, f"Bob's chips incorrect: {bob.chips}"
-    assert charlie.chips == 1000 - 10 - 100 - 200, f"Charlie's chips incorrect: {charlie.chips}"
+    assert (
+        charlie.chips == 1000 - 10 - 100 - 200
+    ), f"Charlie's chips incorrect: {charlie.chips}"
     assert randy.chips == 1000 - 10 - 300, f"Randy's chips incorrect: {randy.chips}"
 
 
@@ -265,14 +273,18 @@ def test_handle_player_eliminations_returns_false_one_player(game, player_factor
     ]
     game.table.players = players
     eliminated_players = []
-    
+
     # Need to call twice - first call removes Bob and Charlie, second call checks table size
     first_result = game._handle_player_eliminations(eliminated_players)
     second_result = game._handle_player_eliminations(eliminated_players)
-    
+
     # Verify results
-    assert first_result is True  # First call should continue to process all eliminations
-    assert second_result is False  # Second call should detect single player and end game
+    assert (
+        first_result is True
+    )  # First call should continue to process all eliminations
+    assert (
+        second_result is False
+    )  # Second call should detect single player and end game
     assert len(eliminated_players) == 2  # Two players should be eliminated
     assert len(game.table) == 1  # Only one player should remain
     assert game.table[0].name == "Alice"  # Alice should be the remaining player
@@ -288,12 +300,12 @@ def test_handle_player_eliminations_returns_false_no_players(game, player_factor
     ]
     game.table.players = players
     eliminated_players = []
-    
+
     # Need multiple calls to process all eliminations
     results = []
     while len(game.table) > 0:
         results.append(game._handle_player_eliminations(eliminated_players))
-    
+
     # Verify results
     assert results[-1] is False  # Final call should return False
     assert len(eliminated_players) == 3  # All players should be eliminated
@@ -310,37 +322,39 @@ def test_handle_player_eliminations_returns_true_multiple_players(game, player_f
     ]
     game.table.players = players
     eliminated_players = []
-    
+
     # Run elimination handling
     result = game._handle_player_eliminations(eliminated_players)
-    
+
     # Verify results
     assert result is True  # Should return True to continue game
     assert len(eliminated_players) == 1  # One player should be eliminated
     assert len(game.table) == 2  # Two players should remain
-    assert all(p.name in ["Alice", "Bob"] for p in game.table)  # Verify remaining players
+    assert all(
+        p.name in ["Alice", "Bob"] for p in game.table
+    )  # Verify remaining players
 
 
 def test_game_ends_when_one_player_remains(game, player_factory):
     """Test that game ends immediately when only one player remains."""
-    # Create players with specific chip stacks
+    # Create proper Agent instances instead of Mocks
     players = [
-        player_factory(name="Alice", chips=1000),
-        player_factory(name="Bob", chips=0),  # Will be eliminated
-        player_factory(name="Charlie", chips=0),  # Will be eliminated
+        Agent(name="Alice", chips=1000),
+        Agent(name="Bob", chips=0),  # Will be eliminated
+        Agent(name="Charlie", chips=0),  # Will be eliminated
     ]
     game.table.players = players
-    
+
     # Mock _log_game_summary to verify it's called
     game._log_game_summary = MagicMock()
-    
+
     # Run the game
     game.play_game()
-    
+
     # Verify game ended after eliminations
     assert game.round_number <= 2  # Game should end in first or second round
     assert len(game.table) == 1  # Only Alice should remain
     assert game.table[0].name == "Alice"
-    
+
     # Verify game summary was logged
     game._log_game_summary.assert_called_once()
