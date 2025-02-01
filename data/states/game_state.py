@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, validator
 
+from data.db_client import DatabaseClient
 from data.states.player_state import PlayerState
 from data.states.round_state import RoundState
 from data.types.base_types import DeckState
@@ -93,10 +94,7 @@ class GameState(BaseModel):
                 "dealer": self.dealer_position,
                 "active_player": self.active_player_position,
             },
-            "round_state": {
-                **self.round_state.dict(),
-                "phase": str(self.round_state.phase),
-            },
+            "round_state": self.round_state.to_dict(),
             "pot_state": self.pot_state.dict(),
             "deck_state": self.deck_state.dict(),
             "pot": self.pot_state.main_pot,
@@ -121,7 +119,6 @@ class GameState(BaseModel):
         """
         if hasattr(self, key):
             return getattr(self, key)
-        # Convert to dict for legacy dictionary access
         return self.to_dict()[key]
 
     def __contains__(self, key: str) -> bool:
@@ -235,6 +232,22 @@ class GameState(BaseModel):
             pot_state=game.pot.get_state(),
             deck_state=game.deck.get_state(),
         )
+
+    def save_snapshot(
+        self, client: DatabaseClient, snapshot: str, game_id: int, round_id: int
+    ) -> None:
+        """Save the current game state as a snapshot in the database.
+
+
+        Args:
+            game_id (int): The ID of the current game
+            round_id (int): The ID of the current round
+        """
+
+        if snapshot == "game":
+            client.save_game_snapshot(game_id, round_id, self.to_dict())
+        elif snapshot == "round":
+            client.save_round_snapshot(game_id, round_id, self.round_state.to_dict())
 
     class Config:
         arbitrary_types_allowed = True

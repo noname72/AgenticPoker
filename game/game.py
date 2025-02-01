@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional
 
+from data.db_client import DatabaseClient
 from data.states.game_state import GameState
 from data.states.round_state import RoundState
 from game.config import GameConfig
@@ -12,6 +13,12 @@ from .deck import Deck
 from .hand import Hand
 from .player import Player
 from .pot import Pot
+
+#! create pre and post helper methods for standard setup and teardown (might already have this)
+#! db game state at the start of the game
+#! db round state at the start of each round
+#! db agent state after each action (i.e. R1A1, R1A2, R2A1, R2A2, etc.)
+#! futrure db for every agent thoughts which are prompt: response pairs
 
 
 class AgenticPoker:
@@ -65,6 +72,7 @@ class AgenticPoker:
     current_bet: int
     pot: Pot
     last_raiser: Optional[Player]
+    db_client: DatabaseClient
 
     def __init__(
         self,
@@ -124,6 +132,9 @@ class AgenticPoker:
             session_id=self.config.session_id,
         )
 
+        # Initialize database client
+        self.db_client = DatabaseClient()
+
     def play_game(self, max_rounds: Optional[int] = None) -> None:
         """
         Execute the main game loop until a winner is determined.
@@ -156,6 +167,12 @@ class AgenticPoker:
         """
         eliminated_players = []
 
+        # Get game state and convert to dict before saving
+        game_state = self.get_state()
+        self.db_client.save_game_snapshot(
+            self.session_id, self.round_number, game_state
+        )
+
         if max_rounds:
             self.max_rounds = max_rounds
 
@@ -184,8 +201,15 @@ class AgenticPoker:
             self._handle_showdown()
 
             self._reset_round()
+            # Save round state after converting to dict
+            self.db_client.save_round_snapshot(
+                self.session_id, self.round_number, self.round_state
+            )
 
         self._log_game_summary(eliminated_players)
+
+        # Ensure database session is cleaned up
+        self.db_client.close()
 
     def _handle_pre_draw_phase(self) -> bool:
         GameLogger.log_phase_header("Pre-draw betting")

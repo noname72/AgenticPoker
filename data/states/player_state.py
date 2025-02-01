@@ -33,6 +33,7 @@ class PlayerState(BaseModel):
                 private_attributes: Whether to include private attributes
         to_dict: Convert player state to a nested dictionary representation
         get: Dictionary-style attribute access with default value support
+        save_snapshot: Save the current player state as a snapshot in the database
     """
 
     name: str
@@ -67,6 +68,23 @@ class PlayerState(BaseModel):
     def to_dict(self) -> Dict[str, Any]:
         """Convert player state to dictionary representation."""
         return self.dict()
+
+    def save_snapshot(self, game_id: int, round_id: int) -> None:
+        """Save the current player state as a snapshot in the database.
+
+        Args:
+            game_id (int): The ID of the current game
+            round_id (int): The ID of the current round
+        """
+        from data.db_client import DatabaseClient
+
+        db_client = DatabaseClient()
+        db_client.save_player_snapshot(
+            game_id=game_id,
+            round_id=round_id,
+            player_name=self.name,
+            player_state=self.to_dict(),
+        )
 
     class Config:
         arbitrary_types_allowed = True
