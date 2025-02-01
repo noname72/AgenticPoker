@@ -201,11 +201,6 @@ def _process_betting_cycle(game: "Game") -> None:
         # Execute the action
         agent.execute(action_decision, game)
 
-        # Mark player as all-in if they used all their chips
-        if agent.chips == 0 and not agent.is_all_in:
-            agent.is_all_in = True
-            BettingLogger.log_message(f"{agent.name} is now all-in")
-
         # Update table state
         game.table.update(action_decision, agent)
 

@@ -13,9 +13,9 @@ class ShowdownLogger:
         logger.info("\n=== Showdown ===")
 
     @staticmethod
-    def log_player_hand(player_name: str, hand: str) -> None:
+    def log_player_hand(player_name: str, hand_description: str) -> None:
         """Log a player's hand at showdown."""
-        logger.info(f"{player_name}'s hand: {hand}")
+        logger.info(f"{player_name} shows: {hand_description}")
 
     @staticmethod
     def log_single_winner(winner_name: str, amount: int) -> None:
@@ -38,13 +38,26 @@ class ShowdownLogger:
 
     @staticmethod
     def log_hand_comparison(
-        player_name: str, hand: str, hand_rank: Optional[str] = None
+        winner_name: str,
+        loser_name: str,
+        comparison: int,
+        winner_hand: str,
+        loser_hand: str,
     ) -> None:
-        """Log details of hand comparison."""
-        if hand_rank:
-            logger.debug(f"{player_name}'s hand: {hand} ({hand_rank})")
-        else:
-            logger.debug(f"{player_name}'s hand: {hand}")
+        """Log a clear comparison between two players' hands."""
+        # If comparison > 0, first hand wins
+        # If comparison == 0, it's a tie
+        # If comparison < 0, second hand wins
+        result = (
+            "loses to"
+            if comparison > 0  # First hand loses to second hand
+            else (
+                "ties with" if comparison == 0 else "beats"
+            )  # First hand beats second hand
+        )
+        logger.info(
+            f"{winner_name}'s {winner_hand} {result} {loser_name}'s {loser_hand}"
+        )
 
     @staticmethod
     def log_evaluation_error(error: Exception) -> None:
@@ -65,7 +78,13 @@ class ShowdownLogger:
         )
 
     @staticmethod
-    def log_hand_evaluation(player_name: str, cards: List[str], description: str, rank: int, tiebreakers: List[int]) -> None:
+    def log_hand_evaluation(
+        player_name: str,
+        cards: List[str],
+        description: str,
+        rank: int,
+        tiebreakers: List[int],
+    ) -> None:
         """Log detailed hand evaluation information."""
         logger.info(f"{player_name}'s hand evaluation:")
         logger.info(f"  Cards: {', '.join(cards)}")
@@ -74,20 +93,6 @@ class ShowdownLogger:
         logger.info(f"  Tiebreakers: {tiebreakers}")
 
     @staticmethod
-    def log_hand_comparison(player1_name: str, player2_name: str, comparison_result: int, hand1_desc: str = None, hand2_desc: str = None) -> None:
-        """Log hand comparison results with hand descriptions."""
-        result_text = "better than" if comparison_result > 0 else "worse than" if comparison_result < 0 else "equal to"
-        logger.info(f"{player1_name}'s hand is {result_text} {player2_name}'s hand")
-        
-        if comparison_result != 0:
-            if comparison_result > 0:
-                winner, loser = player1_name, player2_name
-                winner_hand, loser_hand = hand1_desc, hand2_desc
-            else:
-                winner, loser = player2_name, player1_name
-                winner_hand, loser_hand = hand2_desc, hand1_desc
-            
-            if winner_hand and loser_hand:
-                logger.info(f"  ({winner} wins with {winner_hand} vs {loser}'s {loser_hand})")
-            else:
-                logger.info(f"  ({winner} wins the comparison)")
+    def log_pot_award(winner_name: str, pot_amount: int) -> None:
+        """Log pot being awarded to winner."""
+        logger.info(f"{winner_name} wins pot of ${pot_amount}")

@@ -1,5 +1,6 @@
 from typing import List, Optional, Tuple
 
+from data.types.hand_rank import HandRank
 from data.types.hand_types import HandState
 
 from .card import Card
@@ -45,7 +46,11 @@ class Hand:
         """Get the cached rank or calculate and cache it if needed."""
         if self._rank is None:
             if not self.cards:
-                return (float("inf"), [], "Empty hand")  # Use consistent "Empty hand" message
+                return (
+                    float("inf"),
+                    [],
+                    "Empty hand",
+                )  # Use consistent "Empty hand" message
             if len(self.cards) != 5:
                 return (float("inf"), [], "Invalid number of cards")
             try:
@@ -88,7 +93,7 @@ class Hand:
             return "Empty hand"
 
         cards_str = ", ".join(str(card) for card in self.cards)
-        
+
         # Always use evaluate() for valid hands to ensure consistent evaluation
         if len(self.cards) == 5:
             try:
@@ -130,17 +135,8 @@ class Hand:
     def compare_to(self, other: "Hand") -> int:
         """Compare this hand to another hand.
 
-        Args:
-            other: Hand to compare against
-
         Returns:
             int: Positive if this hand is better, negative if worse, 0 if equal
-
-        Note:
-            This method uses the same comparison logic as __gt__ and __lt__,
-            but returns an integer result suitable for sorting and comparison.
-            Invalid hands (empty or wrong size) are considered equal to each other
-            but worse than valid hands.
         """
         # Get ranks for both hands using _get_rank to handle invalid cases
         self_rank, self_tiebreakers, _ = self._get_rank()
@@ -156,13 +152,42 @@ class Hand:
         if other_rank == float("inf"):
             return 1
 
-        # First compare primary ranks (lower is better)
+        # Compare ranks using enum values
         if self_rank != other_rank:
-            return other_rank - self_rank  # Reversed to make lower ranks return positive
+            # Convert to values for comparison, higher value is better
+            return self_rank.value - other_rank.value
 
         # If ranks are equal, compare tiebreakers (higher is better)
         for self_value, other_value in zip(self_tiebreakers, other_tiebreakers):
             if self_value != other_value:
-                return self_value - other_value  # Higher tiebreaker values are better
+                return self_value - other_value
 
         return 0  # Hands are equal
+
+    def get_rank(self) -> HandRank:
+        """
+        Evaluate the hand and return its rank.
+
+        Returns:
+            HandRank: The rank of this hand from HIGH_CARD to ROYAL_FLUSH
+        """
+        if self._is_royal_flush():
+            return HandRank.ROYAL_FLUSH
+        elif self._is_straight_flush():
+            return HandRank.STRAIGHT_FLUSH
+        elif self._is_four_of_kind():
+            return HandRank.FOUR_OF_KIND
+        elif self._is_full_house():
+            return HandRank.FULL_HOUSE
+        elif self._is_flush():
+            return HandRank.FLUSH
+        elif self._is_straight():
+            return HandRank.STRAIGHT
+        elif self._is_three_of_kind():
+            return HandRank.THREE_OF_KIND
+        elif self._is_two_pair():
+            return HandRank.TWO_PAIR
+        elif self._is_one_pair():
+            return HandRank.ONE_PAIR
+        else:
+            return HandRank.HIGH_CARD

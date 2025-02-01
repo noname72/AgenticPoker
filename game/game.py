@@ -379,13 +379,15 @@ class AgenticPoker:
             if player.chips <= 0 and player not in eliminated_players:
                 eliminated_players.append(player)
                 GameLogger.log_player_elimination(player.name)
+                # Remove eliminated player from table immediately
+                self.table.remove_player(player)
 
-        # Check game end conditions
-        if len(self.table) == 1:
-            GameLogger.log_game_winner(self.table[0].name, self.table[0].chips)
-            return False
-        elif len(self.table) == 0:
-            GameLogger.log_all_bankrupt()
+        # Check game end conditions - do this after removing eliminated players
+        if len(self.table) <= 1:
+            if len(self.table) == 1:
+                GameLogger.log_game_winner(self.table[0].name, self.table[0].chips)
+            else:
+                GameLogger.log_all_bankrupt()
             return False
 
         return True

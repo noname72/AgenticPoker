@@ -1,5 +1,6 @@
 import pytest
 
+from data.types.hand_rank import HandRank
 from game.card import Card
 from game.evaluator import evaluate_hand
 
@@ -127,7 +128,7 @@ def high_card():
 def test_royal_flush(royal_flush):
     """Test royal flush evaluation"""
     rank, tiebreakers, description = evaluate_hand(royal_flush)
-    assert rank == 1
+    assert rank == HandRank.ROYAL_FLUSH
     assert tiebreakers == [14, 13, 12, 11, 10]
     assert description == "Royal Flush"
 
@@ -135,7 +136,7 @@ def test_royal_flush(royal_flush):
 def test_straight_flush(straight_flush):
     """Test straight flush evaluation"""
     rank, tiebreakers, description = evaluate_hand(straight_flush)
-    assert rank == 2
+    assert rank == HandRank.STRAIGHT_FLUSH
     assert tiebreakers == [9, 8, 7, 6, 5]
     assert description == "Straight Flush, 9 high"
 
@@ -143,7 +144,7 @@ def test_straight_flush(straight_flush):
 def test_four_of_a_kind(four_of_a_kind):
     """Test four of a kind evaluation"""
     rank, tiebreakers, description = evaluate_hand(four_of_a_kind)
-    assert rank == 3
+    assert rank == HandRank.FOUR_OF_KIND
     assert tiebreakers == [14, 13]  # Four aces with king kicker
     assert description == "Four of a Kind, 14s"
 
@@ -151,7 +152,7 @@ def test_four_of_a_kind(four_of_a_kind):
 def test_full_house(full_house):
     """Test full house evaluation"""
     rank, tiebreakers, description = evaluate_hand(full_house)
-    assert rank == 4
+    assert rank == HandRank.FULL_HOUSE
     assert tiebreakers == [14, 13]  # Aces full of kings
     assert description == "Full House, 14s over 13s"
 
@@ -159,7 +160,7 @@ def test_full_house(full_house):
 def test_flush(flush):
     """Test flush evaluation"""
     rank, tiebreakers, description = evaluate_hand(flush)
-    assert rank == 5
+    assert rank == HandRank.FLUSH
     assert tiebreakers == [14, 11, 8, 6, 2]  # Ace-high flush
     assert description == "Flush, 14 high"
 
@@ -167,7 +168,7 @@ def test_flush(flush):
 def test_straight(straight):
     """Test straight evaluation"""
     rank, tiebreakers, description = evaluate_hand(straight)
-    assert rank == 6
+    assert rank == HandRank.STRAIGHT
     assert tiebreakers == [14, 13, 12, 11, 10]  # Ace-high straight
     assert description == "Straight, 14 high"
 
@@ -175,7 +176,7 @@ def test_straight(straight):
 def test_three_of_a_kind(three_of_a_kind):
     """Test three of a kind evaluation"""
     rank, tiebreakers, description = evaluate_hand(three_of_a_kind)
-    assert rank == 7
+    assert rank == HandRank.THREE_OF_KIND
     assert tiebreakers == [14, 13, 12]  # Three aces with K,Q kickers
     assert description == "Three of a Kind, 14s"
 
@@ -183,7 +184,7 @@ def test_three_of_a_kind(three_of_a_kind):
 def test_two_pair(two_pair):
     """Test two pair evaluation"""
     rank, tiebreakers, description = evaluate_hand(two_pair)
-    assert rank == 8
+    assert rank == HandRank.TWO_PAIR
     assert tiebreakers == [14, 13, 12]  # Aces and kings with queen kicker
     assert description == "Two Pair, 14s and 13s"
 
@@ -199,9 +200,9 @@ def test_one_pair():
         Card("J", "♠"),
     ]
     rank, tiebreakers, description = evaluate_hand(hand)
-    assert rank == 9  # One pair rank
+    assert rank == HandRank.ONE_PAIR
     assert tiebreakers == [14, 13, 12, 11]  # Pair rank followed by kickers
-    assert description == "One Pair, Aces"  # Updated to expect card name instead of numeric value
+    assert description == "One Pair, Aces"
 
     # Test pair of twos
     hand = [
@@ -212,7 +213,7 @@ def test_one_pair():
         Card("J", "♠"),
     ]
     rank, tiebreakers, description = evaluate_hand(hand)
-    assert rank == 9
+    assert rank == HandRank.ONE_PAIR
     assert tiebreakers == [2, 13, 12, 11]
     assert description == "One Pair, 2s"  # Numbers below 10 stay as numbers
 
@@ -220,7 +221,7 @@ def test_one_pair():
 def test_high_card(high_card):
     """Test high card evaluation"""
     rank, tiebreakers, description = evaluate_hand(high_card)
-    assert rank == 10
+    assert rank == HandRank.HIGH_CARD
     assert tiebreakers == [14, 13, 12, 11, 9]  # A,K,Q,J,9
     assert description == "High Card, 14"
 
@@ -235,7 +236,7 @@ def test_ace_low_straight():
         Card("5", "♠"),
     ]
     rank, tiebreakers, description = evaluate_hand(hand)
-    assert rank == 6
+    assert rank == HandRank.STRAIGHT
     assert tiebreakers == [5, 4, 3, 2, 1]  # 5-high straight
     assert description == "Straight, 5 high"
 
@@ -250,7 +251,7 @@ def test_ace_low_straight_flush():
         Card("5", "♠"),
     ]
     rank, tiebreakers, description = evaluate_hand(hand)
-    assert rank == 2
+    assert rank == HandRank.STRAIGHT_FLUSH
     assert tiebreakers == [5, 4, 3, 2, 1]
     assert description == "Straight Flush, 5 high"
 
@@ -447,7 +448,7 @@ def test_mixed_suits_straight():
         Card("6", "♠"),
     ]
     rank, tiebreakers, description = evaluate_hand(hand)
-    assert rank == 6  # Should be straight, not straight flush
+    assert rank == HandRank.STRAIGHT
     assert tiebreakers == [10, 9, 8, 7, 6]
     assert description == "Straight, 10 high"
 
@@ -618,7 +619,7 @@ def test_straight_flush_vs_regular_flush():
     rank1, _, _ = evaluate_hand(straight_flush)
     rank2, _, _ = evaluate_hand(higher_flush)
 
-    assert rank1 < rank2  # Straight flush (rank 2) beats flush (rank 5)
+    assert rank1.value > rank2.value  # Straight flush beats flush
 
 
 def test_duplicate_cards():
@@ -649,7 +650,7 @@ def test_duplicate_cards_different_suits():
 
     # Should not raise an error
     rank, _, _ = evaluate_hand(hand)
-    assert rank == 9  # One pair
+    assert rank == HandRank.ONE_PAIR  # Value is 2 in the enum
 
 
 def test_duplicate_cards_multiple():
@@ -759,7 +760,7 @@ def test_straight_with_face_cards():
     ]
 
     rank, tiebreakers, description = evaluate_hand(hand)
-    assert rank == 6  # Straight
+    assert rank == HandRank.STRAIGHT
     assert tiebreakers == [14, 13, 12, 11, 10]
     assert description == "Straight, 14 high"
 
@@ -775,7 +776,7 @@ def test_flush_all_same_suit_sequential():
     ]
 
     rank, tiebreakers, description = evaluate_hand(hand)
-    assert rank == 5  # Should be flush, not straight flush
+    assert rank == HandRank.FLUSH
     assert tiebreakers == [14, 12, 10, 8, 6]
     assert description == "Flush, 14 high"
 
@@ -791,7 +792,7 @@ def test_three_pair_scenario():
     ]
 
     rank, tiebreakers, description = evaluate_hand(hand)
-    assert rank == 8  # Should be treated as two pair
+    assert rank == HandRank.TWO_PAIR
     assert tiebreakers == [14, 13, 12]  # Aces and Kings with Queen kicker
     assert description == "Two Pair, 14s and 13s"
 
@@ -807,7 +808,7 @@ def test_high_card_sequential_not_straight():
     ]
 
     rank, tiebreakers, description = evaluate_hand(hand)
-    assert rank == 10  # Should be high card
+    assert rank == HandRank.HIGH_CARD
     assert tiebreakers == [14, 13, 12, 11, 9]
     assert description == "High Card, 14"
 
@@ -823,7 +824,7 @@ def test_almost_royal_flush():
     ]
 
     rank, tiebreakers, description = evaluate_hand(hand)
-    assert rank == 5  # Should be flush
+    assert rank == HandRank.FLUSH
     assert tiebreakers == [14, 13, 12, 11, 9]
     assert description == "Flush, 14 high"
 
@@ -907,7 +908,7 @@ def test_one_pair_ace_kicker_comparison():
     alice_rank, alice_tiebreakers, alice_desc = evaluate_hand(alice_hand)
 
     # Both should be one pair
-    assert charlie_rank == alice_rank == 9
+    assert charlie_rank == alice_rank == HandRank.ONE_PAIR
     assert "One Pair" in charlie_desc and "One Pair" in alice_desc
 
     # Verify tiebreakers
@@ -917,4 +918,4 @@ def test_one_pair_ace_kicker_comparison():
 
     # Verify descriptions
     assert "Aces" in charlie_desc  # Pair of Aces
-    assert "Aces" in alice_desc    # Pair of Aces
+    assert "Aces" in alice_desc  # Pair of Aces
