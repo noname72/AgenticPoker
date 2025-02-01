@@ -409,6 +409,122 @@ def transform_player_stats(game_data: Dict[str, Any]) -> pd.DataFrame:
     return pd.DataFrame(stats_list)
 
 
+def transform_position_stats(game_data: Dict[str, Any]) -> pd.DataFrame:
+    """Transform position-based statistics into a DataFrame."""
+    position_stats = []
+    session = game_data["session"]
+
+    for round_data in session["rounds"]:
+        round_num = round_data["round_number"]
+        positions = round_data["table_positions"]
+
+        # Track outcomes for each position
+        for player in session["players"].keys():
+            position = None
+            # Determine player's position
+            if positions.get("dealer") == player:
+                position = "dealer"
+            elif positions.get("small_blind") == player:
+                position = "small_blind"
+            elif positions.get("big_blind") == player:
+                position = "big_blind"
+            elif "others" in positions and player in positions["others"]:
+                position = f"position_{positions['others'].index(player) + 1}"
+
+            if position:
+                # Calculate chip change for the round
+                chip_change = 0
+                if "showdown" in round_data and "result" in round_data["showdown"]:
+                    chip_change = round_data["showdown"]["result"]["chip_changes"].get(
+                        player, 0
+                    )
+
+                # Calculate win status
+                won_round = False
+                if "showdown" in round_data and "result" in round_data["showdown"]:
+                    won_round = round_data["showdown"]["result"]["winner"] == player
+
+                position_stats.append(
+                    {
+                        "round_number": round_num,
+                        "player": player,
+                        "position": position,
+                        "chip_change": chip_change,
+                        "won_round": won_round,
+                        "num_players": len(round_data["starting_stacks"]),
+                        "initial_stack": round_data["starting_stacks"].get(player, 0),
+                    }
+                )
+
+    return pd.DataFrame(position_stats)
+
+
+def transform_elimination_stats(game_data: Dict[str, Any]) -> pd.DataFrame:
+    """Transform elimination statistics into a DataFrame."""
+    eliminations = []
+    session = game_data["session"]
+
+    # Track when players were eliminated
+    eliminated_players = set()
+    for round_data in session["rounds"]:
+        round_num = round_data["round_number"]
+
+        if "eliminations" in round_data:
+            for player in round_data["eliminations"]:
+                if player not in eliminated_players:
+                    # Get position at elimination
+                    position = None
+                    positions = round_data["table_positions"]
+                    if positions.get("dealer") == player:
+                        position = "dealer"
+                    elif positions.get("small_blind") == player:
+                        position = "small_blind"
+                    elif positions.get("big_blind") == player:
+                        position = "big_blind"
+                    elif "others" in positions and player in positions["others"]:
+                        position = f"position_{positions['others'].index(player) + 1}"
+
+                    eliminations.append(
+                        {
+                            "player": player,
+                            "elimination_round": round_num,
+                            "position_at_elimination": position,
+                            "num_players_remaining": len(round_data["starting_stacks"]),
+                            "final_rank": next(
+                                (
+                                    s["rank"]
+                                    for s in session["final_standings"]
+                                    if s["player"] == player
+                                ),
+                                None,
+                            ),
+                        }
+                    )
+                    eliminated_players.add(player)
+
+    # Add entries for winners (non-eliminated players)
+    for player in session["players"]:
+        if player not in eliminated_players:
+            eliminations.append(
+                {
+                    "player": player,
+                    "elimination_round": None,
+                    "position_at_elimination": None,
+                    "num_players_remaining": 1,
+                    "final_rank": next(
+                        (
+                            s["rank"]
+                            for s in session["final_standings"]
+                            if s["player"] == player
+                        ),
+                        None,
+                    ),
+                }
+            )
+
+    return pd.DataFrame(eliminations)
+
+
 def transform_game_data(game_data: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
     """Transform the entire game data into a collection of normalized DataFrames."""
     transformed = {
@@ -420,6 +536,8 @@ def transform_game_data(game_data: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
         "hand_distributions": transform_hand_distributions(game_data),
         "betting_stats": transform_betting_stats(game_data),
         "player_stats": transform_player_stats(game_data),
+        "position_stats": transform_position_stats(game_data),
+        "elimination_stats": transform_elimination_stats(game_data),
     }
 
     # Clean up NaN values before converting to JSON
