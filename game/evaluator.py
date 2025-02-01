@@ -1,6 +1,7 @@
 from typing import List, NamedTuple
 
 from .card import Card
+from data.types.hand_rank import HandRank
 
 
 class HandEvaluation(NamedTuple):
@@ -8,12 +9,12 @@ class HandEvaluation(NamedTuple):
     A named tuple containing the evaluation of a poker hand.
 
     Attributes:
-        rank (int): The rank of the hand from 1-10 (1 being best, 10 being worst)
+        rank (HandRank): The rank of the hand (HIGH_CARD to ROYAL_FLUSH)
         tiebreakers (List[int]): Tiebreaker values in descending order of importance
         description (str): Human readable description of the hand
     """
 
-    rank: int
+    rank: HandRank
     tiebreakers: List[int]
     description: str
 
@@ -27,7 +28,7 @@ def evaluate_hand(cards: List[Card]) -> HandEvaluation:
 
     Returns:
         HandEvaluation: A named tuple containing:
-            - int: Hand rank from 1-10 (1 being best, 10 being worst)
+            - HandRank: Hand rank from HIGH_CARD to ROYAL_FLUSH
             - List[int]: Tiebreaker values in descending order of importance
             - str: Human readable description of the hand
 
@@ -112,56 +113,56 @@ def evaluate_hand(cards: List[Card]) -> HandEvaluation:
     # Determine hand rank and tiebreakers
     if is_flush and is_straight:
         if ranks[0] == 14:  # Ace high
-            return (1, ranks, "Royal Flush")
-        return (2, ranks, f"Straight Flush, {ranks[0]} high")
+            return HandEvaluation(HandRank.ROYAL_FLUSH, ranks, "Royal Flush")
+        return HandEvaluation(HandRank.STRAIGHT_FLUSH, ranks, f"Straight Flush, {ranks[0]} high")
 
     elif sorted_counts[0][1] == 4:  # Four of a kind
         quad_rank = sorted_counts[0][0]
         kicker = sorted_counts[1][0]
-        return (3, [quad_rank, kicker], f"Four of a Kind, {quad_rank}s")
+        return HandEvaluation(HandRank.FOUR_OF_KIND, [quad_rank, kicker], f"Four of a Kind, {quad_rank}s")
 
     elif sorted_counts[0][1] == 3 and sorted_counts[1][1] == 2:  # Full house
         trips_rank = sorted_counts[0][0]
         pair_rank = sorted_counts[1][0]
-        return (
-            4,
+        return HandEvaluation(
+            HandRank.FULL_HOUSE,
             [trips_rank, pair_rank],
-            f"Full House, {trips_rank}s over {pair_rank}s",
+            f"Full House, {trips_rank}s over {pair_rank}s"
         )
 
     elif is_flush:
-        return (5, ranks, f"Flush, {ranks[0]} high")
+        return HandEvaluation(HandRank.FLUSH, ranks, f"Flush, {ranks[0]} high")
 
     elif is_straight:
-        return (6, ranks, f"Straight, {ranks[0]} high")
+        return HandEvaluation(HandRank.STRAIGHT, ranks, f"Straight, {ranks[0]} high")
 
     elif sorted_counts[0][1] == 3:  # Three of a kind
         trips_rank = sorted_counts[0][0]
         kickers = sorted([r for r in ranks if r != trips_rank], reverse=True)
-        return (7, [trips_rank] + kickers, f"Three of a Kind, {trips_rank}s")
+        return HandEvaluation(HandRank.THREE_OF_KIND, [trips_rank] + kickers, f"Three of a Kind, {trips_rank}s")
 
     elif sorted_counts[0][1] == 2 and sorted_counts[1][1] == 2:  # Two pair
         high_pair = sorted_counts[0][0]
         low_pair = sorted_counts[1][0]
         kicker = sorted_counts[2][0]
-        return (
-            8,
+        return HandEvaluation(
+            HandRank.TWO_PAIR,
             [high_pair, low_pair, kicker],
-            f"Two Pair, {high_pair}s and {low_pair}s",
+            f"Two Pair, {high_pair}s and {low_pair}s"
         )
 
     elif sorted_counts[0][1] == 2:  # One pair
         pair_rank = sorted_counts[0][0]
         # Sort remaining cards by rank for kickers
         kickers = sorted([r for r in ranks if r != pair_rank], reverse=True)[:3]
-        return (
-            9,  # One Pair rank
-            [pair_rank] + kickers,  # Pair rank followed by kickers in descending order
+        return HandEvaluation(
+            HandRank.ONE_PAIR,
+            [pair_rank] + kickers,
             f"One Pair, {_rank_to_name(pair_rank)}s"
         )
 
     else:  # High card
-        return (10, ranks, f"High Card, {ranks[0]}")
+        return HandEvaluation(HandRank.HIGH_CARD, ranks, f"High Card, {ranks[0]}")
 
 
 def _rank_to_name(rank: int) -> str:

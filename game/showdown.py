@@ -1,10 +1,37 @@
 from typing import Dict, List
 
+from data.types.hand_rank import HandRank
 from data.types.pot_types import SidePot
 from loggers.showdown_logger import ShowdownLogger
 
 from .player import Player
 from .pot import Pot
+
+
+def log_hand_comparison(
+    winner: Player, loser: Player, winner_hand: str, loser_hand: str
+) -> None:
+    """
+    Log the comparison of two players' hands in a clear, validated format.
+
+    Args:
+        winner: Player who won the comparison
+        loser: Player who lost the comparison
+        winner_hand: String description of winner's hand
+        loser_hand: String description of loser's hand
+
+    Raises:
+        ValueError: If attempting to compare a hand against itself
+    """
+    if winner == loser:
+        raise ValueError("Cannot compare a hand against itself")
+
+    ShowdownLogger.log_hand_comparison(
+        winner_name=winner.name,
+        loser_name=loser.name,
+        winner_hand=winner_hand,
+        loser_hand=loser_hand,
+    )
 
 
 def handle_showdown(
@@ -104,15 +131,19 @@ def _evaluate_hands(players: List[Player]) -> List[Player]:
         elif comparison == 0:  # Tie
             best_players.append(player)
 
-        # Log comparison with hand descriptions
+        # Log comparison with all required parameters
         _, _, player_desc = player.hand.evaluate()
         _, _, best_desc = best_hand.evaluate()
+
+        # If comparison > 0, current player's hand is better
+        # If comparison == 0, it's a tie
+        # If comparison < 0, best_hand is better
         ShowdownLogger.log_hand_comparison(
-            player.name,
-            best_players[0].name,  # Compare against first best player
-            comparison,
-            player_desc,
-            best_desc,
+            winner_name=best_players[0].name,  # Current best hand owner
+            loser_name=player.name,  # Current player being compared
+            comparison=comparison,
+            winner_hand=best_desc,
+            loser_hand=player_desc,
         )
 
     return best_players
