@@ -330,3 +330,16 @@ class PlayerStats(Base):
 
     # Relationship
     player = relationship("Player", back_populates="stats")
+
+
+class PlayerSnapshot(Base):
+    """Model for storing player state snapshots."""
+
+    __tablename__ = "player_snapshots"
+
+    id = Column(Integer, primary_key=True)
+    game_id = Column(Integer, nullable=False)
+    round_id = Column(Integer, nullable=False)
+    player_name = Column(String, nullable=False)
+    player_state = Column(JSON, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)

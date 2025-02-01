@@ -236,5 +236,17 @@ class GameState(BaseModel):
             deck_state=game.deck.get_state(),
         )
 
+    def save_snapshot(self, game_id: int, round_id: int) -> None:
+        """Save the current game state as a snapshot in the database.
+
+        Args:
+            game_id (int): The ID of the current game
+            round_id (int): The ID of the current round
+        """
+        from data.db_client import DatabaseClient
+
+        db_client = DatabaseClient()
+        db_client.save_game_snapshot(game_id, round_id, self.to_dict())
+
     class Config:
         arbitrary_types_allowed = True

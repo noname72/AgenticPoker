@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional
 
+from data.db_client import DatabaseClient
 from data.states.game_state import GameState
 from data.states.round_state import RoundState
 from game.config import GameConfig
@@ -12,6 +13,12 @@ from .deck import Deck
 from .hand import Hand
 from .player import Player
 from .pot import Pot
+
+#! create pre and post helper methods for standard setup and teardown (might already have this)
+#! db game state at the start of the game
+#! db round state at the start of each round
+#! db agent state after each action (i.e. R1A1, R1A2, R2A1, R2A2, etc.)
+#! futrure db for every agent thoughts which are prompt: response pairs
 
 
 class AgenticPoker:
@@ -65,6 +72,7 @@ class AgenticPoker:
     current_bet: int
     pot: Pot
     last_raiser: Optional[Player]
+    db_client: DatabaseClient
 
     def __init__(
         self,
@@ -123,6 +131,9 @@ class AgenticPoker:
             max_rounds=self.config.max_rounds,
             session_id=self.config.session_id,
         )
+
+        # Initialize database client
+        self.db_client = DatabaseClient()
 
     def play_game(self, max_rounds: Optional[int] = None) -> None:
         """
@@ -186,6 +197,9 @@ class AgenticPoker:
             self._reset_round()
 
         self._log_game_summary(eliminated_players)
+
+        # Ensure database session is cleaned up
+        self.db_client.close()
 
     def _handle_pre_draw_phase(self) -> bool:
         GameLogger.log_phase_header("Pre-draw betting")
