@@ -36,8 +36,9 @@ results/
 *.log
 .env
 
-!docs/example_log.log
+!docs/*
 *.ipynb
 *.db
 *.csv
 *.json
+*.png
