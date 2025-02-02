@@ -1,7 +1,7 @@
 # Quickstart Guide
 
 ## Overview
-This guide will help you quickly set up and run your first AI poker game. The system simulates poker games between AI players powered by language models, with configurable strategies and personalities.
+This guide will help you quickly set up and run your first AI poker game. The system simulates 5-card draw poker games between AI players powered by language models, with configurable strategies and personalities.
 
 ## Installation
 
@@ -24,17 +24,17 @@ echo "OPENAI_API_KEY=your_key_here" > .env
 The quickest way to start a game is using the default configuration:
 
 ```python
-from game import AgenticPoker, GameConfig
-from agents.llm_agent import LLMAgent
-from agents.random_agent import RandomAgent
 from datetime import datetime
+from game import AgenticPoker, GameConfig
+from agents.agent import Agent
+from agents.random_agent import RandomAgent
 
 # Generate unique session ID
 session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 # Create AI players with different strategies
 players = [
-    LLMAgent(
+    Agent(
         "Alice", 
         chips=1000, 
         strategy_style="Aggressive Bluffer",
@@ -42,14 +42,16 @@ players = [
         use_reflection=True,
         use_planning=True,
         use_opponent_modeling=True,
-        session_id=session_id
+        session_id=session_id,
+        communication_style="Intimidating"
     ),
-    LLMAgent(
+    Agent(
         "Bob", 
         chips=1000, 
         strategy_style="Calculated and Cautious",
         use_planning=True,
-        session_id=session_id
+        session_id=session_id,
+        communication_style="Analytical"
     ),
     RandomAgent(  # Add a random baseline player
         "Randy",
@@ -72,7 +74,8 @@ game = AgenticPoker(
     )
 )
 
-game.start_game()
+# Start the game
+game.play_game()
 ```
 
 ### Game Configuration
@@ -96,11 +99,7 @@ config = GameConfig(
 You can customize AI players with different features:
 
 ```python
-# Load existing agent configurations
-from util import load_agent_configs
-agent_configs = load_agent_configs()
-
-player = LLMAgent(
+player = Agent(
     name="Alice",
     chips=1000,
     strategy_style="Aggressive Bluffer",
@@ -111,7 +110,6 @@ player = LLMAgent(
     use_reward_learning=True,    # Enable reward-based learning
     learning_rate=0.1,          # Learning rate for reward updates
     communication_style="Intimidating",  # Communication approach
-    config=agent_configs.get("Alice"),  # Load existing config if available
     session_id=session_id       # For memory persistence
 )
 ```
@@ -126,38 +124,16 @@ player = LLMAgent(
 - "Analytical"
 - "Friendly"
 
-### Game State and Betting Management
-The game automatically manages betting limits and side pots:
+### Game State and Memory Management
+The game automatically manages state and memory:
 
 ```python
 # Access current game state
-game_state = game._create_game_state()
+game_state = game.get_state()
 
-# Check betting limits
-print(f"Current bet: ${game_state.round_state.current_bet}")
-print(f"Minimum raise: ${game_state.min_bet}")
-print(f"Maximum raise: ${game_state.round_state.current_bet * game_state.max_raise_multiplier}")
-
-# Monitor side pots
-for side_pot in game_state.pot_state.side_pots:
-    print(f"Side pot amount: ${side_pot.amount}")
-    print(f"Eligible players: {side_pot.eligible_players}")
-```
-
-### Memory Management
-
-The LLM Agent automatically manages memory using ChromaDB:
-
-```python
-# Memory is initialized with session-specific collection
+# Memory is automatically managed for each agent
+# Each agent gets a session-specific ChromaDB collection:
 collection_name = f"agent_{name.lower().replace(' ', '_')}_{session_id}_memory"
-memory_store = ChromaMemoryStore(collection_name)
-
-# Memory is automatically used for decision making
-relevant_memories = memory_store.get_relevant_memories(
-    query=game_state,
-    k=2
-)
 ```
 
 ### Logging Configuration
@@ -168,6 +144,16 @@ from util import setup_logging
 
 # Set up logging with session ID
 setup_logging(session_id)
+
+# Configure specific loggers
+from loggers.config import configure_loggers
+import logging
+
+configure_loggers({
+    "betting": logging.INFO,
+    "llm": logging.INFO,  # Set to DEBUG to see prompts/responses
+    "table": logging.INFO,
+})
 ```
 
 ## Common Patterns
@@ -184,12 +170,10 @@ for player in game.players:
 
 ### Monitoring Agent Learning
 ```python
-# Check action probabilities and decisions
-print(f"Action probabilities: {player._get_action_probabilities()}")
-print(f"Current traits: {player.personality_traits}")
-
-# Monitor strategic planning
-if player.use_planning:
+# Check agent state and decisions
+if hasattr(player, "opponent_stats"):
+    print(f"Opponent analysis: {player.opponent_stats}")
+if hasattr(player, "strategy_planner"):
     print(f"Current plan: {player.strategy_planner.current_plan}")
 ```
 

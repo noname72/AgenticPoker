@@ -1,0 +1,2904 @@
+
+======================================================================
+New Poker Game Session Started - ID: 20250131_173801
+Started at: 2025-01-31 17:38:01
+======================================================================
+
+New player created: Alice with $1000 chips
+Created new collection: agent_alice_20250131_173801_memory
+New player created: Bob with $1000 chips
+Created new collection: agent_bob_20250131_173801_memory
+New player created: Charlie with $1000 chips
+Created new collection: agent_charlie_20250131_173801_memory
+New player created: Randy with $1000 chips
+New table created with 4 players
+
+==================================================
+Game Configuration
+==================================================
+Players: Alice, Bob, Charlie, Randy
+Starting chips: $1000
+Blinds: $50/$100
+Ante: $10
+Session ID: 20250131_173801
+==================================================
+
+Cleared previous game results (preserved ChromaDB)
+
+======================================================================
+New Poker Game Session Started
+======================================================================
+
+New deck shuffled for round 1
+Cards remaining for after initial deal: 32
+
+==================================================
+Round 1
+==================================================
+
+Starting stacks (before antes/blinds):
+  Alice: $1000
+  Bob: $1000
+  Charlie: $1000
+  Randy: $1000
+
+Table positions:
+  Dealer: Alice
+  Small Blind: Bob
+  Big Blind: Charlie
+  Position 3: Randy
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Alice posts ante of $10
+Bob posts ante of $10
+Charlie posts ante of $10
+Randy posts ante of $10
+Bob posts small blind of $50
+Charlie posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Alice is active ----
+  Active players: ['Alice', 'Bob', 'Charlie', 'Randy']
+  Last raiser: None
+  Hand: 5 of ♣, 10 of ♦, 6 of ♥, J of ♣, K of ♠
+    - High Card, 13 [Rank: High Card, Tiebreakers: [13, 11, 10, 6, 5]]
+  Player chips: $990
+  Player current bet: $10
+  Current pot: $190
+[Strategy] New Plan: approach=Approach.AGGRESSIVE reasoning='High card, need to intimidate opponents'
+[Action] Action: raise 990 - I want to aggressively bluff and put pressure on my opponents with a high bet.
+Alice executes: RAISE
+Alice is all-in with $990
+
+---- Bob is active ----
+  Active players: ['Alice', 'Bob', 'Charlie', 'Randy']
+  Last raiser: Alice
+  Hand: 9 of ♠, 6 of ♦, 8 of ♦, 4 of ♥, 10 of ♥
+    - High Card, 10 [Rank: High Card, Tiebreakers: [10, 9, 8, 6, 4]]
+  Player chips: $940
+  Player current bet: $60
+  Current pot: $1180
+[Action] Action: fold - I have a high card hand with no strong potential for improvement, and the current bet to call is too high.
+Bob executes: FOLD
+
+---- Charlie is active ----
+  Active players: ['Alice', 'Charlie', 'Randy']
+  Last raiser: Alice
+  Hand: 9 of ♣, 3 of ♠, 8 of ♥, Q of ♦, 7 of ♠
+    - High Card, 12 [Rank: High Card, Tiebreakers: [12, 9, 8, 7, 3]]
+  Player chips: $890
+  Player current bet: $110
+  Current pot: $1180
+Bet amount 890 below minimum 2000, adjusting to min_bet
+[Action] Action: raise 2000 - I want to be unpredictable and put pressure on my opponents.
+Charlie executes: RAISE
+Charlie is all-in with $890
+
+====== Pre-draw betting Complete ======
+
+
+====== Draw Phase ======
+
+Draw phase: Alice discarding 2 cards
+Deck status after Alice's draw: 30 cards remaining
+Draw phase: Charlie discarding 2 cards
+Deck status after Charlie's draw: 28 cards remaining
+Draw phase: Randy discarding 2 cards
+Deck status after Randy's draw: 26 cards remaining
+====== Draw Phase Complete ======
+
+
+====== Post-draw betting ======
+
+---- Randy is active ----
+  Active players: ['Alice', 'Charlie', 'Randy']
+  Last raiser: None
+  Hand: 4 of ♦, A of ♥, 7 of ♦, 3 of ♣, A of ♣
+    - One Pair, Aces [Rank: One Pair, Tiebreakers: [14, 7, 4, 3]]
+  Player chips: $990
+  Player current bet: $10
+  Current pot: $2070
+Randy cannot afford current bet, folding
+Randy executes: FOLD
+
+====== Post-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Alice shows: 10 of ♦, J of ♣, K of ♠, 9 of ♦, 7 of ♣
+    - High Card, 13 [Rank: High Card, Tiebreakers: [13, 11, 10, 9, 7]]
+Charlie shows: 8 of ♥, Q of ♦, 7 of ♠, K of ♣, 5 of ♠
+    - High Card, 13 [Rank: High Card, Tiebreakers: [13, 12, 8, 7, 5]]
+Alice's hand evaluation:
+  Cards: 10 of ♦, J of ♣, K of ♠, 9 of ♦, 7 of ♣
+  Hand: High Card, 13
+  Rank: High Card
+  Tiebreakers: [13, 11, 10, 9, 7]
+Charlie's hand evaluation:
+  Cards: 8 of ♥, Q of ♦, 7 of ♠, K of ♣, 5 of ♠
+  Hand: High Card, 13
+  Rank: High Card
+  Tiebreakers: [13, 12, 8, 7, 5]
+Charlie's High Card, 13 loses to Charlie's High Card, 13
+Charlie wins $2070
+Alice loses $1000 ($1000 -> $0)
+Bob loses $60 ($1000 -> $940)
+Charlie gains $1070 ($1000 -> $2070)
+Randy loses $10 ($1000 -> $990)
+====== Showdown Complete ======
+
+
+Alice is eliminated (out of chips)!
+Player Alice removed from table
+New deck shuffled for round 2
+Cards remaining for after initial deal: 37
+
+==================================================
+Round 2
+==================================================
+
+Starting stacks (before antes/blinds):
+  Charlie: $2070
+  Randy: $990
+  Bob: $940
+
+Table positions:
+  Dealer: Charlie
+  Small Blind: Randy
+  Big Blind: Bob
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Charlie posts ante of $10
+Randy posts ante of $10
+Randy posts small blind of $50
+Bob posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Bob is active ----
+  Active players: ['Bob', 'Charlie', 'Randy']
+  Last raiser: None
+  Hand: Q of ♦, 8 of ♥, 5 of ♠, 8 of ♦, 7 of ♦
+    - One Pair, 8s [Rank: One Pair, Tiebreakers: [8, 12, 7, 5]]
+  Player chips: $830
+  Player current bet: $110
+  Current pot: $180
+[Action] Action: raise 400 - I have a decent hand with One Pair and want to put pressure on my opponents.
+Bob executes: RAISE
+
+---- Charlie is active ----
+  Active players: ['Bob', 'Charlie', 'Randy']
+  Last raiser: Bob
+  Hand: 10 of ♠, 2 of ♣, Q of ♠, 4 of ♥, 3 of ♣
+    - High Card, 12 [Rank: High Card, Tiebreakers: [12, 10, 4, 3, 2]]
+  Player chips: $2060
+  Player current bet: $10
+  Current pot: $570
+[Action] Action: raise 2060 - I want to go all in and put pressure on the other players with my chaotic and unpredictable style.
+Charlie executes: RAISE
+Charlie is all-in with $2060
+
+---- Randy is active ----
+  Active players: ['Bob', 'Charlie', 'Randy']
+  Last raiser: Charlie
+  Hand: 5 of ♦, 6 of ♥, 3 of ♦, 5 of ♣, 3 of ♠
+    - Two Pair, 5s and 3s [Rank: Two Pair, Tiebreakers: [5, 3, 6]]
+  Player chips: $930
+  Player current bet: $60
+  Current pot: $2630
+Randy cannot afford current bet, folding
+Randy executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Draw Phase ======
+
+Draw phase: Bob discarding 1 cards
+Deck status after Bob's draw: 36 cards remaining
+Draw phase: Charlie discarding 2 cards
+Deck status after Charlie's draw: 34 cards remaining
+====== Draw Phase Complete ======
+
+
+====== Post-draw betting ======
+
+---- Bob is active ----
+  Active players: ['Bob', 'Charlie']
+  Last raiser: None
+  Hand: Q of ♦, 5 of ♠, 8 of ♦, 7 of ♦, 9 of ♥
+    - High Card, 12 [Rank: High Card, Tiebreakers: [12, 9, 8, 7, 5]]
+  Player chips: $440
+  Player current bet: $500
+  Current pot: $2630
+[Action] Action: fold - My hand is only a high card and the current bet to call is too high, it's not worth risking more chips.
+Bob executes: FOLD
+
+====== Post-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Charlie shows: Q of ♠, 4 of ♥, 3 of ♣, 4 of ♠, A of ♥
+    - One Pair, 4s [Rank: One Pair, Tiebreakers: [4, 14, 12, 3]]
+Charlie wins $2630 (all others folded)
+Bob loses $500 ($940 -> $440)
+Charlie gains $560 ($2070 -> $2630)
+Randy loses $60 ($990 -> $930)
+====== Showdown Complete ======
+
+New deck shuffled for round 3
+Cards remaining for after initial deal: 37
+
+==================================================
+Round 3
+==================================================
+
+Starting stacks (before antes/blinds):
+  Charlie: $2630
+  Randy: $930
+  Bob: $440
+
+Table positions:
+  Dealer: Randy
+  Small Blind: Bob
+  Big Blind: Charlie
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Charlie posts ante of $10
+Randy posts ante of $10
+Bob posts small blind of $50
+Charlie posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Charlie is active ----
+  Active players: ['Bob', 'Charlie', 'Randy']
+  Last raiser: None
+  Hand: 10 of ♦, 9 of ♣, 6 of ♦, 4 of ♦, 3 of ♥
+    - High Card, 10 [Rank: High Card, Tiebreakers: [10, 9, 6, 4, 3]]
+  Player chips: $2520
+  Player current bet: $110
+  Current pot: $180
+[Action] Action: raise 1000 - I want to keep the game unpredictable and put pressure on my opponents.
+Charlie executes: RAISE
+
+---- Randy is active ----
+  Active players: ['Bob', 'Charlie', 'Randy']
+  Last raiser: Charlie
+  Hand: 3 of ♠, A of ♠, 7 of ♠, Q of ♣, 7 of ♣
+    - One Pair, 7s [Rank: One Pair, Tiebreakers: [7, 14, 12, 3]]
+  Player chips: $920
+  Player current bet: $10
+  Current pot: $1170
+Randy cannot afford current bet, folding
+Randy executes: FOLD
+
+---- Bob is active ----
+  Active players: ['Bob', 'Charlie']
+  Last raiser: Charlie
+  Hand: 9 of ♠, 10 of ♥, Q of ♥, 9 of ♥, 10 of ♠
+    - Two Pair, 10s and 9s [Rank: Two Pair, Tiebreakers: [10, 9, 12]]
+  Player chips: $380
+  Player current bet: $60
+  Current pot: $1170
+[Action] Action: fold - I have a decent hand with two pair, but the current bet to call is too high for my stack size. It's better to fold and preserve my chips for a better opportunity.
+Bob executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Charlie shows: 10 of ♦, 9 of ♣, 6 of ♦, 4 of ♦, 3 of ♥
+    - High Card, 10 [Rank: High Card, Tiebreakers: [10, 9, 6, 4, 3]]
+Charlie wins $1170 (all others folded)
+Bob loses $60 ($440 -> $380)
+Charlie gains $70 ($2630 -> $2700)
+Randy loses $10 ($930 -> $920)
+====== Showdown Complete ======
+
+New deck shuffled for round 4
+Cards remaining for after initial deal: 37
+
+==================================================
+Round 4
+==================================================
+
+Starting stacks (before antes/blinds):
+  Charlie: $2700
+  Randy: $920
+  Bob: $380
+
+Table positions:
+  Dealer: Bob
+  Small Blind: Charlie
+  Big Blind: Randy
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Charlie posts ante of $10
+Randy posts ante of $10
+Charlie posts small blind of $50
+Randy posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Charlie is active ----
+  Active players: ['Bob', 'Charlie', 'Randy']
+  Last raiser: None
+  Hand: K of ♣, 5 of ♥, 3 of ♥, 10 of ♠, 2 of ♠
+    - High Card, 13 [Rank: High Card, Tiebreakers: [13, 10, 5, 3, 2]]
+  Player chips: $2640
+  Player current bet: $60
+  Current pot: $180
+[Action] Action: raise 1400 - I want to shake up the game and put pressure on the other players.
+Charlie executes: RAISE
+
+---- Randy is active ----
+  Active players: ['Bob', 'Charlie', 'Randy']
+  Last raiser: Charlie
+  Hand: 8 of ♦, K of ♠, 7 of ♥, J of ♠, A of ♥
+    - High Card, 14 [Rank: High Card, Tiebreakers: [14, 13, 11, 8, 7]]
+  Player chips: $810
+  Player current bet: $110
+  Current pot: $1620
+Randy cannot afford current bet, folding
+Randy executes: FOLD
+
+---- Bob is active ----
+  Active players: ['Bob', 'Charlie']
+  Last raiser: Charlie
+  Hand: Q of ♣, 6 of ♣, 2 of ♦, 7 of ♦, 5 of ♣
+    - High Card, 12 [Rank: High Card, Tiebreakers: [12, 7, 6, 5, 2]]
+  Player chips: $370
+  Player current bet: $10
+  Current pot: $1620
+[Action] Action: fold - I have a high card hand with no strong combinations and facing a large bet, it's best to conserve my chips.
+Bob executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Charlie shows: K of ♣, 5 of ♥, 3 of ♥, 10 of ♠, 2 of ♠
+    - High Card, 13 [Rank: High Card, Tiebreakers: [13, 10, 5, 3, 2]]
+Charlie wins $1620 (all others folded)
+Bob loses $10 ($380 -> $370)
+Charlie gains $120 ($2700 -> $2820)
+Randy loses $110 ($920 -> $810)
+====== Showdown Complete ======
+
+New deck shuffled for round 5
+Cards remaining for after initial deal: 37
+
+==================================================
+Round 5
+==================================================
+
+Starting stacks (before antes/blinds):
+  Charlie: $2820
+  Randy: $810
+  Bob: $370
+
+Table positions:
+  Dealer: Charlie
+  Small Blind: Randy
+  Big Blind: Bob
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Charlie posts ante of $10
+Randy posts ante of $10
+Randy posts small blind of $50
+Bob posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Charlie is active ----
+  Active players: ['Bob', 'Charlie', 'Randy']
+  Last raiser: None
+  Hand: 2 of ♥, Q of ♦, 2 of ♦, 7 of ♥, A of ♦
+    - One Pair, 2s [Rank: One Pair, Tiebreakers: [2, 14, 12, 7]]
+  Player chips: $2810
+  Player current bet: $10
+  Current pot: $180
+[Action] Action: raise 1000 - I want to keep the pressure on my opponents and take control of the pot with my pair of 2s.
+Charlie executes: RAISE
+
+---- Randy is active ----
+  Active players: ['Bob', 'Charlie', 'Randy']
+  Last raiser: Charlie
+  Hand: 4 of ♣, 6 of ♣, 9 of ♦, 3 of ♦, 2 of ♠
+    - High Card, 9 [Rank: High Card, Tiebreakers: [9, 6, 4, 3, 2]]
+  Player chips: $750
+  Player current bet: $60
+  Current pot: $1270
+Randy cannot afford current bet, folding
+Randy executes: FOLD
+
+---- Bob is active ----
+  Active players: ['Bob', 'Charlie']
+  Last raiser: Charlie
+  Hand: 9 of ♠, 8 of ♠, 3 of ♥, 4 of ♦, 4 of ♥
+    - One Pair, 4s [Rank: One Pair, Tiebreakers: [4, 9, 8, 3]]
+  Player chips: $260
+  Player current bet: $110
+  Current pot: $1270
+[Action] Action: fold - I only have a pair of 4s, which is not a strong hand in this situation with a high bet to call. It's better to fold and not risk losing more chips.
+Bob executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Charlie shows: 2 of ♥, Q of ♦, 2 of ♦, 7 of ♥, A of ♦
+    - One Pair, 2s [Rank: One Pair, Tiebreakers: [2, 14, 12, 7]]
+Charlie wins $1270 (all others folded)
+Bob loses $110 ($370 -> $260)
+Charlie gains $170 ($2820 -> $2990)
+Randy loses $60 ($810 -> $750)
+====== Showdown Complete ======
+
+New deck shuffled for round 6
+Cards remaining for after initial deal: 37
+
+==================================================
+Round 6
+==================================================
+
+Starting stacks (before antes/blinds):
+  Charlie: $2990
+  Randy: $750
+  Bob: $260
+
+Table positions:
+  Dealer: Randy
+  Small Blind: Bob
+  Big Blind: Charlie
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Charlie posts ante of $10
+Randy posts ante of $10
+Bob posts small blind of $50
+Charlie posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Charlie is active ----
+  Active players: ['Bob', 'Charlie', 'Randy']
+  Last raiser: None
+  Hand: 4 of ♦, 10 of ♣, 3 of ♥, Q of ♠, 2 of ♣
+    - High Card, 12 [Rank: High Card, Tiebreakers: [12, 10, 4, 3, 2]]
+  Player chips: $2880
+  Player current bet: $110
+  Current pot: $180
+[Action] Action: raise 2000 - I want to shake up the table and put pressure on my opponents with my unpredictable play style.
+Charlie executes: RAISE
+
+---- Randy is active ----
+  Active players: ['Bob', 'Charlie', 'Randy']
+  Last raiser: Charlie
+  Hand: 2 of ♠, K of ♦, 9 of ♥, 10 of ♥, 3 of ♣
+    - High Card, 13 [Rank: High Card, Tiebreakers: [13, 10, 9, 3, 2]]
+  Player chips: $740
+  Player current bet: $10
+  Current pot: $2170
+Randy cannot afford current bet, folding
+Randy executes: FOLD
+
+---- Bob is active ----
+  Active players: ['Bob', 'Charlie']
+  Last raiser: Charlie
+  Hand: 4 of ♣, 8 of ♣, 8 of ♥, K of ♣, 7 of ♠
+    - One Pair, 8s [Rank: One Pair, Tiebreakers: [8, 13, 7, 4]]
+  Player chips: $200
+  Player current bet: $60
+  Current pot: $2170
+[Action] Action: fold - I only have one pair, and the current bet to call is too high for my hand.
+Bob executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Charlie shows: 4 of ♦, 10 of ♣, 3 of ♥, Q of ♠, 2 of ♣
+    - High Card, 12 [Rank: High Card, Tiebreakers: [12, 10, 4, 3, 2]]
+Charlie wins $2170 (all others folded)
+Bob loses $60 ($260 -> $200)
+Charlie gains $70 ($2990 -> $3060)
+Randy loses $10 ($750 -> $740)
+====== Showdown Complete ======
+
+New deck shuffled for round 7
+Cards remaining for after initial deal: 37
+
+==================================================
+Round 7
+==================================================
+
+Starting stacks (before antes/blinds):
+  Charlie: $3060
+  Randy: $740
+  Bob: $200
+
+Table positions:
+  Dealer: Bob
+  Small Blind: Charlie
+  Big Blind: Randy
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Charlie posts ante of $10
+Randy posts ante of $10
+Charlie posts small blind of $50
+Randy posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Charlie is active ----
+  Active players: ['Bob', 'Charlie', 'Randy']
+  Last raiser: None
+  Hand: 4 of ♣, J of ♠, 10 of ♦, J of ♥, K of ♥
+    - One Pair, Jacks [Rank: One Pair, Tiebreakers: [11, 13, 10, 4]]
+  Player chips: $3000
+  Player current bet: $60
+  Current pot: $180
+[Action] Action: raise 2000 - I want to keep the other players guessing and put pressure on them with my unpredictable play style.
+Charlie executes: RAISE
+
+---- Randy is active ----
+  Active players: ['Bob', 'Charlie', 'Randy']
+  Last raiser: Charlie
+  Hand: A of ♣, 7 of ♣, 2 of ♠, 2 of ♥, 9 of ♣
+    - One Pair, 2s [Rank: One Pair, Tiebreakers: [2, 14, 9, 7]]
+  Player chips: $630
+  Player current bet: $110
+  Current pot: $2220
+Randy cannot afford current bet, folding
+Randy executes: FOLD
+
+---- Bob is active ----
+  Active players: ['Bob', 'Charlie']
+  Last raiser: Charlie
+  Hand: 9 of ♦, 2 of ♣, 9 of ♠, 3 of ♦, 8 of ♥
+    - One Pair, 9s [Rank: One Pair, Tiebreakers: [9, 8, 3, 2]]
+  Player chips: $190
+  Player current bet: $10
+  Current pot: $2220
+[Action] Action: fold - I only have a pair of 9s which is not a strong hand in this situation with a high raise amount.
+Bob executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Charlie shows: 4 of ♣, J of ♠, 10 of ♦, J of ♥, K of ♥
+    - One Pair, Jacks [Rank: One Pair, Tiebreakers: [11, 13, 10, 4]]
+Charlie wins $2220 (all others folded)
+Bob loses $10 ($200 -> $190)
+Charlie gains $120 ($3060 -> $3180)
+Randy loses $110 ($740 -> $630)
+====== Showdown Complete ======
+
+New deck shuffled for round 8
+Cards remaining for after initial deal: 37
+
+==================================================
+Round 8
+==================================================
+
+Starting stacks (before antes/blinds):
+  Charlie: $3180
+  Randy: $630
+  Bob: $190
+
+Table positions:
+  Dealer: Charlie
+  Small Blind: Randy
+  Big Blind: Bob
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Charlie posts ante of $10
+Randy posts ante of $10
+Randy posts small blind of $50
+Bob posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Charlie is active ----
+  Active players: ['Bob', 'Charlie', 'Randy']
+  Last raiser: None
+  Hand: J of ♦, 2 of ♣, 5 of ♠, 9 of ♣, 3 of ♠
+    - High Card, 11 [Rank: High Card, Tiebreakers: [11, 9, 5, 3, 2]]
+  Player chips: $3170
+  Player current bet: $10
+  Current pot: $180
+[Action] Action: raise 1500 - I want to shake things up and put pressure on my opponents with my chaotic and unpredictable play style.
+Charlie executes: RAISE
+
+---- Randy is active ----
+  Active players: ['Bob', 'Charlie', 'Randy']
+  Last raiser: Charlie
+  Hand: 8 of ♣, 10 of ♥, K of ♠, 3 of ♣, 8 of ♦
+    - One Pair, 8s [Rank: One Pair, Tiebreakers: [8, 13, 10, 3]]
+  Player chips: $570
+  Player current bet: $60
+  Current pot: $1770
+Randy cannot afford current bet, folding
+Randy executes: FOLD
+
+---- Bob is active ----
+  Active players: ['Bob', 'Charlie']
+  Last raiser: Charlie
+  Hand: K of ♥, 3 of ♦, 4 of ♠, 4 of ♥, 9 of ♠
+    - One Pair, 4s [Rank: One Pair, Tiebreakers: [4, 13, 9, 3]]
+  Player chips: $80
+  Player current bet: $110
+  Current pot: $1770
+[Action] Action: fold - I only have a pair of 4s which is not strong enough to compete with the current bet and I want to conserve my chips.
+Bob executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Charlie shows: J of ♦, 2 of ♣, 5 of ♠, 9 of ♣, 3 of ♠
+    - High Card, 11 [Rank: High Card, Tiebreakers: [11, 9, 5, 3, 2]]
+Charlie wins $1770 (all others folded)
+Bob loses $110 ($190 -> $80)
+Charlie gains $170 ($3180 -> $3350)
+Randy loses $60 ($630 -> $570)
+====== Showdown Complete ======
+
+New deck shuffled for round 9
+Cards remaining for after initial deal: 37
+
+==================================================
+Round 9
+==================================================
+
+Starting stacks (before antes/blinds):
+  Charlie: $3350
+  Randy: $570
+  Bob: $80 (short stack)
+
+Table positions:
+  Dealer: Randy
+  Small Blind: Bob
+  Big Blind: Charlie
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Charlie posts ante of $10
+Randy posts ante of $10
+Bob posts small blind of $50
+Charlie posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Charlie is active ----
+  Active players: ['Bob', 'Charlie', 'Randy']
+  Last raiser: None
+  Hand: 2 of ♣, 5 of ♦, Q of ♣, 6 of ♣, 9 of ♠
+    - High Card, 12 [Rank: High Card, Tiebreakers: [12, 9, 6, 5, 2]]
+  Player chips: $3240
+  Player current bet: $110
+  Current pot: $180
+[Action] Action: raise 3240 - I'm feeling chaotic and unpredictable, so I'm going all in to shake things up and intimidate my opponents.
+Charlie executes: RAISE
+
+---- Randy is active ----
+  Active players: ['Bob', 'Charlie', 'Randy']
+  Last raiser: Charlie
+  Hand: 9 of ♥, 8 of ♠, K of ♣, 7 of ♠, 3 of ♣
+    - High Card, 13 [Rank: High Card, Tiebreakers: [13, 9, 8, 7, 3]]
+  Player chips: $560
+  Player current bet: $10
+  Current pot: $3410
+Randy cannot afford current bet, folding
+Randy executes: FOLD
+
+---- Bob is active ----
+  Active players: ['Bob', 'Charlie']
+  Last raiser: Charlie
+  Hand: A of ♠, K of ♠, 3 of ♠, Q of ♠, Q of ♦
+    - One Pair, Queens [Rank: One Pair, Tiebreakers: [12, 14, 13, 3]]
+  Player chips: $20
+  Player current bet: $60
+  Current pot: $3410
+[Action] Action: fold - I have a weak hand and the minimum raise required is too high for my current chips.
+Bob executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Charlie shows: 2 of ♣, 5 of ♦, Q of ♣, 6 of ♣, 9 of ♠
+    - High Card, 12 [Rank: High Card, Tiebreakers: [12, 9, 6, 5, 2]]
+Charlie wins $3410 (all others folded)
+Bob loses $60 ($80 -> $20)
+Charlie gains $70 ($3350 -> $3420)
+Randy loses $10 ($570 -> $560)
+====== Showdown Complete ======
+
+New deck shuffled for round 10
+Cards remaining for after initial deal: 37
+
+==================================================
+Round 10
+==================================================
+
+Starting stacks (before antes/blinds):
+  Charlie: $3420
+  Randy: $560
+  Bob: $20 (short stack)
+
+Table positions:
+  Dealer: Bob
+  Small Blind: Charlie
+  Big Blind: Randy
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Charlie posts ante of $10
+Randy posts ante of $10
+Charlie posts small blind of $50
+Randy posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Charlie is active ----
+  Active players: ['Bob', 'Charlie', 'Randy']
+  Last raiser: None
+  Hand: 6 of ♥, Q of ♣, J of ♣, 9 of ♥, 9 of ♦
+    - One Pair, 9s [Rank: One Pair, Tiebreakers: [9, 12, 11, 6]]
+  Player chips: $3360
+  Player current bet: $60
+  Current pot: $180
+[Action] Action: raise 3360 - I want to put pressure on my opponents with my unpredictable style and potentially win a big pot.
+Charlie executes: RAISE
+Charlie is all-in with $3360
+
+---- Randy is active ----
+  Active players: ['Bob', 'Charlie', 'Randy']
+  Last raiser: Charlie
+  Hand: 10 of ♠, 6 of ♠, 7 of ♠, 3 of ♦, Q of ♠
+    - High Card, 12 [Rank: High Card, Tiebreakers: [12, 10, 7, 6, 3]]
+  Player chips: $450
+  Player current bet: $110
+  Current pot: $3540
+Randy cannot afford current bet, folding
+Randy executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Draw Phase ======
+
+Draw phase: Bob discarding 2 cards
+Deck status after Bob's draw: 35 cards remaining
+Draw phase: Charlie discarding 2 cards
+Deck status after Charlie's draw: 33 cards remaining
+====== Draw Phase Complete ======
+
+
+====== Post-draw betting ======
+
+---- Bob is active ----
+  Active players: ['Bob', 'Charlie']
+  Last raiser: None
+  Hand: 8 of ♣, 7 of ♦, 6 of ♣, 2 of ♠, 3 of ♣
+    - High Card, 8 [Rank: High Card, Tiebreakers: [8, 7, 6, 3, 2]]
+  Player chips: $10
+  Player current bet: $10
+  Current pot: $3540
+[Action] Action: fold - I have a high card hand with no strong potential for improvement, and the current bet is too high for my hand.
+Bob executes: FOLD
+
+====== Post-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Charlie shows: Q of ♣, 9 of ♥, 9 of ♦, 2 of ♣, K of ♠
+    - One Pair, 9s [Rank: One Pair, Tiebreakers: [9, 13, 12, 2]]
+Charlie wins $3540 (all others folded)
+Bob loses $10 ($20 -> $10)
+Charlie gains $120 ($3420 -> $3540)
+Randy loses $110 ($560 -> $450)
+====== Showdown Complete ======
+
+New deck shuffled for round 11
+Cards remaining for after initial deal: 37
+
+==================================================
+Round 11
+==================================================
+
+Starting stacks (before antes/blinds):
+  Charlie: $3540
+  Randy: $450
+  Bob: $10 (short stack)
+
+Table positions:
+  Dealer: Charlie
+  Small Blind: Randy
+  Big Blind: Bob
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob is all-in with $10
+Bob posts ante of $10
+Charlie posts ante of $10
+Randy posts ante of $10
+Randy posts small blind of $50
+Bob posts partial big blind of $0 (all in)
+
+
+====== Pre-draw betting ======
+
+---- Charlie is active ----
+  Active players: ['Bob', 'Charlie', 'Randy']
+  Last raiser: None
+  Hand: Q of ♦, 4 of ♠, 10 of ♣, 8 of ♠, 6 of ♠
+    - High Card, 12 [Rank: High Card, Tiebreakers: [12, 10, 8, 6, 4]]
+  Player chips: $3530
+  Player current bet: $10
+  Current pot: $80
+Retrying request to /chat/completions in 0.429376 seconds
+[Action] Action: raise 1000 - I want to put pressure on the other players and take control of the pot.
+Charlie executes: RAISE
+
+---- Randy is active ----
+  Active players: ['Bob', 'Charlie', 'Randy']
+  Last raiser: Charlie
+  Hand: Q of ♣, 5 of ♥, 4 of ♣, Q of ♥, 5 of ♠
+    - Two Pair, 12s and 5s [Rank: Two Pair, Tiebreakers: [12, 5, 4]]
+  Player chips: $390
+  Player current bet: $60
+  Current pot: $1170
+Randy cannot afford current bet, folding
+Randy executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Draw Phase ======
+
+Draw phase: Bob discarding 2 cards
+Deck status after Bob's draw: 35 cards remaining
+Draw phase: Charlie discarding 2 cards
+Deck status after Charlie's draw: 33 cards remaining
+====== Draw Phase Complete ======
+
+
+====== Post-draw betting ======
+
+---- Charlie is active ----
+  Active players: ['Bob', 'Charlie']
+  Last raiser: None
+  Hand: Q of ♦, 10 of ♣, 8 of ♠, 3 of ♦, A of ♦
+    - High Card, 14 [Rank: High Card, Tiebreakers: [14, 12, 10, 8, 3]]
+  Player chips: $2440
+  Player current bet: $1100
+  Current pot: $1170
+[Action] Action: raise 2440 - I want to be unpredictable and go all in with my high card.
+Charlie executes: RAISE
+Charlie is all-in with $2440
+
+====== Post-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Bob shows: 10 of ♠, Q of ♠, K of ♠, 3 of ♠, 10 of ♥
+    - One Pair, 10s [Rank: One Pair, Tiebreakers: [10, 13, 12, 3]]
+Charlie shows: Q of ♦, 10 of ♣, 8 of ♠, 3 of ♦, A of ♦
+    - High Card, 14 [Rank: High Card, Tiebreakers: [14, 12, 10, 8, 3]]
+Bob's hand evaluation:
+  Cards: 10 of ♠, Q of ♠, K of ♠, 3 of ♠, 10 of ♥
+  Hand: One Pair, 10s
+  Rank: One Pair
+  Tiebreakers: [10, 13, 12, 3]
+Charlie's hand evaluation:
+  Cards: Q of ♦, 10 of ♣, 8 of ♠, 3 of ♦, A of ♦
+  Hand: High Card, 14
+  Rank: High Card
+  Tiebreakers: [14, 12, 10, 8, 3]
+Bob's One Pair, 10s beats Charlie's High Card, 14
+Bob wins $3610
+Bob gains $3600 ($10 -> $3610)
+Charlie loses $3540 ($3540 -> $0)
+Randy loses $60 ($450 -> $390)
+====== Showdown Complete ======
+
+
+Charlie is eliminated (out of chips)!
+Player Charlie removed from table
+New deck shuffled for round 12
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 12
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3610
+  Randy: $390
+
+Table positions:
+  Dealer: Bob
+  Small Blind: Randy
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy posts ante of $10
+Randy posts small blind of $50
+Bob posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: Q of ♥, J of ♠, 2 of ♦, Q of ♦, 8 of ♣
+    - One Pair, Queens [Rank: One Pair, Tiebreakers: [12, 11, 8, 2]]
+  Player chips: $3500
+  Player current bet: $110
+  Current pot: $170
+[Action] Action: raise 2000 - I have a decent hand with one pair of Queens and want to assert dominance in this hand.
+Bob executes: RAISE
+
+---- Randy is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: Bob
+  Hand: K of ♠, 5 of ♠, 7 of ♣, J of ♣, A of ♦
+    - High Card, 14 [Rank: High Card, Tiebreakers: [14, 13, 11, 7, 5]]
+  Player chips: $330
+  Player current bet: $60
+  Current pot: $2160
+Randy cannot afford current bet, folding
+Randy executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Bob shows: Q of ♥, J of ♠, 2 of ♦, Q of ♦, 8 of ♣
+    - One Pair, Queens [Rank: One Pair, Tiebreakers: [12, 11, 8, 2]]
+Bob wins $2160 (all others folded)
+Bob gains $60 ($3610 -> $3670)
+Randy loses $60 ($390 -> $330)
+====== Showdown Complete ======
+
+New deck shuffled for round 13
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 13
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3670
+  Randy: $330
+
+Table positions:
+  Dealer: Randy
+  Small Blind: Bob
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy posts ante of $10
+Bob posts small blind of $50
+Randy posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: Q of ♥, 10 of ♦, 10 of ♠, 3 of ♣, J of ♦
+    - One Pair, 10s [Rank: One Pair, Tiebreakers: [10, 12, 11, 3]]
+  Player chips: $3610
+  Player current bet: $60
+  Current pot: $170
+[Action] Action: call - I have a decent hand with one pair and the current bet to call is 0.
+Bob executes: CALL
+
+---- Randy is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: 6 of ♥, 8 of ♥, 4 of ♦, 10 of ♣, A of ♦
+    - High Card, 14 [Rank: High Card, Tiebreakers: [14, 10, 8, 6, 4]]
+  Player chips: $220
+  Player current bet: $110
+  Current pot: $270
+Randy executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Bob shows: Q of ♥, 10 of ♦, 10 of ♠, 3 of ♣, J of ♦
+    - One Pair, 10s [Rank: One Pair, Tiebreakers: [10, 12, 11, 3]]
+Bob wins $270 (all others folded)
+Bob gains $110 ($3670 -> $3780)
+Randy loses $110 ($330 -> $220)
+====== Showdown Complete ======
+
+New deck shuffled for round 14
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 14
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3780
+  Randy: $220
+
+Table positions:
+  Dealer: Bob
+  Small Blind: Randy
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy posts ante of $10
+Randy posts small blind of $50
+Bob posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: 8 of ♠, 7 of ♠, J of ♣, 3 of ♦, 3 of ♣
+    - One Pair, 3s [Rank: One Pair, Tiebreakers: [3, 11, 8, 7]]
+  Player chips: $3670
+  Player current bet: $110
+  Current pot: $170
+[Action] Action: fold - I have a pair of 3s, which is not a very strong hand in this situation with the current bet to call at 0. It's better to conserve my chips for a better opportunity.
+Bob executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Randy shows: 7 of ♦, 6 of ♣, K of ♠, 9 of ♥, 10 of ♦
+    - High Card, 13 [Rank: High Card, Tiebreakers: [13, 10, 9, 7, 6]]
+Randy wins $170 (all others folded)
+Bob loses $110 ($3780 -> $3670)
+Randy gains $110 ($220 -> $330)
+====== Showdown Complete ======
+
+New deck shuffled for round 15
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 15
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3670
+  Randy: $330
+
+Table positions:
+  Dealer: Randy
+  Small Blind: Bob
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy posts ante of $10
+Bob posts small blind of $50
+Randy posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Randy is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: 4 of ♦, 9 of ♣, J of ♠, 6 of ♥, J of ♣
+    - One Pair, Jacks [Rank: One Pair, Tiebreakers: [11, 9, 6, 4]]
+  Player chips: $220
+  Player current bet: $110
+  Current pot: $170
+Randy executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Bob shows: 3 of ♥, K of ♠, 4 of ♠, 2 of ♠, 6 of ♦
+    - High Card, 13 [Rank: High Card, Tiebreakers: [13, 6, 4, 3, 2]]
+Bob wins $170 (all others folded)
+Bob gains $110 ($3670 -> $3780)
+Randy loses $110 ($330 -> $220)
+====== Showdown Complete ======
+
+New deck shuffled for round 16
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 16
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3780
+  Randy: $220
+
+Table positions:
+  Dealer: Bob
+  Small Blind: Randy
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy posts ante of $10
+Randy posts small blind of $50
+Bob posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: A of ♣, Q of ♣, A of ♦, 10 of ♦, 8 of ♥
+    - One Pair, Aces [Rank: One Pair, Tiebreakers: [14, 12, 10, 8]]
+  Player chips: $3670
+  Player current bet: $110
+  Current pot: $170
+[Action] Action: raise 1000 - I have a decent hand with one pair of Aces and I want to assert my dominance in the hand by raising a significant amount.
+Bob executes: RAISE
+
+---- Randy is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: Bob
+  Hand: Q of ♦, 2 of ♠, K of ♦, 2 of ♥, A of ♥
+    - One Pair, 2s [Rank: One Pair, Tiebreakers: [2, 14, 13, 12]]
+  Player chips: $160
+  Player current bet: $60
+  Current pot: $1160
+Randy cannot afford current bet, folding
+Randy executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Bob shows: A of ♣, Q of ♣, A of ♦, 10 of ♦, 8 of ♥
+    - One Pair, Aces [Rank: One Pair, Tiebreakers: [14, 12, 10, 8]]
+Bob wins $1160 (all others folded)
+Bob gains $60 ($3780 -> $3840)
+Randy loses $60 ($220 -> $160)
+====== Showdown Complete ======
+
+New deck shuffled for round 17
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 17
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3840
+  Randy: $160
+
+Table positions:
+  Dealer: Randy
+  Small Blind: Bob
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy posts ante of $10
+Bob posts small blind of $50
+Randy posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: K of ♠, 5 of ♣, A of ♠, 9 of ♣, 7 of ♥
+    - High Card, 14 [Rank: High Card, Tiebreakers: [14, 13, 9, 7, 5]]
+  Player chips: $3780
+  Player current bet: $60
+  Current pot: $170
+[Action] Action: fold - I have a high card, but it's not strong enough to justify calling or raising at this point.
+Bob executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Randy shows: 4 of ♣, J of ♥, 8 of ♥, 5 of ♦, 8 of ♠
+    - One Pair, 8s [Rank: One Pair, Tiebreakers: [8, 11, 5, 4]]
+Randy wins $170 (all others folded)
+Bob loses $60 ($3840 -> $3780)
+Randy gains $60 ($160 -> $220)
+====== Showdown Complete ======
+
+New deck shuffled for round 18
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 18
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3780
+  Randy: $220
+
+Table positions:
+  Dealer: Bob
+  Small Blind: Randy
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy posts ante of $10
+Randy posts small blind of $50
+Bob posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Randy is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: 3 of ♥, J of ♠, 8 of ♦, 9 of ♠, 10 of ♦
+    - High Card, 11 [Rank: High Card, Tiebreakers: [11, 10, 9, 8, 3]]
+  Player chips: $160
+  Player current bet: $60
+  Current pot: $170
+Randy executes: CALL
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: A of ♣, 8 of ♣, 5 of ♥, A of ♦, 2 of ♠
+    - One Pair, Aces [Rank: One Pair, Tiebreakers: [14, 8, 5, 2]]
+  Player chips: $3670
+  Player current bet: $110
+  Current pot: $270
+[Action] Action: raise 1000 - I have a decent hand with a pair of Aces and want to increase the pot size while still being cautious.
+Bob executes: RAISE
+
+---- Randy is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: Bob
+  Hand: 3 of ♥, J of ♠, 8 of ♦, 9 of ♠, 10 of ♦
+    - High Card, 11 [Rank: High Card, Tiebreakers: [11, 10, 9, 8, 3]]
+  Player chips: $60
+  Player current bet: $0
+  Current pot: $1260
+Randy cannot afford current bet, folding
+Randy executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Bob shows: A of ♣, 8 of ♣, 5 of ♥, A of ♦, 2 of ♠
+    - One Pair, Aces [Rank: One Pair, Tiebreakers: [14, 8, 5, 2]]
+Bob wins $1260 (all others folded)
+Bob gains $160 ($3780 -> $3940)
+Randy loses $160 ($220 -> $60)
+====== Showdown Complete ======
+
+New deck shuffled for round 19
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 19
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3940
+  Randy: $60 (short stack)
+
+Table positions:
+  Dealer: Randy
+  Small Blind: Bob
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy posts ante of $10
+Bob posts small blind of $50
+Randy is all-in with $50
+Randy posts partial big blind of $50 (all in)
+
+
+====== Pre-draw betting ======
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: Q of ♠, 6 of ♠, 7 of ♠, 3 of ♠, A of ♦
+    - High Card, 14 [Rank: High Card, Tiebreakers: [14, 12, 7, 6, 3]]
+  Player chips: $3880
+  Player current bet: $60
+  Current pot: $120
+[Action] Action: fold - My hand is only a high card, and with the current bet to call at 0, it's not worth risking more chips at this point.
+Bob executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Randy shows: 6 of ♥, 3 of ♦, Q of ♥, 5 of ♦, J of ♠
+    - High Card, 12 [Rank: High Card, Tiebreakers: [12, 11, 6, 5, 3]]
+Randy wins $120 (all others folded)
+Bob loses $60 ($3940 -> $3880)
+Randy gains $60 ($60 -> $120)
+====== Showdown Complete ======
+
+New deck shuffled for round 20
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 20
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3880
+  Randy: $120
+
+Table positions:
+  Dealer: Bob
+  Small Blind: Randy
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy posts ante of $10
+Randy posts small blind of $50
+Bob posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Randy is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: 9 of ♥, 7 of ♣, 8 of ♦, 9 of ♦, 7 of ♦
+    - Two Pair, 9s and 7s [Rank: Two Pair, Tiebreakers: [9, 7, 8]]
+  Player chips: $60
+  Player current bet: $60
+  Current pot: $170
+Randy cannot afford current bet, folding
+Randy executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Bob shows: 2 of ♣, 3 of ♣, A of ♣, 2 of ♥, A of ♦
+    - Two Pair, 14s and 2s [Rank: Two Pair, Tiebreakers: [14, 2, 3]]
+Bob wins $170 (all others folded)
+Bob gains $60 ($3880 -> $3940)
+Randy loses $60 ($120 -> $60)
+====== Showdown Complete ======
+
+New deck shuffled for round 21
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 21
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3940
+  Randy: $60 (short stack)
+
+Table positions:
+  Dealer: Randy
+  Small Blind: Bob
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy posts ante of $10
+Bob posts small blind of $50
+Randy is all-in with $50
+Randy posts partial big blind of $50 (all in)
+
+
+====== Pre-draw betting ======
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: 9 of ♦, 4 of ♣, J of ♦, 6 of ♠, 8 of ♠
+    - High Card, 11 [Rank: High Card, Tiebreakers: [11, 9, 8, 6, 4]]
+  Player chips: $3880
+  Player current bet: $60
+  Current pot: $120
+[Action] Action: fold - I have a high card hand, which is weak, and the current bet is too high for me to continue playing.
+Bob executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Randy shows: 2 of ♥, 2 of ♣, K of ♠, 7 of ♣, K of ♦
+    - Two Pair, 13s and 2s [Rank: Two Pair, Tiebreakers: [13, 2, 7]]
+Randy wins $120 (all others folded)
+Bob loses $60 ($3940 -> $3880)
+Randy gains $60 ($60 -> $120)
+====== Showdown Complete ======
+
+New deck shuffled for round 22
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 22
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3880
+  Randy: $120
+
+Table positions:
+  Dealer: Bob
+  Small Blind: Randy
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy posts ante of $10
+Randy posts small blind of $50
+Bob posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Randy is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: 5 of ♣, A of ♣, 3 of ♣, 7 of ♥, 3 of ♥
+    - One Pair, 3s [Rank: One Pair, Tiebreakers: [3, 14, 7, 5]]
+  Player chips: $60
+  Player current bet: $60
+  Current pot: $170
+Randy cannot afford current bet, folding
+Randy executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Bob shows: 4 of ♠, Q of ♣, Q of ♠, 6 of ♦, 7 of ♠
+    - One Pair, Queens [Rank: One Pair, Tiebreakers: [12, 7, 6, 4]]
+Bob wins $170 (all others folded)
+Bob gains $60 ($3880 -> $3940)
+Randy loses $60 ($120 -> $60)
+====== Showdown Complete ======
+
+New deck shuffled for round 23
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 23
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3940
+  Randy: $60 (short stack)
+
+Table positions:
+  Dealer: Randy
+  Small Blind: Bob
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy posts ante of $10
+Bob posts small blind of $50
+Randy is all-in with $50
+Randy posts partial big blind of $50 (all in)
+
+
+====== Pre-draw betting ======
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: 9 of ♣, 2 of ♥, 6 of ♣, 10 of ♣, A of ♦
+    - High Card, 14 [Rank: High Card, Tiebreakers: [14, 10, 9, 6, 2]]
+  Player chips: $3880
+  Player current bet: $60
+  Current pot: $120
+[Action] Action: fold - My hand is only a high card, and the pot odds are not favorable for me to continue playing.
+Bob executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Randy shows: 2 of ♦, 8 of ♦, K of ♥, 5 of ♥, Q of ♥
+    - High Card, 13 [Rank: High Card, Tiebreakers: [13, 12, 8, 5, 2]]
+Randy wins $120 (all others folded)
+Bob loses $60 ($3940 -> $3880)
+Randy gains $60 ($60 -> $120)
+====== Showdown Complete ======
+
+New deck shuffled for round 24
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 24
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3880
+  Randy: $120
+
+Table positions:
+  Dealer: Bob
+  Small Blind: Randy
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy posts ante of $10
+Randy posts small blind of $50
+Bob posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Randy is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: 2 of ♦, K of ♣, 4 of ♣, 7 of ♠, 6 of ♠
+    - High Card, 13 [Rank: High Card, Tiebreakers: [13, 7, 6, 4, 2]]
+  Player chips: $60
+  Player current bet: $60
+  Current pot: $170
+Randy cannot afford current bet, folding
+Randy executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Bob shows: 3 of ♥, 2 of ♥, Q of ♠, 10 of ♥, 4 of ♥
+    - High Card, 12 [Rank: High Card, Tiebreakers: [12, 10, 4, 3, 2]]
+Bob wins $170 (all others folded)
+Bob gains $60 ($3880 -> $3940)
+Randy loses $60 ($120 -> $60)
+====== Showdown Complete ======
+
+New deck shuffled for round 25
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 25
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3940
+  Randy: $60 (short stack)
+
+Table positions:
+  Dealer: Randy
+  Small Blind: Bob
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy posts ante of $10
+Bob posts small blind of $50
+Randy is all-in with $50
+Randy posts partial big blind of $50 (all in)
+
+
+====== Pre-draw betting ======
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: J of ♣, 6 of ♥, 6 of ♦, K of ♠, 5 of ♣
+    - One Pair, 6s [Rank: One Pair, Tiebreakers: [6, 13, 11, 5]]
+  Player chips: $3880
+  Player current bet: $60
+  Current pot: $120
+[Action] Action: fold - I have only one pair and the current bet to call is 0, it's better to conserve chips in this situation.
+Bob executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Randy shows: 5 of ♠, Q of ♦, 10 of ♠, 2 of ♥, 4 of ♥
+    - High Card, 12 [Rank: High Card, Tiebreakers: [12, 10, 5, 4, 2]]
+Randy wins $120 (all others folded)
+Bob loses $60 ($3940 -> $3880)
+Randy gains $60 ($60 -> $120)
+====== Showdown Complete ======
+
+New deck shuffled for round 26
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 26
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3880
+  Randy: $120
+
+Table positions:
+  Dealer: Bob
+  Small Blind: Randy
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy posts ante of $10
+Randy posts small blind of $50
+Bob posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Randy is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: 9 of ♠, 8 of ♣, 10 of ♦, K of ♥, A of ♠
+    - High Card, 14 [Rank: High Card, Tiebreakers: [14, 13, 10, 9, 8]]
+  Player chips: $60
+  Player current bet: $60
+  Current pot: $170
+Randy cannot afford current bet, folding
+Randy executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Bob shows: J of ♣, 6 of ♣, 3 of ♠, 7 of ♣, J of ♥
+    - One Pair, Jacks [Rank: One Pair, Tiebreakers: [11, 7, 6, 3]]
+Bob wins $170 (all others folded)
+Bob gains $60 ($3880 -> $3940)
+Randy loses $60 ($120 -> $60)
+====== Showdown Complete ======
+
+New deck shuffled for round 27
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 27
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3940
+  Randy: $60 (short stack)
+
+Table positions:
+  Dealer: Randy
+  Small Blind: Bob
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy posts ante of $10
+Bob posts small blind of $50
+Randy is all-in with $50
+Randy posts partial big blind of $50 (all in)
+
+
+====== Pre-draw betting ======
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: 2 of ♠, A of ♦, 7 of ♣, Q of ♥, 3 of ♠
+    - High Card, 14 [Rank: High Card, Tiebreakers: [14, 12, 7, 3, 2]]
+  Player chips: $3880
+  Player current bet: $60
+  Current pot: $120
+[Action] Action: call - I have a high card and the current bet to call is 0, so I can see the next community cards without risking more chips.
+Bob executes: CALL
+
+====== Pre-draw betting Complete ======
+
+
+====== Draw Phase ======
+
+Draw phase: Bob discarding 2 cards
+Deck status after Bob's draw: 40 cards remaining
+Draw phase: Randy discarding 2 cards
+Deck status after Randy's draw: 38 cards remaining
+====== Draw Phase Complete ======
+
+
+====== Post-draw betting ======
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: A of ♦, 7 of ♣, Q of ♥, K of ♥, J of ♠
+    - High Card, 14 [Rank: High Card, Tiebreakers: [14, 13, 12, 11, 7]]
+  Player chips: $3780
+  Player current bet: $0
+  Current pot: $220
+[Action] Action: fold - I have a high card hand which is not strong enough to compete with the current bet and the potential raises.
+Bob executes: FOLD
+
+====== Post-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Randy shows: 10 of ♣, 6 of ♥, Q of ♣, 10 of ♥, A of ♥
+    - One Pair, 10s [Rank: One Pair, Tiebreakers: [10, 14, 12, 6]]
+Randy wins $220 (all others folded)
+Bob loses $160 ($3940 -> $3780)
+Randy gains $160 ($60 -> $220)
+====== Showdown Complete ======
+
+New deck shuffled for round 28
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 28
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3780
+  Randy: $220
+
+Table positions:
+  Dealer: Bob
+  Small Blind: Randy
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy posts ante of $10
+Randy posts small blind of $50
+Bob posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Randy is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: Q of ♥, K of ♦, 3 of ♠, J of ♦, 6 of ♦
+    - High Card, 13 [Rank: High Card, Tiebreakers: [13, 12, 11, 6, 3]]
+  Player chips: $160
+  Player current bet: $60
+  Current pot: $170
+Randy executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Bob shows: K of ♠, 5 of ♦, J of ♥, 5 of ♠, 9 of ♣
+    - One Pair, 5s [Rank: One Pair, Tiebreakers: [5, 13, 11, 9]]
+Bob wins $170 (all others folded)
+Bob gains $60 ($3780 -> $3840)
+Randy loses $60 ($220 -> $160)
+====== Showdown Complete ======
+
+New deck shuffled for round 29
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 29
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3840
+  Randy: $160
+
+Table positions:
+  Dealer: Randy
+  Small Blind: Bob
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy posts ante of $10
+Bob posts small blind of $50
+Randy posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: 6 of ♣, K of ♣, 3 of ♣, 5 of ♠, A of ♠
+    - High Card, 14 [Rank: High Card, Tiebreakers: [14, 13, 6, 5, 3]]
+  Player chips: $3780
+  Player current bet: $60
+  Current pot: $170
+[Action] Action: raise 2000 - I have a high card and want to put pressure on the other players with my strong chip stack.
+Bob executes: RAISE
+
+---- Randy is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: Bob
+  Hand: J of ♥, K of ♠, 4 of ♣, 3 of ♦, Q of ♦
+    - High Card, 13 [Rank: High Card, Tiebreakers: [13, 12, 11, 4, 3]]
+  Player chips: $50
+  Player current bet: $110
+  Current pot: $2210
+Randy cannot afford current bet, folding
+Randy executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Bob shows: 6 of ♣, K of ♣, 3 of ♣, 5 of ♠, A of ♠
+    - High Card, 14 [Rank: High Card, Tiebreakers: [14, 13, 6, 5, 3]]
+Bob wins $2210 (all others folded)
+Bob gains $110 ($3840 -> $3950)
+Randy loses $110 ($160 -> $50)
+====== Showdown Complete ======
+
+New deck shuffled for round 30
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 30
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3950
+  Randy: $50 (short stack)
+
+Table positions:
+  Dealer: Bob
+  Small Blind: Randy
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy posts ante of $10
+Randy is all-in with $40
+Randy posts partial small blind of $40 (all in)
+Bob posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: 4 of ♦, Q of ♠, K of ♦, A of ♥, 4 of ♠
+    - One Pair, 4s [Rank: One Pair, Tiebreakers: [4, 14, 13, 12]]
+  Player chips: $3840
+  Player current bet: $110
+  Current pot: $160
+[Action] Action: call - I have a pair of 4s which is a decent hand in this situation, and I want to see the next card without risking too many chips.
+Bob executes: CALL
+
+====== Pre-draw betting Complete ======
+
+
+====== Draw Phase ======
+
+Draw phase: Bob discarding 2 cards
+Deck status after Bob's draw: 40 cards remaining
+Randy keeping current hand (explicit decision)
+====== Draw Phase Complete ======
+
+
+====== Post-draw betting ======
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: Q of ♠, K of ♦, A of ♥, 3 of ♣, 9 of ♠
+    - High Card, 14 [Rank: High Card, Tiebreakers: [14, 13, 12, 9, 3]]
+  Player chips: $3740
+  Player current bet: $0
+  Current pot: $260
+[Action] Action: raise 200 - I have a high card and want to test the waters with a small raise.
+Bob must call $50 more to match all-in bet of $50
+Bob executes: CALL
+
+====== Post-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Bob shows: Q of ♠, K of ♦, A of ♥, 3 of ♣, 9 of ♠
+    - High Card, 14 [Rank: High Card, Tiebreakers: [14, 13, 12, 9, 3]]
+Randy shows: 10 of ♠, 8 of ♦, 10 of ♦, K of ♠, 5 of ♥
+    - One Pair, 10s [Rank: One Pair, Tiebreakers: [10, 13, 8, 5]]
+Bob's hand evaluation:
+  Cards: Q of ♠, K of ♦, A of ♥, 3 of ♣, 9 of ♠
+  Hand: High Card, 14
+  Rank: High Card
+  Tiebreakers: [14, 13, 12, 9, 3]
+Randy's hand evaluation:
+  Cards: 10 of ♠, 8 of ♦, 10 of ♦, K of ♠, 5 of ♥
+  Hand: One Pair, 10s
+  Rank: One Pair
+  Tiebreakers: [10, 13, 8, 5]
+Randy's One Pair, 10s loses to Randy's One Pair, 10s
+Randy wins $360
+Bob loses $310 ($3950 -> $3640)
+Randy gains $310 ($50 -> $360)
+====== Showdown Complete ======
+
+New deck shuffled for round 31
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 31
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3640
+  Randy: $360
+
+Table positions:
+  Dealer: Randy
+  Small Blind: Bob
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy posts ante of $10
+Bob posts small blind of $50
+Randy posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Randy is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: 10 of ♣, 7 of ♠, 7 of ♦, 2 of ♣, Q of ♣
+    - One Pair, 7s [Rank: One Pair, Tiebreakers: [7, 12, 10, 2]]
+  Player chips: $250
+  Player current bet: $110
+  Current pot: $170
+Randy raised by 240
+Randy executes: RAISE
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: Randy
+  Hand: 5 of ♠, 6 of ♥, 8 of ♠, 7 of ♥, Q of ♠
+    - High Card, 12 [Rank: High Card, Tiebreakers: [12, 8, 7, 6, 5]]
+  Player chips: $3580
+  Player current bet: $60
+  Current pot: $400
+[Action] Action: fold - I have a high card hand which is weak in this situation and the current bet to call is too high compared to my hand strength.
+Bob executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Randy shows: 10 of ♣, 7 of ♠, 7 of ♦, 2 of ♣, Q of ♣
+    - One Pair, 7s [Rank: One Pair, Tiebreakers: [7, 12, 10, 2]]
+Randy wins $400 (all others folded)
+Bob loses $60 ($3640 -> $3580)
+Randy gains $60 ($360 -> $420)
+====== Showdown Complete ======
+
+New deck shuffled for round 32
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 32
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3580
+  Randy: $420
+
+Table positions:
+  Dealer: Bob
+  Small Blind: Randy
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy posts ante of $10
+Randy posts small blind of $50
+Bob posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Randy is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: A of ♠, 8 of ♥, 4 of ♦, 10 of ♠, 5 of ♣
+    - High Card, 14 [Rank: High Card, Tiebreakers: [14, 10, 8, 5, 4]]
+  Player chips: $360
+  Player current bet: $60
+  Current pot: $170
+Randy raised by 200
+Randy executes: RAISE
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: Randy
+  Hand: 5 of ♦, 5 of ♠, Q of ♣, Q of ♠, 7 of ♦
+    - Two Pair, 12s and 5s [Rank: Two Pair, Tiebreakers: [12, 5, 7]]
+  Player chips: $3470
+  Player current bet: $110
+  Current pot: $410
+[Action] Action: raise 3470 - I have a strong hand with two pair and want to maximize my profit by going all-in.
+Bob executes: RAISE
+Bob is all-in with $3470
+
+====== Pre-draw betting Complete ======
+
+
+====== Draw Phase ======
+
+Draw phase: Bob discarding 2 cards
+Deck status after Bob's draw: 40 cards remaining
+Draw phase: Randy discarding 2 cards
+Deck status after Randy's draw: 38 cards remaining
+====== Draw Phase Complete ======
+
+
+====== Post-draw betting ======
+
+---- Randy is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: A of ♠, 8 of ♥, 5 of ♣, 2 of ♥, 4 of ♥
+    - High Card, 14 [Rank: High Card, Tiebreakers: [14, 8, 5, 4, 2]]
+  Player chips: $120
+  Player current bet: $300
+  Current pot: $3880
+Randy cannot afford current bet, folding
+Randy executes: FOLD
+
+====== Post-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Bob shows: Q of ♣, Q of ♠, 7 of ♦, 4 of ♠, A of ♣
+    - One Pair, Queens [Rank: One Pair, Tiebreakers: [12, 14, 7, 4]]
+Bob wins $3880 (all others folded)
+Bob gains $300 ($3580 -> $3880)
+Randy loses $300 ($420 -> $120)
+====== Showdown Complete ======
+
+New deck shuffled for round 33
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 33
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3880
+  Randy: $120
+
+Table positions:
+  Dealer: Randy
+  Small Blind: Bob
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy posts ante of $10
+Bob posts small blind of $50
+Randy posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: 5 of ♠, J of ♥, A of ♦, 3 of ♥, 8 of ♥
+    - High Card, 14 [Rank: High Card, Tiebreakers: [14, 11, 8, 5, 3]]
+  Player chips: $3820
+  Player current bet: $60
+  Current pot: $170
+[Action] Action: call - I am in the small blind position and the current bet to call is 0. I have a high card, so I will call to see the flop and assess the situation.
+Bob executes: CALL
+
+---- Randy is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: 5 of ♥, A of ♣, 8 of ♠, J of ♦, 2 of ♦
+    - High Card, 14 [Rank: High Card, Tiebreakers: [14, 11, 8, 5, 2]]
+  Player chips: $10
+  Player current bet: $110
+  Current pot: $270
+Randy cannot afford current bet, folding
+Randy executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Bob shows: 5 of ♠, J of ♥, A of ♦, 3 of ♥, 8 of ♥
+    - High Card, 14 [Rank: High Card, Tiebreakers: [14, 11, 8, 5, 3]]
+Bob wins $270 (all others folded)
+Bob gains $110 ($3880 -> $3990)
+Randy loses $110 ($120 -> $10)
+====== Showdown Complete ======
+
+New deck shuffled for round 34
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 34
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3990
+  Randy: $10 (short stack)
+
+Table positions:
+  Dealer: Bob
+  Small Blind: Randy
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy is all-in with $10
+Randy posts ante of $10
+Randy posts partial small blind of $0 (all in)
+Bob posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: 7 of ♣, 6 of ♣, 4 of ♦, 2 of ♥, 2 of ♦
+    - One Pair, 2s [Rank: One Pair, Tiebreakers: [2, 7, 6, 4]]
+  Player chips: $3880
+  Player current bet: $110
+  Current pot: $120
+[Action] Action: call - I have a pair of 2s, which is a decent hand in this situation and the current bet to call is 0.
+Bob executes: CALL
+
+====== Pre-draw betting Complete ======
+
+
+====== Draw Phase ======
+
+Draw phase: Bob discarding 2 cards
+Deck status after Bob's draw: 40 cards remaining
+Draw phase: Randy discarding 1 cards
+Deck status after Randy's draw: 39 cards remaining
+====== Draw Phase Complete ======
+
+
+====== Post-draw betting ======
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: 4 of ♦, 2 of ♥, 2 of ♦, J of ♦, 5 of ♥
+    - One Pair, 2s [Rank: One Pair, Tiebreakers: [2, 11, 5, 4]]
+  Player chips: $3780
+  Player current bet: $0
+  Current pot: $220
+[Action] Action: call - I have a decent hand with one pair and there is no current bet to call, so I will see the next round without risking more chips.
+Bob executes: CALL
+
+====== Post-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Bob shows: 4 of ♦, 2 of ♥, 2 of ♦, J of ♦, 5 of ♥
+    - One Pair, 2s [Rank: One Pair, Tiebreakers: [2, 11, 5, 4]]
+Randy shows: Q of ♥, 9 of ♠, A of ♦, 5 of ♠, 9 of ♦
+    - One Pair, 9s [Rank: One Pair, Tiebreakers: [9, 14, 12, 5]]
+Bob's hand evaluation:
+  Cards: 4 of ♦, 2 of ♥, 2 of ♦, J of ♦, 5 of ♥
+  Hand: One Pair, 2s
+  Rank: One Pair
+  Tiebreakers: [2, 11, 5, 4]
+Randy's hand evaluation:
+  Cards: Q of ♥, 9 of ♠, A of ♦, 5 of ♠, 9 of ♦
+  Hand: One Pair, 9s
+  Rank: One Pair
+  Tiebreakers: [9, 14, 12, 5]
+Randy's One Pair, 9s loses to Randy's One Pair, 9s
+Randy wins $320
+Bob loses $310 ($3990 -> $3680)
+Randy gains $310 ($10 -> $320)
+====== Showdown Complete ======
+
+New deck shuffled for round 35
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 35
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3680
+  Randy: $320
+
+Table positions:
+  Dealer: Randy
+  Small Blind: Bob
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy posts ante of $10
+Bob posts small blind of $50
+Randy posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Randy is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: J of ♥, Q of ♦, J of ♦, 9 of ♠, 10 of ♣
+    - One Pair, Jacks [Rank: One Pair, Tiebreakers: [11, 12, 10, 9]]
+  Player chips: $210
+  Player current bet: $110
+  Current pot: $170
+Randy raised by 210
+Randy executes: RAISE
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: Randy
+  Hand: 7 of ♥, 3 of ♠, 9 of ♣, K of ♦, 4 of ♣
+    - High Card, 13 [Rank: High Card, Tiebreakers: [13, 9, 7, 4, 3]]
+  Player chips: $3620
+  Player current bet: $60
+  Current pot: $370
+[Action] Action: fold - I have a high card only and the current bet to call is too high, it's better to fold and conserve my chips.
+Bob executes: FOLD
+
+====== Pre-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Randy shows: J of ♥, Q of ♦, J of ♦, 9 of ♠, 10 of ♣
+    - One Pair, Jacks [Rank: One Pair, Tiebreakers: [11, 12, 10, 9]]
+Randy wins $370 (all others folded)
+Bob loses $60 ($3680 -> $3620)
+Randy gains $60 ($320 -> $380)
+====== Showdown Complete ======
+
+New deck shuffled for round 36
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 36
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3620
+  Randy: $380
+
+Table positions:
+  Dealer: Bob
+  Small Blind: Randy
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy posts ante of $10
+Randy posts small blind of $50
+Bob posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Randy is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: 7 of ♣, 10 of ♦, 9 of ♥, 4 of ♥, 7 of ♠
+    - One Pair, 7s [Rank: One Pair, Tiebreakers: [7, 10, 9, 4]]
+  Player chips: $320
+  Player current bet: $60
+  Current pot: $170
+Randy executes: CALL
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: 10 of ♠, 6 of ♦, 6 of ♣, 4 of ♣, 4 of ♦
+    - Two Pair, 6s and 4s [Rank: Two Pair, Tiebreakers: [6, 4, 10]]
+  Player chips: $3510
+  Player current bet: $110
+  Current pot: $270
+[Action] Action: call - I have a decent hand with Two Pair and the current bet to call is 0. I want to see the next community cards without risking too many chips.
+Bob executes: CALL
+
+====== Pre-draw betting Complete ======
+
+
+====== Draw Phase ======
+
+Draw phase: Bob discarding 1 cards
+Deck status after Bob's draw: 41 cards remaining
+Randy keeping current hand (explicit decision)
+====== Draw Phase Complete ======
+
+
+====== Post-draw betting ======
+
+---- Randy is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: 7 of ♣, 10 of ♦, 9 of ♥, 4 of ♥, 7 of ♠
+    - One Pair, 7s [Rank: One Pair, Tiebreakers: [7, 10, 9, 4]]
+  Player chips: $220
+  Player current bet: $0
+  Current pot: $370
+Randy executes: FOLD
+
+====== Post-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Bob shows: 6 of ♦, 6 of ♣, 4 of ♣, 4 of ♦, K of ♣
+    - Two Pair, 6s and 4s [Rank: Two Pair, Tiebreakers: [6, 4, 13]]
+Bob wins $370 (all others folded)
+Bob gains $160 ($3620 -> $3780)
+Randy loses $160 ($380 -> $220)
+====== Showdown Complete ======
+
+New deck shuffled for round 37
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 37
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3780
+  Randy: $220
+
+Table positions:
+  Dealer: Randy
+  Small Blind: Bob
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy posts ante of $10
+Bob posts small blind of $50
+Randy posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: Q of ♣, 10 of ♥, Q of ♦, 4 of ♣, 8 of ♠
+    - One Pair, Queens [Rank: One Pair, Tiebreakers: [12, 10, 8, 4]]
+  Player chips: $3720
+  Player current bet: $60
+  Current pot: $170
+[Action] Action: call - I have a decent hand with One Pair, Queens and the current bet to call is 0. I want to see the next cards without risking too many chips.
+Bob executes: CALL
+
+---- Randy is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: 4 of ♥, 8 of ♥, K of ♥, 9 of ♣, 3 of ♦
+    - High Card, 13 [Rank: High Card, Tiebreakers: [13, 9, 8, 4, 3]]
+  Player chips: $110
+  Player current bet: $110
+  Current pot: $270
+Randy executes: CALL
+
+====== Pre-draw betting Complete ======
+
+
+====== Draw Phase ======
+
+Draw phase: Bob discarding 2 cards
+Deck status after Bob's draw: 40 cards remaining
+Draw phase: Randy discarding 2 cards
+Deck status after Randy's draw: 38 cards remaining
+====== Draw Phase Complete ======
+
+
+====== Post-draw betting ======
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: Q of ♣, Q of ♦, 8 of ♠, 5 of ♠, 9 of ♥
+    - One Pair, Queens [Rank: One Pair, Tiebreakers: [12, 9, 8, 5]]
+  Player chips: $3620
+  Player current bet: $0
+  Current pot: $370
+[Action] Action: call - I have a decent hand with one pair and the current bet to call is 0, so I will call to see the next round without risking more chips.
+Bob executes: CALL
+
+---- Randy is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: 8 of ♥, 9 of ♣, 3 of ♦, 10 of ♣, 3 of ♣
+    - One Pair, 3s [Rank: One Pair, Tiebreakers: [3, 10, 9, 8]]
+  Player chips: $10
+  Player current bet: $0
+  Current pot: $470
+Randy cannot afford current bet, folding
+Randy executes: FOLD
+
+====== Post-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Bob shows: Q of ♣, Q of ♦, 8 of ♠, 5 of ♠, 9 of ♥
+    - One Pair, Queens [Rank: One Pair, Tiebreakers: [12, 9, 8, 5]]
+Bob wins $470 (all others folded)
+Bob gains $210 ($3780 -> $3990)
+Randy loses $210 ($220 -> $10)
+====== Showdown Complete ======
+
+New deck shuffled for round 38
+Cards remaining for after initial deal: 42
+
+==================================================
+Round 38
+==================================================
+
+Starting stacks (before antes/blinds):
+  Bob: $3990
+  Randy: $10 (short stack)
+
+Table positions:
+  Dealer: Bob
+  Small Blind: Randy
+
+Betting structure:
+  Small blind: $50
+  Big blind: $100
+  Ante: $10
+  Minimum bet: $100
+
+Collecting antes:
+Bob posts ante of $10
+Randy is all-in with $10
+Randy posts ante of $10
+Randy posts partial small blind of $0 (all in)
+Bob posts big blind of $100
+
+
+====== Pre-draw betting ======
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: K of ♠, K of ♣, A of ♣, 4 of ♥, J of ♣
+    - One Pair, Kings [Rank: One Pair, Tiebreakers: [13, 14, 11, 4]]
+  Player chips: $3880
+  Player current bet: $110
+  Current pot: $120
+[Action] Action: call - I have a decent hand with One Pair, Kings and the current bet to call is 0. I want to see the next cards without risking too many chips.
+Bob executes: CALL
+
+====== Pre-draw betting Complete ======
+
+
+====== Draw Phase ======
+
+Draw phase: Bob discarding 2 cards
+Deck status after Bob's draw: 40 cards remaining
+Draw phase: Randy discarding 1 cards
+Deck status after Randy's draw: 39 cards remaining
+====== Draw Phase Complete ======
+
+
+====== Post-draw betting ======
+
+---- Bob is active ----
+  Active players: ['Bob', 'Randy']
+  Last raiser: None
+  Hand: K of ♠, K of ♣, 4 of ♥, 2 of ♦, Q of ♦
+    - One Pair, Kings [Rank: One Pair, Tiebreakers: [13, 12, 4, 2]]
+  Player chips: $3780
+  Player current bet: $0
+  Current pot: $220
+[Action] Action: call - I have a decent hand with one pair of Kings and want to see the next card without risking too many chips at this stage of the game.
+Bob executes: CALL
+
+====== Post-draw betting Complete ======
+
+
+====== Showdown ======
+
+
+=== Showdown ===
+Bob shows: K of ♠, K of ♣, 4 of ♥, 2 of ♦, Q of ♦
+    - One Pair, Kings [Rank: One Pair, Tiebreakers: [13, 12, 4, 2]]
+Randy shows: 5 of ♣, 6 of ♦, Q of ♣, 7 of ♥, 8 of ♥
+    - High Card, 12 [Rank: High Card, Tiebreakers: [12, 8, 7, 6, 5]]
+Bob's hand evaluation:
+  Cards: K of ♠, K of ♣, 4 of ♥, 2 of ♦, Q of ♦
+  Hand: One Pair, Kings
+  Rank: One Pair
+  Tiebreakers: [13, 12, 4, 2]
+Randy's hand evaluation:
+  Cards: 5 of ♣, 6 of ♦, Q of ♣, 7 of ♥, 8 of ♥
+  Hand: High Card, 12
+  Rank: High Card
+  Tiebreakers: [12, 8, 7, 6, 5]
+Bob's One Pair, Kings beats Randy's High Card, 12
+Bob wins $320
+Bob gains $10 ($3990 -> $4000)
+Randy loses $10 ($10 -> $0)
+====== Showdown Complete ======
+
+
+Randy is eliminated (out of chips)!
+Player Randy removed from table
+
+Game Over! Bob wins with $4000!
+
+=== Game Summary ===
+Total rounds played: 39
+
+Final Standings:
+1. Bob: $4000
+2. Alice: $0 (eliminated)
+3. Charlie: $0 (eliminated)
+4. Randy: $0 (eliminated)

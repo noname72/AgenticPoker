@@ -1,220 +1,222 @@
 # Game Module Documentation
 
 ## Overview
-The Game module is the core controller for the poker game, managing game flow, rounds, and player interactions. It implements a 5-card draw poker game with support for multiple players, side pots, and detailed logging.
+The Game module is the core controller for 5-card draw poker, managing game flow, betting rounds, and player interactions. It provides comprehensive state tracking, error handling, and detailed logging of game events.
 
-## Classes
+## AgenticPoker Class
 
-### AgenticPoker
-Main game controller class that manages the poker game flow, including betting rounds, card drawing, and winner determination.
+### Attributes
 
-#### Attributes
-- `deck (Deck)`: The deck of cards used for dealing
-- `players (List[Player])`: List of currently active players in the game
-- `pot (int)`: Total chips in the current pot
-- `small_blind (int)`: Required small blind bet amount
-- `big_blind (int)`: Required big blind bet amount
-- `dealer_index (int)`: Position of current dealer (0-based, moves clockwise)
-- `round_count (int)`: Number of completed game rounds
-- `round_number (int)`: Current round number (increments at start of each round)
-- `max_rounds (Optional[int])`: Maximum number of rounds to play, or None for unlimited
-- `ante (int)`: Mandatory bet required from all players at start of each hand
-- `session_id (Optional[str])`: Unique identifier for this game session
-- `side_pots`: Optional list of dictionaries tracking side pots when players are all-in
-- `round_starting_stacks (Dict[Player, int])`: Records chip counts at start of each round
+#### Game Configuration
+- `config` (GameConfig): Configuration parameters for the game
+- `session_id` (Optional[str]): Unique identifier for this game session
+- `deck` (Deck): The deck of cards used for dealing
+- `table` (Table): Manages players and their positions
+- `small_blind` (int): Required small blind bet amount
+- `big_blind` (int): Required big blind bet amount
+- `dealer_index` (int): Position of current dealer
+- `round_number` (int): Current round number
+- `max_rounds` (Optional[int]): Maximum rounds to play
+- `ante` (int): Mandatory bet from all players
+- `initial_chips` (Dict[Player, int]): Starting chips for each player
 
-#### Methods
+#### State Management
+- `current_bet` (int): Current bet amount to match
+- `pot` (Pot): Manages pot calculations and side pots
+- `last_raiser` (Optional[Player]): Last player to raise
+- `db_client` (DatabaseClient): Database connection for state persistence
 
-##### `__init__(players, starting_chips=1000, small_blind=10, big_blind=20, max_rounds=None, ante=0, session_id=None)`
-Initializes a new poker game with specified parameters.
+### Methods
 
-**Parameters:**
-- `players`: List of player names or Player objects
-- `starting_chips`: Initial chip amount for each player
-- `small_blind`: Small blind bet amount
-- `big_blind`: Big blind bet amount
-- `max_rounds`: Maximum number of rounds to play (None for unlimited)
-- `ante`: Mandatory bet required from all players
-- `session_id`: Unique identifier for this game session
+#### __init__(players: List[Player], config: Optional[GameConfig] = None, **kwargs)
+Initializes a new poker game with specified players and configuration.
 
-**Side Effects:**
-- Creates Player objects if names provided
-- Initializes game state attributes
-- Sets up logging with session context
-- Logs initial game configuration
-
-**Example:**
 ```python
-game = AgenticPoker(['Alice', 'Bob'], starting_chips=500)
-game = AgenticPoker(player_list, small_blind=5, big_blind=10, ante=1)
-
-Game Configuration
-=================================================
-Players: Alice, Bob
-Starting chips: $500
-Blinds: $5/$10
-Ante: $1
-=================================================
-```
-
-##### `start_round()`
-Initializes a new round of poker by setting up game state and dealing cards.
-
-**Steps:**
-1. Increments round number
-2. Resets pot to zero
-3. Rotates dealer position
-4. Records starting chip counts
-5. Shuffles deck and deals hands
-6. Resets player states (bets, folded status)
-7. Logs round information
-
-**Side Effects:**
-- Updates game state (round_number, pot, dealer_index, round_starting_stacks)
-- Modifies player state (hand, bet, folded status)
-- Creates new shuffled deck
-- Logs round setup information
-
-**Example:**
-```python
-game.start_round()
-=================================================
-Round 42
-=================================================
-
-Starting stacks (before antes/blinds):
-  Alice: $1200
-  Bob: $800
-  Charlie: $15 (short stack)
-
-Dealer: Alice
-Small Blind: Bob
-Big Blind: Charlie
-```
-
-##### `blinds_and_antes()`
-Collects mandatory bets at the start of each hand.
-
-**Process:**
-1. Collects antes from all players (if any)
-2. Collects small blind from player left of dealer
-3. Collects big blind from player left of small blind
-
-**Features:**
-- Handles partial postings for short stacks
-- Creates side pots for all-in situations
-- Tracks posted amounts accurately
-- Handles special cases (missing blinds, short stacks)
-
-**Example:**
-```python
-game.blinds_and_antes()
-
-Collecting antes...
-Alice posts ante of $1
-Bob posts ante of $1
-Charlie posts ante of $1 (all in)
-
-Bob posts small blind of $10
-Charlie posts partial big blind of $5 (all in)
-
-Starting pot: $18
-  Includes $3 in antes
-
-Side pots:
-  Pot 1: $15 (Eligible: Alice, Bob)
-  Pot 2: $3 (Eligible: Alice, Bob, Charlie)
-```
-
-##### `draw_phase()`
-Handles the card drawing phase where players can exchange cards.
-
-**Features:**
-- Players can discard 0-5 cards and draw replacements
-- Tracks discarded cards to prevent redealing
-- Reshuffles discards if deck runs low
-- Handles AI player decision-making
-- Maintains exactly 5 cards per hand
-
-**Example:**
-```python
-game.draw_phase()
---- Draw Phase ---
-
-Alice's turn to draw
-Current hand: A♠ K♠ 3♣ 4♥ 7♦
-Discarding cards at positions: [2, 3, 4]
-Drew 3 new cards: Q♣, J♥, 10♦
-```
-
-##### `showdown()`
-Manages the showdown phase, determines winners, and distributes pots. Handles:
-- Main pot and side pot calculations
-- Hand comparison
-- Chip distribution
-- Detailed logging of results
-
-##### `handle_side_pots()`
-Calculates and splits the pot when players are all-in with different amounts.
-
-**Returns:**
-- List of tuples, each containing:
-  - `int`: The amount in this side pot
-  - `List[Player]`: Players eligible to win this specific pot
-
-**Example:**
-```python
-# With three players betting different amounts:
-# Player A: $100 (all-in)
-# Player B: $200 (all-in)
-# Player C: $300
-side_pots = game.handle_side_pots()
-# Returns: [
-#   (300, [player_a, player_b, player_c]),  # Main pot
-#   (300, [player_b, player_c]),            # First side pot
-#   (300, [player_c])                       # Second side pot
-# ]
-```
-
-##### `_calculate_side_pots(posted_amounts)`
-Helper method to calculate side pots based on posted amounts.
-
-**Parameters:**
-- `posted_amounts`: Dictionary mapping players to their bet amounts
-
-**Returns:**
-- List of dictionaries, each containing:
-  - `amount`: Size of this side pot
-  - `eligible_players`: List of player names eligible for this pot
-
-##### `remove_bankrupt_players()`
-Removes players with zero chips and checks if game should continue.
-
-**Returns:**
-- `bool`: True if game should continue, False if game should end
-
-#### Example Usage
-```python
-# Initialize game with three players
-players = ['Alice', 'Bob', 'Charlie']
+# Initialize with GameConfig
 game = AgenticPoker(
     players,
-    starting_chips=1000,
-    small_blind=10,
-    big_blind=20,
-    ante=5,
-    max_rounds=100
+    config=GameConfig(
+        starting_chips=1000,
+        small_blind=50,
+        big_blind=100,
+        ante=10,
+        session_id="20240101_120000",
+        max_raise_multiplier=3,
+        max_raises_per_round=4,
+        min_bet=100
+    )
 )
 
-# Start the game
-game.start_game()
+# Or with direct parameters
+game = AgenticPoker(
+    players,
+    small_blind=50,
+    big_blind=100,
+    ante=10
+)
 ```
 
-#### Implementation Details
-- Manages complete game flow from start to finish
-- Handles player eliminations and bankrupt players
-- Supports side pots for all-in situations
-- Provides detailed logging of all game actions
-- Tracks game statistics and round information
-- Ensures fair distribution of chips in all scenarios
-- Supports both AI and human players through consistent interface 
+#### play_game(max_rounds: Optional[int] = None) -> None
+Executes the main game loop until completion.
+
+```python
+game.play_game(max_rounds=100)  # Play up to 100 rounds
+```
+
+##### Game Flow:
+1. Check for eliminations and game end conditions
+2. Start new round (deal cards, collect blinds/antes)
+3. Execute betting/drawing phases
+4. Distribute pot to winner(s)
+5. Reset for next round
+
+##### Side Effects:
+- Updates player chip counts
+- Tracks eliminated players
+- Logs game progress
+- Rotates dealer position
+- Updates game state
+
+#### Internal Round Methods
+
+##### _handle_pre_draw_phase() -> bool
+Manages the pre-draw betting round.
+
+```python
+should_continue = game._handle_pre_draw_phase()
+if not should_continue:
+    # Handle early round end
+```
+
+##### _handle_draw_phase() -> bool
+Handles the card drawing phase.
+
+```python
+game._handle_draw_phase()  # Players exchange cards
+```
+
+##### _handle_post_draw_phase() -> bool
+Manages the post-draw betting round.
+
+```python
+should_continue = game._handle_post_draw_phase()
+```
+
+##### _handle_showdown() -> None
+Determines winners and distributes pots.
+
+```python
+game._handle_showdown()  # Evaluate hands and award pots
+```
+
+### State Management
+
+#### Game State
+```python
+game_state = game.get_state()
+# Contains:
+# - Round information
+# - Player states
+# - Betting information
+# - Pot status
+```
+
+#### Database Integration
+```python
+# Save game snapshot
+game.db_client.save_game_snapshot(
+    session_id,
+    round_number,
+    game_state
+)
+
+# Save round snapshot
+game.db_client.save_round_snapshot(
+    session_id,
+    round_number,
+    round_state
+)
+```
+
+### Error Handling
+
+The game implements robust error checking:
+- Validates player existence and chip counts
+- Ensures positive pot amounts
+- Handles insufficient chips
+- Manages invalid actions
+- Recovers from all-in situations
+
+```python
+try:
+    game.play_game()
+except ValueError as e:
+    # Handle validation errors
+    print(f"Game error: {e}")
+finally:
+    game.db_client.close()
+```
+
+### Logging
+
+The game uses multiple loggers for comprehensive tracking:
+- GameLogger: Overall game events
+- BettingLogger: Betting actions
+- TableLogger: Table state changes
+
+```python
+GameLogger.log_game_config(
+    players=[p.name for p in table],
+    starting_chips=config.starting_chips,
+    small_blind=config.small_blind,
+    big_blind=config.big_blind,
+    ante=config.ante,
+    max_rounds=config.max_rounds,
+    session_id=config.session_id
+)
+```
+
+## Best Practices
+
+### 1. State Management
+- Use GameConfig for configuration
+- Track all state changes
+- Maintain database snapshots
+- Handle cleanup properly
+
+### 2. Error Handling
+- Validate all inputs
+- Provide clear error messages
+- Implement recovery mechanisms
+- Log all errors
+
+### 3. Resource Management
+- Close database connections
+- Clean up memory
+- Handle session cleanup
+- Manage logging resources
+
+### 4. Game Flow
+- Check state before actions
+- Validate betting rounds
+- Track player eliminations
+- Maintain pot integrity
+
+## Related Components
+
+The Game class interacts with:
+- Player: Player management
+- Table: Position tracking
+- Pot: Pot calculations
+- Deck: Card management
+- Hand: Card combinations
+- GameConfig: Configuration
+- DatabaseClient: State persistence
+
+## Future Considerations
+
+1. Tournament mode support
+2. Additional poker variants
+3. Enhanced state tracking
+4. Performance optimizations
+5. Advanced AI features 
