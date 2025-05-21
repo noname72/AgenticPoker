@@ -73,6 +73,9 @@ class AgenticPoker:
     pot: Pot
     last_raiser: Optional[Player]
     db_client: DatabaseClient
+    game_type: str
+    max_players: int
+    community_cards: List["Card"]  # Forward declaration for Card
 
     def __init__(
         self,
@@ -81,28 +84,45 @@ class AgenticPoker:
         big_blind: int = 20,
         ante: int = 0,
         session_id: Optional[str] = None,
+        game_type: Optional[str] = None,
+        max_players: Optional[int] = None,
         config: Optional[GameConfig] = None,
     ) -> None:
         """Initialize a new poker game with specified players and configuration."""
 
-        if not players:
+        if not players or len(players) < 2:
             raise ValueError("Must provide at least 2 players")
 
         # Support both direct parameter initialization and GameConfig
         if config:
             self.config = config
         else:
-            self.config = GameConfig(
-                small_blind=small_blind,
-                big_blind=big_blind,
-                ante=ante,
-                session_id=session_id,
+            # Pass game_type and max_players if provided, otherwise GameConfig defaults will be used
+            config_args = {
+                "small_blind": small_blind,
+                "big_blind": big_blind,
+                "ante": ante,
+                "session_id": session_id,
+            }
+            if game_type is not None:
+                config_args["game_type"] = game_type
+            if max_players is not None:
+                config_args["max_players"] = max_players
+            self.config = GameConfig(**config_args)
+
+        self.game_type = self.config.game_type
+        self.max_players = self.config.max_players
+
+        if len(players) > self.max_players:
+            raise ValueError(
+                f"Number of players ({len(players)}) exceeds max_players ({self.max_players})"
             )
 
         self.session_id = self.config.session_id
         self.deck = Deck()
 
         # Convert names to players if needed
+        # TODO: Modify Table constructor to accept max_players
         self.table = Table(players)
         # Validate player chips
         if any(p.chips < 0 for p in self.table):
@@ -120,6 +140,7 @@ class AgenticPoker:
         self.ante = self.config.ante
         self.last_raiser = None
         self.initial_chips = {}
+        self.community_cards = []
 
         # Replace logging with GameLogger
         GameLogger.log_game_config(
@@ -130,6 +151,7 @@ class AgenticPoker:
             ante=self.config.ante,
             max_rounds=self.config.max_rounds,
             session_id=self.config.session_id,
+            # TODO: Add game_type and max_players to GameLogger.log_game_config
         )
 
         # Initialize database client
@@ -190,13 +212,29 @@ class AgenticPoker:
 
             self._start_new_round()
 
-            should_continue = self._handle_pre_draw_phase()
-
-            if should_continue:
-                self._handle_draw_phase()
-
-            if should_continue:
-                should_continue = self._handle_post_draw_phase()
+            should_continue = True
+            if self.game_type == "TEXAS_HOLDEM":
+                should_continue = self._handle_pre_flop_betting()
+                if should_continue:
+                    should_continue = self._handle_flop_dealing_and_betting()
+                if should_continue:
+                    should_continue = self._handle_turn_dealing_and_betting()
+                if should_continue:
+                    should_continue = self._handle_river_dealing_and_betting()
+            elif self.game_type == "FIVE_CARD_DRAW":
+                should_continue = self._handle_pre_draw_phase()
+                if should_continue:
+                    self._handle_draw_phase() # In 5-card draw, draw phase doesn't stop the round
+                if should_continue: # Check again in case pre-draw betting ended the round
+                    should_continue = self._handle_post_draw_phase()
+            else:
+                # Default to Five Card Draw or raise an error if game_type is unrecognized
+                GameLogger.log_warning(f"Unrecognized game_type: {self.game_type}. Defaulting to FIVE_CARD_DRAW.")
+                should_continue = self._handle_pre_draw_phase()
+                if should_continue:
+                    self._handle_draw_phase()
+                if should_continue:
+                    should_continue = self._handle_post_draw_phase()
 
             self._handle_showdown()
 
@@ -484,8 +522,76 @@ class AgenticPoker:
 
     def _deal_cards(self) -> None:
         """Deal new hands to all players."""
-        for player in self.table:
-            player.bet = 0
-            player.folded = False
-            player.hand = Hand()
-            player.hand.add_cards(self.deck.deal(5))
+        num_cards_to_deal = 0
+        if self.game_type == "FIVE_CARD_DRAW":
+            num_cards_to_deal = 5
+        elif self.game_type == "TEXAS_HOLDEM":
+            num_cards_to_deal = 2 # Hole cards
+            self.community_cards = [] # Reset community cards for Texas Hold'em at the start of a round
+        
+        if num_cards_to_deal > 0:
+            for player in self.table:
+                player.bet = 0
+                player.folded = False
+                player.hand = Hand() # Ensure hand is reset
+                player.hand.add_cards(self.deck.deal(num_cards_to_deal))
+        else:
+            GameLogger.log_warning(f"Unknown game type for dealing cards: {self.game_type}")
+
+
+    # Placeholder methods for Texas Hold'em
+    def _handle_pre_flop_betting(self) -> bool:
+        """Placeholder for pre-flop betting in Texas Hold'em."""
+        GameLogger.log_phase_header("Pre-flop Betting")
+        # Actual betting logic will be implemented here
+        # TODO: Implement actual pre-flop betting logic using betting.handle_betting_round(self)
+        GameLogger.log_phase_complete("Pre-flop Betting")
+        return True
+
+    def _deal_flop(self):
+        """Deals the flop (3 community cards) in Texas Hold'em."""
+        if self.game_type == "TEXAS_HOLDEM":
+            flop_cards = self.deck.deal(3)
+            self.community_cards.extend(flop_cards)
+            # TODO: Add GameLogger.log_community_cards(street, cards) method
+            GameLogger.log_message(f"Flop cards: {', '.join(map(str, flop_cards))} (Community: {', '.join(map(str, self.community_cards))})")
+
+    def _deal_turn(self):
+        """Deals the turn (1 community card) in Texas Hold'em."""
+        if self.game_type == "TEXAS_HOLDEM":
+            turn_card = self.deck.deal(1)[0] # deal returns a list
+            self.community_cards.append(turn_card)
+            GameLogger.log_message(f"Turn card: {turn_card} (Community: {', '.join(map(str, self.community_cards))})")
+            # TODO: Use GameLogger.log_community_cards("Turn", self.community_cards)
+
+    def _deal_river(self):
+        """Deals the river (1 community card) in Texas Hold'em."""
+        if self.game_type == "TEXAS_HOLDEM":
+            river_card = self.deck.deal(1)[0] # deal returns a list
+            self.community_cards.append(river_card)
+            GameLogger.log_message(f"River card: {river_card} (Community: {', '.join(map(str, self.community_cards))})")
+            # TODO: Use GameLogger.log_community_cards("River", self.community_cards)
+
+    def _handle_flop_dealing_and_betting(self) -> bool:
+        """Deals the flop and handles subsequent betting in Texas Hold'em."""
+        GameLogger.log_phase_header("Flop Dealing & Betting")
+        self._deal_flop()
+        # TODO: Implement actual flop betting logic using betting.handle_betting_round(self)
+        GameLogger.log_phase_complete("Flop Dealing & Betting")
+        return True
+
+    def _handle_turn_dealing_and_betting(self) -> bool:
+        """Deals the turn and handles subsequent betting in Texas Hold'em."""
+        GameLogger.log_phase_header("Turn Dealing & Betting")
+        self._deal_turn()
+        # TODO: Implement actual turn betting logic using betting.handle_betting_round(self)
+        GameLogger.log_phase_complete("Turn Dealing & Betting")
+        return True
+
+    def _handle_river_dealing_and_betting(self) -> bool:
+        """Deals the river and handles subsequent betting in Texas Hold'em."""
+        GameLogger.log_phase_header("River Dealing & Betting")
+        self._deal_river()
+        # TODO: Implement actual river betting logic using betting.handle_betting_round(self)
+        GameLogger.log_phase_complete("River Dealing & Betting")
+        return True

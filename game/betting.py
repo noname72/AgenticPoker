@@ -64,7 +64,7 @@ def handle_betting_round(game: "Game") -> bool:
         raise ValueError("Pot amount cannot be negative")
 
     # Run betting round with validated GameState
-    betting_round(game)
+    betting_round(game) # betting_round will now pass game_type to table methods
 
     # Determine if game should continue
     active_count = sum(1 for p in game.table if not p.folded)
@@ -87,9 +87,10 @@ def betting_round(game: "Game") -> None:
         game: The Game instance containing all game state, including players,
              pot manager, and round state.
     """
-    game.table.reset_action_tracking()
+    # Pass big_blind and game_type for NLHE min_raise_amount initialization
+    game.table.reset_action_tracking(game.big_blind, game.game_type)
 
-    _process_betting_cycle(game)
+    _process_betting_cycle(game) # _process_betting_cycle will pass game_type to table.update
 
     # After betting cycle completes, move all bets to pot
     game.pot.end_betting_round(game.table.players)
@@ -199,10 +200,10 @@ def _process_betting_cycle(game: "Game") -> None:
                 action_decision.raise_amount = call_amount
 
         # Execute the action
-        agent.execute(action_decision, game)
+        agent.execute(action_decision, game) # Player.execute now handles game_type specific logic
 
-        # Update table state
-        game.table.update(action_decision, agent)
+        # Update table state, passing game_type for NLHE logic
+        game.table.update(action_decision, agent, game.game_type)
 
         complete, reason = game.table.is_round_complete()
         BettingLogger.log_line_break()

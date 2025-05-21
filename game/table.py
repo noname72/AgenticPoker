@@ -42,7 +42,9 @@ class Table:
         action_tracking (List[ActionDecision]): List tracking all actions in the current round
     """
 
-    def __init__(self, players: List[Player]):
+    min_raise_amount: int # Minimum amount for a valid raise in NLHE
+
+    def __init__(self, players: List[Player], game_instance: Optional['Game'] = None): # game_instance for config access
         """Initialize the table with a list of players.
 
         Sets up the initial player rotation and tracking sets for betting rounds.
@@ -58,12 +60,15 @@ class Table:
         self.needs_to_act = set(players)  # Track players who still need to act
         self.last_raiser = None
         self.current_bet = 0  # Track the current bet amount
+        self.min_raise_amount = 0 # Initialized, will be set by game logic (e.g. to big_blind)
         self.action_tracking = []
+        self._game_instance = game_instance # Store game instance for config access
         TableLogger.log_table_creation(len(players))
 
-    def update(self, action_decision: ActionDecision, agent: "Agent") -> None:
+    def update(self, action_decision: ActionDecision, agent: "Agent", game_type: str) -> None:
         """Update the table state based on the agent's action decision."""
-        self.mark_player_acted(agent, action_decision)
+        # Pass game_type for NLHE logic
+        self.mark_player_acted(agent, action_decision, game_type)
 
     def get_next_player(self) -> Optional[Player]:
         """Get the next active player in the rotation who can take an action.
@@ -166,7 +171,7 @@ class Table:
         TableLogger.log_player_removed(player.name)
 
     def mark_player_acted(
-        self, player: Player, action_decision: ActionDecision
+        self, player: Player, action_decision: ActionDecision, game_type: str
     ) -> None:
         """Mark a player as having acted in the current betting round.
 
@@ -180,15 +185,38 @@ class Table:
         """
         self.needs_to_act.discard(player)
 
-        if action_decision.action_type == ActionType.RAISE:
-            # Update current bet amount
-            self.current_bet = action_decision.raise_amount
-            self.last_raiser = player
-            # Everyone else needs to act again (except folded/all-in players)
-            self.needs_to_act = set(p for p in self.active_players() if p != player)
+        # The actual update of self.current_bet and self.last_raiser
+        # should be handled by Player.execute() or Game directly
+        # based on the validated action.
+        # Table's role is to track who needs to act and the min_raise_amount for NLHE.
 
-        elif action_decision.action_type == ActionType.CALL:
-            player.bet = self.current_bet
+        if game_type == "TEXAS_HOLDEM":
+            if action_decision.action_type == ActionType.RAISE:
+                # Assuming action_decision.raise_amount is the *additional* amount of the raise
+                # This value is what the next player must raise by at least.
+                self.min_raise_amount = action_decision.amount # Player.execute will ensure this is the raise portion
+                self.last_raiser = player
+                self.needs_to_act = set(p for p in self.active_players() if p != player)
+            elif action_decision.action_type == ActionType.BET: # Opening bet
+                self.min_raise_amount = action_decision.amount # Player.execute will set this to bet_amount
+                self.last_raiser = player
+                self.needs_to_act = set(p for p in self.active_players() if p != player)
+            elif action_decision.action_type == ActionType.CALL:
+                # player.bet is handled by Player.execute()
+                pass # No change to min_raise_amount or last_raiser on a call
+            elif action_decision.action_type == ActionType.CHECK:
+                pass # No change
+        else: # FIVE_CARD_DRAW or other limit games
+            if action_decision.action_type == ActionType.RAISE:
+                # Current_bet is updated by Player.execute based on validated raise
+                self.last_raiser = player
+                self.needs_to_act = set(p for p in self.active_players() if p != player)
+            elif action_decision.action_type == ActionType.CALL:
+                # player.bet is handled by Player.execute()
+                pass
+            elif action_decision.action_type == ActionType.CHECK:
+                pass
+
 
         self.action_tracking.append(action_decision)
 
@@ -199,11 +227,15 @@ class Table:
             len(self.action_tracking),
         )
 
-    def reset_action_tracking(self) -> None:
+    def reset_action_tracking(self, big_blind_amount: int, game_type: str) -> None:
         """Reset the action tracking for a new betting round (street)."""
         self.needs_to_act = set(self.active_players())
-        self.current_bet = 0
+        self.current_bet = 0 # This will be set by blinds/antes or first bet
         self.last_raiser = None
+        if game_type == "TEXAS_HOLDEM":
+            self.min_raise_amount = big_blind_amount # Initial min raise for NLHE is usually BB
+        else:
+            self.min_raise_amount = 0 # Not used in limit games
 
         TableLogger.log_action_tracking_reset([p.name for p in self.active_players()])
 
